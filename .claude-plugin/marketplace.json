@@ -1,0 +1,32 @@
+{
+  "name": "szarkans-skills",
+  "owner": {
+    "name": "Sergei Shatrov",
+    "url": "https://github.com/szarkans"
+  },
+  "description": "Skills and plugins by szarkans",
+  "plugins": [
+    {
+      "name": "multi-code-review",
+      "source": "./",
+      "description": "Consensus code review by independent models: Claude + OpenAI Codex in parallel, with optional Google Antigravity (Gemini) as a third reviewer. Findings are cross-verified and merged into one report.",
+      "version": "1.0.0",
+      "author": {
+        "name": "Sergei Shatrov",
+        "url": "https://github.com/szarkans"
+      },
+      "homepage": "https://github.com/szarkans/multi-code-review",
+      "repository": "https://github.com/szarkans/multi-code-review",
+      "license": "MIT",
+      "keywords": [
+        "code-review",
+        "codex",
+        "antigravity",
+        "gemini",
+        "consensus",
+        "multi-model"
+      ],
+      "category": "productivity"
+    }
+  ]
+}

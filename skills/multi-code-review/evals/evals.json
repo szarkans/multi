@@ -1,0 +1,69 @@
+{
+  "skill_name": "multi-code-review",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "multi-code-review my current uncommitted changes at high effort",
+      "expected_output": "All available reviewers run in parallel on the uncommitted diff; findings merged into consensus / single-source-verified / dropped; report-only.",
+      "files": [],
+      "assertions": [
+        "Runs Codex via `codex exec` with -o to capture the final message (NOT `codex review`)",
+        "Runs the Claude-side review (built-in /code-review or the documented fallback subagent) on the same diff",
+        "Starts background reviewers first so they overlap the Claude review in wall-clock time",
+        "Final report buckets findings by agreement: consensus (unanimous/majority) above single-source verified, above dropped",
+        "Verifies each single-source finding against the actual code before including it",
+        "Flags a planted high-severity issue (e.g. trusting a client-supplied identity value without server-side verification) as a consensus finding",
+        "Report-only: does NOT apply fixes or post a PR comment"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "I just finished a feature on this branch. Get both Claude and Codex to review it against master and reconcile their findings before I open a PR.",
+      "expected_output": "Skill triggers, picks branch-vs-master scope (git merge-base), runs the reviewers on that range, produces a consensus report. No PR comment, no fixes.",
+      "files": [],
+      "assertions": [
+        "Triggers the multi-code-review skill (not plain /code-review)",
+        "Selects branch-vs-master scope and scopes Codex with `git diff <base>...HEAD`",
+        "Runs the reviewers and merges into the consensus/single-source/dropped report",
+        "Report-only: no PR comment posted, no fixes applied"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "multi-code-review",
+      "expected_output": "With Codex CLI missing or logged out (and no cached ok in the state file), the skill aborts with a clear message that it is pointless without Codex; it does not silently degrade to a single-model review.",
+      "files": [],
+      "assertions": [
+        "Checks the state file before probing; probes Codex only when no cached `codex: ok` exists",
+        "Aborts the skill when Codex is unavailable, telling the user to install/login or use plain /code-review",
+        "Does NOT run a Claude-only review as a silent fallback"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "multi-code-review my uncommitted changes (first run on a machine without Antigravity)",
+      "expected_output": "Skill runs Claude + Codex, mentions exactly once that Google Antigravity CLI could be installed as an optional third reviewer, records `antigravity: skipped` in the state file, and never brings it up on later runs.",
+      "files": [],
+      "assertions": [
+        "Probes `agy` only because the state file has no antigravity entry yet",
+        "Continues the two-reviewer run instead of aborting when Antigravity is missing",
+        "Informs the user once, in one line, that Antigravity is an optional third reviewer",
+        "Writes `antigravity: skipped` so subsequent runs neither probe nor mention it until the user explicitly asks"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "multi-code-review with antigravity — I installed it, re-check",
+      "expected_output": "Explicit user request overrides the cached `skipped`: the skill re-probes agy, and if version ≥ 1.0.15 runs a three-reviewer round with Antigravity isolated in a disposable detached worktree.",
+      "files": [],
+      "assertions": [
+        "Re-probes `agy` despite `antigravity: skipped` in state, because the user explicitly asked",
+        "Runs Antigravity only inside a disposable detached git worktree, never in the real repo",
+        "Uses `agy --print` in sandbox mode with the fixed model string `Gemini 3.1 Pro (High)` and an external timeout",
+        "Treats empty Antigravity stdout as 'no result' (Reviewer failures), not as a clean review",
+        "Removes the temporary worktree afterwards on all paths (success, timeout, error)",
+        "Updates the state file to `antigravity: ok` after a successful probe"
+      ]
+    }
+  ]
+}
