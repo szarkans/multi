@@ -4,7 +4,7 @@
 > Antigravity / Gemini**) review the same diff in parallel, then their findings
 > are reconciled into one trustworthy report.
 
-[Русская версия →](README.ru.md)
+[Русская версия →](README.ru.md) · [中文版 →](README.zh.md)
 
 One model reviewing your code can hallucinate an issue — or miss a real one.
 Independent models reviewing the **same diff at the same time** catch more, and
@@ -196,6 +196,10 @@ skills/
     evals/evals.json  ← behavioral test cases / executable spec
 ```
 
+## Why this README looks AI-generated?
+
+Because it is lmao
+
 ## License
 
-[MIT](LICENSE) © Sergei Shatrov
+[MIT](LICENSE).
