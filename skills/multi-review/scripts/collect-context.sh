@@ -16,7 +16,7 @@
 # Everything is capped so a huge rules tree cannot blow up the reviewer prompts.
 set -uo pipefail
 
-SCOPE=uncommitted; REF=""
+SCOPE=uncommitted; REF=""; PATHS=""
 MAX_TOTAL_BYTES="${MCR_CONTEXT_MAX_BYTES:-24000}"
 MAX_FILE_BYTES="${MCR_CONTEXT_MAX_FILE_BYTES:-8000}"
 
@@ -24,6 +24,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --scope) SCOPE="$2"; shift 2 ;;
     --ref) REF="$2"; shift 2 ;;
+    --paths) PATHS="$2"; shift 2 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
@@ -37,6 +38,17 @@ case "$SCOPE" in
   commit)      CHANGED="$(git show --name-only --format="" "${REF}")" ;;
   *) echo "unknown scope: $SCOPE" >&2; exit 2 ;;
 esac
+# Narrow to the reviewed paths so a frontend-only review does not drag in the
+# backend rule files.
+if [ -n "$PATHS" ]; then
+  filtered=""
+  for f in $CHANGED; do
+    for p in $PATHS; do
+      case "$f" in "$p"|"$p"/*) filtered="$filtered$f"$'\n'; break ;; esac
+    done
+  done
+  CHANGED="$(printf '%s' "$filtered" | sed '/^$/d')"
+fi
 [ -n "$CHANGED" ] || exit 0
 
 total=0

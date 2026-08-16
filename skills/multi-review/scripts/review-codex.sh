@@ -12,7 +12,7 @@
 #   Default reasoning effort for a custom prompt is `none`, so we always set it.
 set -uo pipefail
 
-SCOPE=uncommitted; REF=""; EFFORT=low; OUT=""; CONTEXT=""; ADVERSARIAL=0; MODEL=""
+SCOPE=uncommitted; REF=""; EFFORT=low; OUT=""; CONTEXT=""; ADVERSARIAL=0; MODEL=""; PATHS=""; FOCUS_TEXT=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --scope) SCOPE="$2"; shift 2 ;;
@@ -21,6 +21,8 @@ while [ $# -gt 0 ]; do
     --out) OUT="$2"; shift 2 ;;
     --context) CONTEXT="$2"; shift 2 ;;
     --model) MODEL="$2"; shift 2 ;;
+    --paths) PATHS="$2"; shift 2 ;;
+    --focus) FOCUS_TEXT="$2"; shift 2 ;;
     --adversarial) ADVERSARIAL=1; shift ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
@@ -34,10 +36,28 @@ case "$SCOPE" in
   *) echo "unknown scope: $SCOPE" >&2; exit 2 ;;
 esac
 
+# Narrowing to specific paths is prompt text here, not a flag: `codex exec
+# review` discovers the diff itself and takes no pathspec.
+if [ -n "$PATHS" ]; then
+  SCOPE_LINE="$SCOPE_LINE Of those changes, review ONLY the ones in these paths, and ignore every changed file outside them: $PATHS"
+fi
+
 if [ "$ADVERSARIAL" = "1" ]; then
   ANGLE="Do NOT hunt for line-level defects — another reviewer already does that. Challenge the APPROACH: is this the right design for the problem, what unstated assumptions does it rest on, how does it fail under concurrency, retries, partial failure, or scale, and what will be expensive to undo later. Anchor every point to a real file and line in the change."
 else
   ANGLE="Hunt for real defects on the CHANGED lines."
+fi
+
+
+FOCUS=""
+if [ -n "$FOCUS_TEXT" ]; then
+  FOCUS="
+
+What the user asked for, in their own words. It does not replace the review —
+still do the whole thing — but it is what they care about most, so lead with it
+and answer it explicitly, even if the answer is that it looks fine here:
+
+$FOCUS_TEXT"
 fi
 
 CTX=""
@@ -63,7 +83,7 @@ loss than a line the reader skips.
 
 The one thing to leave out is pre-existing problems on lines this change did
 not touch. Do not run the build or the test suite. If the change really is
-clean, say so — that is a valid and often correct answer.${CTX}"
+clean, say so — that is a valid and often correct answer.${FOCUS}${CTX}"
 
 # `codex exec review` ignores --output-schema (the subcommand has its own fixed
 # report format), so we take its native text and let the judge read it:

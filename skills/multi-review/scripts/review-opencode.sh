@@ -14,7 +14,7 @@
 #   this in the background alongside Codex.
 set -uo pipefail
 
-SCOPE=uncommitted; REF=""; OUT=""; CONTEXT=""; MODEL="${MCR_OPENCODE_MODEL:-}"; AGENT=""
+SCOPE=uncommitted; REF=""; OUT=""; CONTEXT=""; MODEL="${MCR_OPENCODE_MODEL:-}"; AGENT=""; PATHS=""; FOCUS_TEXT=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --scope) SCOPE="$2"; shift 2 ;;
@@ -23,18 +23,35 @@ while [ $# -gt 0 ]; do
     --context) CONTEXT="$2"; shift 2 ;;
     --model) MODEL="$2"; shift 2 ;;
     --agent) AGENT="$2"; shift 2 ;;
+    --paths) PATHS="$2"; shift 2 ;;
+    --focus) FOCUS_TEXT="$2"; shift 2 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
 [ -n "$OUT" ] || { echo "--out is required" >&2; exit 2; }
 [ -n "$MODEL" ] || { echo "no model: set --model or MCR_OPENCODE_MODEL" >&2; exit 2; }
 
+PS=""
+[ -n "$PATHS" ] && PS=" -- $PATHS"
+
 case "$SCOPE" in
-  uncommitted) DIFF_CMD="git status --porcelain --untracked-files=all && git diff && git diff --cached" ;;
-  branch)      DIFF_CMD="git diff ${REF}...HEAD" ;;
-  commit)      DIFF_CMD="git show ${REF}" ;;
+  uncommitted) DIFF_CMD="git status --porcelain --untracked-files=all${PS} && git diff${PS} && git diff --cached${PS}" ;;
+  branch)      DIFF_CMD="git diff ${REF}...HEAD${PS}" ;;
+  commit)      DIFF_CMD="git show ${REF}${PS}" ;;
   *) echo "unknown scope: $SCOPE" >&2; exit 2 ;;
 esac
+
+
+FOCUS=""
+if [ -n "$FOCUS_TEXT" ]; then
+  FOCUS="
+
+What the user asked for, in their own words. It does not replace the review —
+still do the whole thing — but it is what they care about most, so lead with it
+and answer it explicitly, even if the answer is that it looks fine here:
+
+$FOCUS_TEXT"
+fi
 
 CTX=""
 if [ -n "$CONTEXT" ] && [ -s "$CONTEXT" ]; then
@@ -61,7 +78,7 @@ run the build or the tests.
 Output ONLY finding lines, nothing before or after, one per line, exactly:
 FILE:LINE | HIGH|MEDIUM|LOW | what is wrong and the concrete case where it bites
 
-If nothing is genuinely wrong, output exactly: No issues found.${CTX}"
+If nothing is genuinely wrong, output exactly: No issues found.${FOCUS}${CTX}"
 
 # OpenCode echoes every tool call and its output, so a review of a 200-line
 # diff arrives wrapped in the diff itself. Keep the whole transcript next to

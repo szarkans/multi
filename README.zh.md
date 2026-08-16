@@ -21,6 +21,9 @@
 最后主代理收齐所有人的结论，逐条核实只有一方提出的问题，剔除误报，交给你一份
 报告。
 
+你也可以直接写想查什么 —— `/mcr:multi-review 查一下迁移脚本，那里肯定有竞态`。
+这段文字会原样发给三位审查者。
+
 OpenCode 的模型可配置，Codex 的 effort 也可配置。Claude 这边没有 effort 旋钮，
 但子代理用哪个模型可以由参数指定：默认 Sonnet，模式决定启动几个。
 
@@ -125,17 +128,30 @@ skill 内部。
 
 走 `npx skills` 安装时命令是 `/multi-review`。
 
-参数全部可选，按取值识别而非按位置：
+**命令后面全是自由文本，剩下的部分就是给审查者的指令。** 少数几个 token 会被识别
+并摘出来，其余内容原样交给三位审查者，并在报告开头得到回答。
+
+```
+/mcr:multi-review 查一下迁移脚本，那里肯定有竞态
+/mcr:multi-review ultra is the retry idempotent? what happens on a double webhook
+/mcr:multi-review high 只看安全问题
+/mcr:multi-review check src/auth.py and src/session.py
+```
+
+只要点到真实存在的文件或目录，diff 本身就会收窄到它们，于是所有审查者和项目规则
+收集看到的是同一段更小的范围。
+
+会被识别的 token，全部可选，按取值而非按位置：
 
 | | |
 |---|---|
 | `haiku` `sonnet` `opus` `fable` | Claude 审查子代理用的模型 |
 | `low` `medium` `high` `xhigh` `max` | Codex 的推理 effort |
 | `--ponytail` | 加上过度设计视角 |
+| `quick` `normal` `ultra` | 深度 |
 
 ```
 /mcr:multi-review opus max ultra --ponytail
-/mcr:multi-review sonnet low quick
 ```
 
 你直接说要做审查、想要第二意见、或者提 PR 前想交叉验证时，Claude 也会自己调用它。

@@ -22,6 +22,9 @@ At the end the main agent collects everyone's findings, checks the ones only a
 single reviewer raised, throws out the false positives, and hands you one
 report.
 
+You can just write what you want checked — `/mcr:multi-review проверь миграции,
+там точно race`. The text goes to all three reviewers as-is.
+
 OpenCode's model is configurable, and so is Codex's effort. Claude has no
 effort knob, but the sub-agents' model is an argument: Sonnet by default, and
 the mode decides how many of them run.
@@ -138,17 +141,32 @@ state.
 
 Installed via `npx skills`, it is `/multi-review`.
 
-Arguments, all optional and matched by value rather than position:
+**Everything after the command is free text, and the leftover is an instruction
+to the reviewers.** A handful of tokens are recognised and pulled out; whatever
+remains goes to all three reviewers verbatim, and gets answered at the top of
+the report.
+
+```
+/mcr:multi-review проверь миграции, там точно race
+/mcr:multi-review ultra is the retry idempotent? what happens on a double webhook
+/mcr:multi-review high только про безопасность
+/mcr:multi-review check src/auth.py and src/session.py
+```
+
+Name real files or directories and the diff itself is narrowed to them, so
+every reviewer and the project-rule collection agree on the same smaller range.
+
+Recognised tokens, all optional and matched by value rather than position:
 
 | | |
 |---|---|
 | `haiku` `sonnet` `opus` `fable` | model for the Claude review sub-agents |
 | `low` `medium` `high` `xhigh` `max` | Codex reasoning effort |
 | `--ponytail` | add the over-engineering lens |
+| `quick` `normal` `ultra` | depth |
 
 ```
 /mcr:multi-review opus max ultra --ponytail
-/mcr:multi-review sonnet low quick
 ```
 
 Claude also reaches for it on its own when you ask for a review, a second

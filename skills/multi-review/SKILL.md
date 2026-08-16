@@ -50,10 +50,9 @@ probe.
 
 ## Step 1 — arguments, mode, scope
 
-**Arguments.** `$1` is the model for the Claude review sub-agents, `$2` is
-Codex's reasoning effort, and `--ponytail` adds the simplicity lens. Every one
-is optional. Match them by *value* rather than by position — the vocabularies
-don't overlap, so `/mcr:multi-review high ultra` means what it looks like:
+**Arguments — everything after the command name is free text.** Pull the
+recognised tokens out of it; **whatever is left is the user's instruction to
+the reviewers**, and it goes to all of them verbatim.
 
 | token | meaning | default |
 |---|---|---|
@@ -63,8 +62,31 @@ don't overlap, so `/mcr:multi-review high ultra` means what it looks like:
 | `quick` `normal` `ultra` | depth | `normal` |
 | `uncommitted` · `branch <base>` · `commit <sha>` | what to review | `uncommitted` |
 
-An explicit argument always beats the mode's default: `ultra low` really does
-mean the full fleet with Codex thinking cheaply.
+Recognise tokens by *value*, not position, and only when they stand alone — in
+`/mcr:multi-review ultra посмотри низкоуровневый парсер`, `ultra` is the mode
+and `низкоуровневый` is not an effort just because it contains "low". An
+explicit token always beats the mode's default: `ultra low` really does mean
+the full fleet with Codex thinking cheaply.
+
+**The leftover text is the point, not a leftover.** This skill exists partly
+because the alternatives refuse custom instructions, so never drop it, never
+paraphrase it, and never turn it into a question back to the user. Pass it as
+`--focus "<text>"` to both external reviewers and hand the same string to every
+Claude sub-agent. The reviewers still do the full review; the focus tells them
+what to lead with.
+
+```
+/mcr:multi-review проверь миграции, там точно race
+/mcr:multi-review ultra is the retry idempotent? what happens on a double webhook
+/mcr:multi-review high только про безопасность, остальное не интересует
+```
+
+If the free text names **specific files or directories**, also pass
+`--paths "<paths>"` to the three scripts. That is a hard narrowing — the diff
+itself gets restricted, so all reviewers and the project-rule collection agree
+on the same smaller range instead of merely being asked to focus. Reserve it
+for paths you can actually resolve in the repo; anything vaguer stays focus
+text.
 
 If the model argument is `haiku`: say `Серьёзно?` to the user — in whatever
 language the conversation is in — and then stop. Nothing else, no explanation.
@@ -101,7 +123,7 @@ they mentioned a branch or PR — that genuinely changes what gets reviewed.
 ## Step 2 — assemble the project rules
 
 ```bash
-$SCRIPTS/collect-context.sh --scope <scope> [--ref <base-or-sha>] > /tmp/mcr-ctx.md
+$SCRIPTS/collect-context.sh --scope <scope> [--ref <base-or-sha>] [--paths "<paths>"] > /tmp/mcr-ctx.md
 ```
 
 This gathers the repo's `CLAUDE.md`/`AGENTS.md`, the `.claude/rules/*.md` files
@@ -120,8 +142,10 @@ spends about a minute on cold start — then do the Claude side while they run.
 ```bash
 # background, both at once
 $SCRIPTS/review-codex.sh    --scope <scope> [--ref <r>] --effort <low|medium|high> \
+                            [--focus "<user text>"] [--paths "<paths>"] \
                             --context /tmp/mcr-ctx.md --out /tmp/mcr-codex.txt
 $SCRIPTS/review-opencode.sh --scope <scope> [--ref <r>] \
+                            [--focus "<user text>"] [--paths "<paths>"] \
                             --context /tmp/mcr-ctx.md --out /tmp/mcr-opencode.txt
 ```
 
@@ -130,8 +154,9 @@ different `--out`); it challenges the approach instead of the lines.
 
 **Then, per mode, spawn the Claude reviewers in parallel in a single message**
 (`mcr-correctness` and `mcr-security` for `normal`; plus `mcr-design` for
-`ultra`; none for `quick`). Give each one the scope, the base/sha, and the
-contents of `/tmp/mcr-ctx.md`.
+`ultra`; none for `quick`). Give each one the scope, the base/sha, the
+contents of `/tmp/mcr-ctx.md`, and — if there was any — the user's focus text,
+word for word.
 
 **Which model they run on**, first match wins:
 
@@ -227,6 +252,11 @@ Three rules that make the report trustworthy:
   of the buckets above, and a dropped one carries its reason. The user should
   be able to tell what was found from what survived; deciding for them which
   small thing was not worth mentioning is exactly how a real problem gets lost.
+
+When the user gave focus text, **answer it in the report**, at the top, in one
+or two lines — even when the answer is "no, that path is fine, here is why".
+A focused review that comes back with a generic finding list has ignored the
+question they actually asked.
 
 ## Step 5 — report
 
