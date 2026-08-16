@@ -51,7 +51,7 @@ are optional; missing ones are skipped.
 
 ---
 
-## AI Generated README
+## Totally not AI-generated README
 
 > Three models review the same diff with the same project rules. Claude Code
 > judges their findings into one ranked report.
@@ -120,6 +120,7 @@ because the scripts ship inside the skill.
 | **[OpenAI Codex CLI](https://github.com/openai/codex)** | **required** | The second model. Must be installed and logged in (`codex login`). Without it there is no multi-model review, and the skill stops instead of pretending. |
 | **[OpenCode](https://opencode.ai)** | optional | The third reviewer slot — any model you have. Missing or broken → skipped with a note. |
 | **[ponytail](https://github.com/DietrichGebert/ponytail)** | optional | A fourth *lens*, not a fourth reviewer: `ponytail-review` hunts over-engineering only. Its findings get their own section and never mix with defect findings. |
+| **Good mood**| required | be happy eh? |
 
 Availability is probed by a shell script whose output is injected into the
 skill before the model reads it, so the check costs zero tokens and stores no
