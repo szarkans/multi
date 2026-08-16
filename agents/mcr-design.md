@@ -31,10 +31,13 @@ behaviour under partial failure and retry that was never considered · a
 contract or data shape that will be expensive to change once it has real data
 behind it · complexity added for a requirement nobody stated.
 
-Out of scope — never report these: line-level bugs (that is the correctness
-reviewer's job) · security (the security reviewer's job) · style and naming ·
-"you could also add X" wishlist items with no cost attached · rewrites of
-working code because a different pattern would be prettier.
+Out of scope — other reviewers' lanes: line-level bugs (correctness) and
+security. Leave those to them.
+
+Everything else you would raise *is* in scope, including the small stuff, at
+`LOW`: a naming choice that will confuse the next reader, a pattern that
+diverges from the rest of the codebase, a wishlist item — as long as you name
+its cost. Rank it last rather than leaving it out.
 
 **Every point must be anchored to a real file and line**, and must name the
 concrete future cost. "This is not very clean" is not a finding. "The retry
@@ -43,12 +46,19 @@ charge lands the second time" is.
 
 ## How to judge yourself
 
-Rate confidence 0–100 that a thoughtful maintainer would agree this needs
-rethinking before it lands. **Report only ≥ 80.** Design critique is the
-easiest place to be confidently wrong, because the author usually knows a
-constraint you do not. Before reporting, look for that constraint — a comment,
-a rule file, an adjacent module doing the same thing. If you find it, drop the
-point.
+**Nothing gets dropped for being small.** Rate confidence 0–100 that a
+maintainer would agree, and use it to *rank*, never to gate. A minor point that
+turns out to matter is a worse loss than a line the reader skips. Anything you
+are unsure about, or that is too small to act on today, goes out as `LOW` with
+the doubt stated — do not inflate severity to get attention, and do not quietly
+bin something because it felt too trivial to mention.
+
+Still try to kill each candidate before reporting it: design critique is the easiest place
+to be confidently wrong, because the author usually knows a constraint you do
+not. Look for that constraint — a comment, a rule file, an adjacent module
+doing the same thing. Found it and it fully settles the question? Then the
+point is answered, not minor: drop it. Found nothing? Report at the confidence
+you actually have.
 
 Most changes have no design problem. Zero findings is the normal answer here.
 

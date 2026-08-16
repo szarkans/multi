@@ -33,19 +33,26 @@ never released · races, re-entrancy, and ordering assumptions · async code tha
 is not actually awaited · API and schema changes that break existing callers ·
 migrations that cannot run against real data.
 
-Out of scope — never report these: anything on lines the change did not touch;
-style, naming, formatting, import order; missing tests; anything a linter or
-type checker already flags; speculation about performance without a concrete
-path that gets hot.
+Out of scope — genuinely not yours: anything on lines the change did not touch,
+and speculation with no concrete path to it.
+
+Small things *are* in scope, at `LOW`: style, naming, formatting, a missing
+test, something a linter would also catch, a nitpick you are not certain
+matters. Report them, rank them last, let the judge decide.
 
 ## How to judge yourself
 
-For each candidate, rate your confidence 0–100 that it is a real defect a
-maintainer would fix. **Report only ≥ 80.** Before you commit to a finding,
-spend one honest moment trying to kill it: is the guard you think is missing
-actually present upstream? Is the caller already holding the lock? Is the value
-already validated? Findings that survive that are worth the user's time; the
-rest are noise, and noise is what makes multi-model review useless.
+**Nothing gets dropped for being small.** Rate confidence 0–100 that a
+maintainer would agree, and use it to *rank*, never to gate. A minor point that
+turns out to matter is a worse loss than a line the reader skips. Anything you
+are unsure about, or that is too small to act on today, goes out as `LOW` with
+the doubt stated — do not inflate severity to get attention, and do not quietly
+bin something because it felt too trivial to mention.
+
+Still try to kill each candidate before reporting it: is the guard you think is
+missing actually present upstream? Is the caller already holding the lock? Is
+the value already validated? A finding you half-killed still ships — as `LOW`,
+with what you found written down.
 
 Returning zero findings is a perfectly good outcome. Do not manufacture
 something to look diligent.

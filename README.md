@@ -53,8 +53,8 @@ are optional; missing ones are skipped.
 
 ## AI Generated README
 
-> Three models review the same diff with the same project rules. Claude judges
-> their findings into one ranked report.
+> Three models review the same diff with the same project rules. Claude Code
+> judges their findings into one ranked report.
 
 One model reviewing your code invents problems that aren't there and walks past
 ones that are. Independent models disagree — and the disagreement is the useful
@@ -62,21 +62,27 @@ part. `mcr` runs up to three reviewers over an identical diff, checks every
 finding only one of them raised, drops what doesn't survive, and hands you one
 report ordered by what actually matters.
 
-```
-                  ┌──────────────────────────────┐
-      ┌──────────▶│ Claude sub-agents (Sonnet)    │──────┐
-      │           │ correctness · security · design│      │
- same │           └──────────────────────────────┘      ▼
- diff │           ┌──────────────────────────────┐   ┌────────┐   ┌────────┐
-   +  ├──────────▶│ OpenAI Codex  (codex exec)    │──▶│ Claude │──▶│ report │
-project│          └──────────────────────────────┘   │ judges │   └────────┘
- rules │          ┌──────────────────────────────┐   └────────┘
-      └──────────▶│ OpenCode (any cheap model)*   │──────┘
-                  └──────────────────────────────┘   * optional third reviewer
+```mermaid
+flowchart LR
+    IN["same diff<br/>+ project rules"]
+    CL["Claude sub-agents<br/>correctness · security · design"]
+    CX["OpenAI Codex<br/>codex exec review"]
+    OC["OpenCode<br/>any cheap model"]
+    PT["ponytail-review<br/>--ponytail"]
+    J{{"Claude Code<br/>judges"}}
+    R(["one ranked report"])
+
+    IN --> CL --> J
+    IN --> CX --> J
+    IN -.-> OC -.-> J
+    IN -.-> PT -.-> J
+    J --> R
 ```
 
+Solid lines are always there; dashed ones are optional and skipped when absent.
+
 The reviewers **propose**. They don't vote and they don't get the last word —
-Claude reads the cited code and decides. Two of the three are cheap and
+Claude Code reads the cited code and decides. Two of the three are cheap and
 external, so your Claude budget goes into judging rather than reading.
 
 ### What makes it different from a single-model review
@@ -171,7 +177,7 @@ report section and never mixes with defect findings.
 | `MCR_OPENCODE_MODEL` | Pin the third reviewer's model, e.g. `opencode/deepseek-v4-flash-free`. |
 | `MCR_OPENCODE_CANDIDATES` | Space-separated models to auto-pick from when the above is unset. |
 | `MCR_CONTEXT_MAX_BYTES` | Cap on the injected project rules (default 24000). |
-| `MCR_REVIEWER_MODEL` | Model for the Claude review sub-agents. Default Sonnet — a fleet of reviewers is the wrong place to spend the expensive model, and depth pays off in the judging. `ultra` uses Opus unless this is set. |
+| `MCR_REVIEWER_MODEL` | Model for the Claude review sub-agents. Default Sonnet — a fleet of reviewers is the wrong place to spend the expensive model, and depth pays off in the judging. No mode raises it on its own. |
 
 Report-only by default: no edits, no commits, no PR comments. An opt-in loop
 mode fixes and re-reviews until nothing new comes back, capped at three rounds.

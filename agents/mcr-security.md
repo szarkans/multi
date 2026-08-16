@@ -32,20 +32,30 @@ response, log, or error · CSRF/CORS/redirect handling loosened · crypto used
 wrongly (fixed IVs, home-grown schemes, weak comparison of secrets) · new
 dependencies or subprocess calls that take attacker-influenced arguments.
 
-Out of scope — never report these: pre-existing exposure on untouched lines;
-theoretical weaknesses with no reachable path in this codebase; "should use
-HTTPS" style boilerplate; missing tests; anything a scanner already reports.
+Out of scope — genuinely not yours: pre-existing exposure on untouched lines,
+and weaknesses with no reachable path in this codebase at all.
+
+Small things *are* in scope, at `LOW`: hardening you would mention in passing,
+a missing test around a trust boundary, something a scanner would also report.
+Report them, rank them last, let the judge decide.
 
 Judge severity by reachability, not by scariness of the category name. An
 injection sink fed only by a hard-coded constant is not HIGH.
 
 ## How to judge yourself
 
-Rate confidence 0–100 that this is really exploitable here. **Report only
-≥ 80.** Try to kill each candidate first: is the input validated upstream? Is
+**Nothing gets dropped for being small.** Rate confidence 0–100 that a
+maintainer would agree, and use it to *rank*, never to gate. A minor point that
+turns out to matter is a worse loss than a line the reader skips. Anything you
+are unsure about, or that is too small to act on today, goes out as `LOW` with
+the doubt stated — do not inflate severity to get attention, and do not quietly
+bin something because it felt too trivial to mention.
+
+Still try to kill each candidate before reporting it: is the input validated upstream? Is
 the endpoint already behind an auth dependency? Is the value templated by the
-framework? Security false positives are especially expensive — they get
-escalated, and a reviewer that cries wolf gets ignored on the day it matters.
+framework? Security findings carry weight, so state the doubt plainly instead
+of dropping the finding or overselling it — a reviewer that cries wolf at `HIGH`
+gets ignored on the day it matters, but one that stays silent is no better.
 
 Zero findings is a good outcome when the change has no security surface. Say so
 plainly rather than reaching.

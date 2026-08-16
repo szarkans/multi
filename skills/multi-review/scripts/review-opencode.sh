@@ -49,11 +49,14 @@ fi
 PROMPT="You are a code reviewer. Run this to see the change under review:
 ${DIFF_CMD}
 
-Report only genuine defects on the CHANGED lines: logic bugs, security holes,
-data loss, resource leaks, unhandled errors, race conditions, or violations of
-the project rules below. Do NOT report pre-existing problems on untouched
-lines, style, naming, missing tests, or anything a linter catches. Do not run
-the build or the tests.
+Report everything you would raise on the CHANGED lines: logic bugs, security
+holes, data loss, resource leaks, unhandled errors, race conditions, violations
+of the project rules below — and the small stuff too, style, naming, a missing
+test, a nitpick. Mark the small stuff LOW rather than leaving it out; losing a
+minor point that turns out to matter is worse than a line the reader skips.
+
+The one thing to leave out is pre-existing problems on untouched lines. Do not
+run the build or the tests.
 
 Output ONLY finding lines, nothing before or after, one per line, exactly:
 FILE:LINE | HIGH|MEDIUM|LOW | what is wrong and the concrete case where it bites

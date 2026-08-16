@@ -57,7 +57,7 @@ don't overlap, so `/mcr:multi-review high ultra` means what it looks like:
 
 | token | meaning | default |
 |---|---|---|
-| `haiku` `sonnet` `opus` `fable` | model for the Claude reviewers | Sonnet, or `MCR_REVIEWER_MODEL`, or Opus in `ultra` |
+| `haiku` `sonnet` `opus` `fable` | model for the Claude reviewers | Sonnet, or `MCR_REVIEWER_MODEL` |
 | `low` `medium` `high` `xhigh` `max` | Codex reasoning effort | set by the mode |
 | `--ponytail` | add the over-engineering lens (Step 3) | off |
 | `quick` `normal` `ultra` | depth | `normal` |
@@ -137,13 +137,12 @@ contents of `/tmp/mcr-ctx.md`.
 
 1. the model argument, if the user gave one;
 2. `MCR_REVIEWER_MODEL`, which the probe prints as `reviewer-model:`;
-3. `opus` when the mode is `ultra` — that mode exists for changes that are
-   expensive to get wrong;
-4. otherwise the agent files' own default, Sonnet.
+3. otherwise the agent files' own default, Sonnet.
 
-Sonnet is the default on purpose: a fleet of reviewers is the wrong place to
-spend the expensive model, and depth pays off in the judging, which happens
-here in the main thread. Never quietly upgrade `quick` or `normal`.
+**No mode ever upgrades the model on its own, `ultra` included.** `ultra` buys
+its depth elsewhere — Codex at `high`, a second adversarial Codex pass, a third
+reviewer angle, and per-finding verification. If the user wants a bigger model
+they will say so; spending their budget for them is not this skill's call.
 
 **If the `mcr-*` agents do not exist**, this skill was installed on its own
 (`npx skills add`) rather than as a plugin — the agents are a plugin-level
@@ -208,9 +207,15 @@ described three different ways:
     problem is real, is on a line this change touched, and is reachable.
   - `ultra`: spawn one `mcr-verify` per finding, in parallel, and take its
     verdict. `REFUTED` findings are dropped.
-- **Dropped** — did not survive. Keep the reason; you will list these.
+- **Minor** — real but small: nitpicks, style, naming, a missing test, anything
+  a reviewer marked `LOW` or hedged on. These do **not** get dropped and they do
+  not get verified either — that would cost more than they are worth. They go at
+  the bottom of the report, one line each, for the user to skim.
+- **Dropped** — did not survive verification. Only two things belong here: a
+  claim the code contradicts, and a problem that predates the change. "Too
+  minor" is never a reason to drop; that is what **Minor** is for.
 
-Two rules that make the report trustworthy:
+Three rules that make the report trustworthy:
 
 - Apply the same scepticism to every source. Codex being expensive does not
   make it right, and the cheap reviewer being cheap does not make it wrong — in
@@ -218,6 +223,10 @@ Two rules that make the report trustworthy:
 - When reviewers **contradict** each other on the same lines, do not average
   them. Read the code, decide, and put the disagreement in the report — the
   places where good reviewers split are exactly where the user should look.
+- **Nothing a reviewer raised disappears silently.** Every finding lands in one
+  of the buckets above, and a dropped one carries its reason. The user should
+  be able to tell what was found from what survived; deciding for them which
+  small thing was not worth mentioning is exactly how a real problem gets lost.
 
 ## Step 5 — report
 
@@ -243,6 +252,10 @@ Reviewers: Claude <n sub-agents> · Codex <effort> · OpenCode <model><· ponyta
 ## ⚖️ Reviewers disagreed (<k>)
 - `path/file.py:44` — Codex calls it a race; mcr-correctness says the caller
   holds the lock. <Your call, and why.>
+
+## 🔹 Minor (<q>)
+- `path/file.py:12` — [mcr-correctness] variable shadows the outer `items`.
+- `path/api.ts:77` — [OpenCode] new branch has no test.
 
 ## ⚪ Dropped (<j>)
 - [Codex] `path/x.py:12` — pre-existing, not introduced by this change

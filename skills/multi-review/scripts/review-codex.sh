@@ -54,13 +54,16 @@ PROMPT="You are a senior code reviewer. ${SCOPE_LINE}
 
 ${ANGLE}
 
-Report only problems that are genuinely wrong: logic bugs, security holes, data
-loss or corruption, resource leaks, broken error handling, race conditions,
-violations of the project rules below. Do NOT report: pre-existing problems on
-lines this change did not touch, pure style or naming, missing tests, or
-anything a linter or type checker already catches. Do not run the build or the
-test suite. If nothing is genuinely wrong, return an empty findings list — an
-empty list is a valid and often correct answer.${CTX}"
+Report everything you would raise in a real review: logic bugs, security holes,
+data loss or corruption, resource leaks, broken error handling, race
+conditions, violations of the project rules below — and the small stuff too,
+style, naming, a missing test, a nitpick. Rank the small stuff last, at P3,
+rather than leaving it out: a minor point that turns out to matter is a worse
+loss than a line the reader skips.
+
+The one thing to leave out is pre-existing problems on lines this change did
+not touch. Do not run the build or the test suite. If the change really is
+clean, say so — that is a valid and often correct answer.${CTX}"
 
 # `codex exec review` ignores --output-schema (the subcommand has its own fixed
 # report format), so we take its native text and let the judge read it:
