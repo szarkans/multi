@@ -22,8 +22,9 @@ At the end the main agent collects everyone's findings, checks the ones only a
 single reviewer raised, throws out the false positives, and hands you one
 report.
 
-You can just write what you want checked — `/mcr:multi-review проверь миграции,
-там точно race`. The text goes to all three reviewers as-is.
+You can just write what you want checked — `/mcr:multi-review look at the
+migrations, I'm sure there's a race`. The text goes to all three reviewers
+as-is, and gets answered first in the report.
 
 OpenCode's model is configurable, and so is Codex's effort. Claude has no
 effort knob, but the sub-agents' model is an argument: Sonnet by default, and
