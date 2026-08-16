@@ -4,7 +4,7 @@
 
 ## Human Readable
 
-soo basically its is what name implies - multi code-review. it adds two more layers to you code reviews:
+soo basically its is what name implies - multi code-review. it adds two more layers (on top of Claude's code review) to you code reviews:
 1. Codex - chatgpt is very good at coed-review. you need to have installed codex cli
 2. (optional) opencode - by default its DeepSeek V4 Flash (said to be good at bug-hunting). Need OpenCode Go tho, but you can try with free models (or even with good ones like Kimi K3 and etc)
 3. (optional) [ponytail](https://github.com/DietrichGebert/ponytail) review for overengeneering. just read ponytail plugin desc, its kinda cool
