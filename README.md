@@ -4,54 +4,24 @@
 
 ## Human Readable
 
-The plugin adds code review by 2–3 models, plus an optional
-[ponytail-review](https://github.com/DietrichGebert/ponytail) lens.
+soo basically its is what name implies - multi code-review. it adds two more layers to you code reviews:
+1. Codex - chatgpt is very good at coed-review. you need to have installed codex cli
+2. (optional) opencode - by default its DeepSeek V4 Flash (said to be good at bug-hunting). Need OpenCode Go tho, but you can try with free models (or even with good ones like Kimi K3 and etc)
+3. (optional) [ponytail](https://github.com/DietrichGebert/ponytail) review for overengeneering. just read ponytail plugin desc, its kinda cool
 
-When you run the command, these start in parallel:
-
-- **Claude** — its own review sub-agents (Sonnet), not the built-in `/code-review`
-- **Codex** — headless review (`codex exec review`), in the background
-- **OpenCode** — headless, review instructions in the prompt, in the background
-
-`--ponytail` adds the lens on top; it is off unless you ask.
-
-All three get the same diff **and the same project rules** — your `CLAUDE.md`,
-`AGENTS.md`, and the `.claude/rules/*.md` files matching the changed paths.
-
-At the end the main agent collects everyone's findings, checks the ones only a
-single reviewer raised, throws out the false positives, and hands you one
-report.
-
-You can just write what you want checked — `/mcr:multi-review look at the
-migrations, I'm sure there's a race`. The text goes to all three reviewers
-as-is, and gets answered first in the report.
-
-OpenCode's model is configurable, and so is Codex's effort. Claude has no
-effort knob, but the sub-agents' model is an argument: Sonnet by default, and
-the mode decides how many of them run.
-
-**Install** — pick one:
-
+install
 ```bash
-# Claude Code marketplace — the full thing
 claude plugin marketplace add szarkans/multi-code-review
 claude plugin install mcr@szarkans-skills
 
-# npx skills — the skill only, works in any agent that reads SKILL.md
+or
 npx skills add szarkans/multi-code-review
 
-# git clone into the skills dir — the full thing, auto-loads, easy to hack on
+or
 git clone https://github.com/szarkans/multi-code-review ~/.claude/skills/mcr
 ```
 
-Restart Claude Code, then `/mcr:multi-review` (or `/multi-review` after the
-npx install). The npx route brings the skill and its scripts but not the
-review sub-agents — those are a plugin-level component, so on that route the
-Claude side falls back to generic sub-agents.
-
-Codex must be installed and logged in (`codex login`) — without it the plugin
-stops instead of pretending to be a multi-model review. OpenCode and ponytail
-are optional; missing ones are skipped.
+then restart claude code and `/mcr:multi-review [args]` should do the trick. happy building!
 
 ---
 
