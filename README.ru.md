@@ -32,7 +32,7 @@ git clone https://github.com/szarkans/multi-code-review ~/.claude/skills/mcr
 
 ---
 
-## AI Generated README
+## Точно не ИИшное описание плагина
 
 > Три модели читают один и тот же дифф с одними и теми же правилами проекта.
 > Claude Code сводит их находки в один отчёт.
