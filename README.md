@@ -1,205 +1,166 @@
-# Multi Code Review
+# Multi Code Review (`mcr`)
 
-> Consensus code review: **Claude + OpenAI Codex** (and optionally **Google
-> Antigravity / Gemini**) review the same diff in parallel, then their findings
-> are reconciled into one trustworthy report.
+[Русская версия →](README.ru.md)
 
-[Русская версия →](README.ru.md) · [中文版 →](README.zh.md)
+## Human Readable
 
-One model reviewing your code can hallucinate an issue — or miss a real one.
-Independent models reviewing the **same diff at the same time** catch more, and
-the issues they *agree* on are the ones worth fixing first. This skill runs the
-reviewers in parallel, cross-verifies every finding only one model raised, drops
-the false positives, and gives you a single ranked report.
+The plugin adds code review by 2–3 models, plus an optional
+[ponytail-review](https://github.com/DietrichGebert/ponytail) lens.
 
-## How it works
+When you run the command, these start in parallel:
+
+- **Claude** — its own review sub-agents (Sonnet), not the built-in `/code-review`
+- **Codex** — headless review (`codex exec review`), in the background
+- **OpenCode** — headless, review instructions in the prompt, in the background
+
+All three get the same diff **and the same project rules** — your `CLAUDE.md`,
+`AGENTS.md`, and the `.claude/rules/*.md` files matching the changed paths.
+
+At the end the main agent collects everyone's findings, checks the ones only a
+single reviewer raised, throws out the false positives, and hands you one
+report.
+
+OpenCode's model is configurable, and so is Codex's effort. Claude has no
+effort knob here — the mode decides how many sub-agents run, and they are
+always Sonnet.
+
+**Install:**
+
+```bash
+git clone https://github.com/szarkans/multi-code-review ~/.claude/skills/mcr
+```
+
+Restart Claude Code and run `/mcr:review`. Codex must be installed and logged
+in (`codex login`) — without it the plugin stops instead of pretending to be a
+multi-model review. OpenCode and ponytail are optional; missing ones are
+skipped.
+
+---
+
+## AI Generated README
+
+> Three models review the same diff with the same project rules. Claude judges
+> their findings into one ranked report.
+
+One model reviewing your code invents problems that aren't there and walks past
+ones that are. Independent models disagree — and the disagreement is the useful
+part. `mcr` runs up to three reviewers over an identical diff, checks every
+finding only one of them raised, drops what doesn't survive, and hands you one
+report ordered by what actually matters.
 
 ```
-                 ┌────────────────────────┐
-        ┌───────▶│ Claude  (/code-review) │─────┐
-        │        └────────────────────────┘     │
- same   │        ┌────────────────────────┐     ▼        ┌─────────────────┐
- diff ──┼───────▶│ Codex   (codex exec)   │──▶ merge ────▶│ consensus report│
-        │        └────────────────────────┘     ▲        └─────────────────┘
-        │        ┌────────────────────────┐     │
-        └───────▶│ Antigravity (agy)*     │─────┘
-                 └────────────────────────┘   * optional third reviewer
+                  ┌──────────────────────────────┐
+      ┌──────────▶│ Claude sub-agents (Sonnet)    │──────┐
+      │           │ correctness · security · design│      │
+ same │           └──────────────────────────────┘      ▼
+ diff │           ┌──────────────────────────────┐   ┌────────┐   ┌────────┐
+   +  ├──────────▶│ OpenAI Codex  (codex exec)    │──▶│ Claude │──▶│ report │
+project│          └──────────────────────────────┘   │ judges │   └────────┘
+ rules │          ┌──────────────────────────────┐   └────────┘
+      └──────────▶│ OpenCode (any cheap model)*   │──────┘
+                  └──────────────────────────────┘   * optional third reviewer
 ```
 
-1. **Scope is settled** — uncommitted changes (default), branch vs base, or a
-   single commit. All reviewers look at exactly the same range.
-2. **Reviewers launch in parallel** — Codex runs in the background at `xhigh`
-   reasoning; Antigravity (if installed) runs `Gemini 3.1 Pro (High)` inside a
-   disposable git worktree so it can never touch your real repo; Claude reviews
-   meanwhile.
-3. **Findings are merged** into confidence buckets:
-   - ✅ **Unanimous** — all three reviewers flagged it (highest confidence)
-   - 🔷 **Majority** — two of three agree (the pair is named)
-   - 🔸 **Single-source, verified** — one reviewer raised it, and the code was
-     opened and checked before it reached you
-   - ⚪ **Dropped** — false positives, listed with the reason they were dropped
-4. **Report-only by default** — no edits, no PR comments; you decide what to do.
-   An opt-in **loop mode** instead fixes verified findings and re-reviews until
-   the reviewers go quiet (bounded, 3 rounds by default).
+The reviewers **propose**. They don't vote and they don't get the last word —
+Claude reads the cited code and decides. Two of the three are cheap and
+external, so your Claude budget goes into judging rather than reading.
 
-## Requirements
+### What makes it different from a single-model review
 
-| Dependency | Role | Required? |
+- **Every reviewer gets the project's rules.** `CLAUDE.md`, `AGENTS.md`, and the
+  `.claude/rules/*.md` files matching the changed paths are collected and
+  injected into all three. External reviewers that don't know your conventions
+  spend their findings re-litigating settled decisions; these ones don't.
+- **Findings only one reviewer raised get checked** against the real code
+  before you see them — the cited lines are opened, the guard is looked for, and
+  `git` decides whether the problem is new or pre-existing.
+- **Disagreements are surfaced, not averaged.** Where good reviewers split is
+  where you should look.
+- **Missing reviewers degrade honestly.** An absent backend is named in the
+  report, never silently dropped.
+
+### Install
+
+```bash
+claude plugin marketplace add szarkans/multi-code-review
+claude plugin install mcr@szarkans-skills
+```
+
+Or clone it straight into your skills directory, where it auto-loads:
+
+```bash
+git clone https://github.com/szarkans/multi-code-review ~/.claude/skills/mcr
+```
+
+### Requirements
+
+| | | |
 |---|---|---|
-| [Claude Code](https://code.claude.com) or any [Agent Skills](https://agentskills.io)-compatible agent | Host + first reviewer | ✅ yes |
-| [OpenAI Codex CLI](https://github.com/openai/codex), logged in | Second reviewer | ✅ yes — the skill **aborts without it** (a "multi" review with one model is pointless) |
-| Google Antigravity CLI (`agy` ≥ 1.0.15), logged in | Third reviewer (Gemini) | ⬜ optional |
-| `git` | Diffs, scopes, worktree isolation | ✅ yes |
+| **Claude Code** | required | The judge and the sub-agent reviewers. |
+| **[OpenAI Codex CLI](https://github.com/openai/codex)** | **required** | The second model. Must be installed and logged in (`codex login`). Without it there is no multi-model review, and the skill stops instead of pretending. |
+| **[OpenCode](https://opencode.ai)** | optional | The third reviewer slot — any model you have. Missing or broken → skipped with a note. |
+| **[ponytail](https://github.com/DietrichGebert/ponytail)** | optional | A fourth *lens*, not a fourth reviewer: `ponytail-review` hunts over-engineering only. Its findings get their own section and never mix with defect findings. |
 
-Setting up Codex:
+Availability is probed by a shell script whose output is injected into the
+skill before the model reads it, so the check costs zero tokens and stores no
+state.
 
-```bash
-npm install -g @openai/codex
-codex login
-```
-
-The skill probes each reviewer **once** and caches the result in
-`~/.config/multi-code-review/state.json` — later runs don't re-check. If
-Antigravity isn't installed, you're told once that it's an optional extra, and
-it is never mentioned again unless you explicitly ask ("with antigravity" /
-"re-check antigravity").
-
-## Install
-
-### Claude Code — via plugin marketplace (recommended)
+### Usage
 
 ```
-/plugin marketplace add szarkans/multi-code-review
-/plugin install multi-code-review@szarkans-skills
+/mcr:review                      # normal mode, uncommitted changes
+/mcr:review quick                # cheapest pass — external reviewers only
+/mcr:review ultra                # everything, plus per-finding verification
+/mcr:review branch main          # this branch against main
+/mcr:review commit a1b2c3d       # one commit
 ```
 
-### Any agent — via the skills CLI
+Claude also reaches for it on its own when you ask for a review, a second
+opinion, or a cross-check before a PR.
 
-[`npx skills`](https://github.com/vercel-labs/skills) installs the skill into
-Claude Code, Codex CLI, Cursor, OpenCode, Gemini CLI, and dozens of other
-agents at once:
+#### Modes
 
-```bash
-npx skills add szarkans/multi-code-review
-```
-
-Or target specific agents:
-
-```bash
-npx skills add szarkans/multi-code-review -a claude-code -a cursor -a opencode
-```
-
-### Manual
-
-```bash
-git clone https://github.com/szarkans/multi-code-review
-mkdir -p ~/.claude/skills
-cp -r multi-code-review/skills/multi-code-review ~/.claude/skills/
-```
-
-(For other agents, copy to that agent's skills directory instead.)
-
-## Usage
-
-Just ask for it in plain language — the skill triggers itself:
-
-```
-multi-code-review my uncommitted changes
-have Codex and Claude both review this branch against master
-consensus review at max effort before I open the PR
-cross-check commit abc1234 with codex
-```
-
-**Effort** (`low` … `max`, default `high`) drives the Claude side; Codex always
-runs at `xhigh`, Antigravity always runs `Gemini 3.1 Pro (High)`.
-
-**Scopes**: uncommitted (default) · branch vs base · single commit.
-
-**Loop mode** (opt-in — the skill will edit your working tree):
-
-```
-multi-code-review, loop until clean
-multi-code-review loop5 my branch vs main
-```
-
-Fixes only *verified* findings, re-reviews, stops when a round brings nothing
-new or the cap (default 3 rounds) is hit. Never commits — changes stay in the
-working tree for you to review.
-
-**Antigravity control**:
-
-```
-multi-code-review with antigravity      ← re-probe / enable the third reviewer
-multi-code-review without antigravity  ← skip it for this run only
-```
-
-## Running in agents other than Claude Code
-
-The skill is written against the open [Agent Skills](https://agentskills.io)
-format, so any compatible host can run it. The one Claude-Code-specific piece —
-the built-in `/code-review` — has a documented fallback: in other hosts, the
-host model itself performs that side of the review with the same criteria as
-the Codex prompt. Everything else (background reviewers, worktree isolation,
-merge, verification) is plain `git` + shell and works anywhere.
-
-| Host | Install | Notes |
+| mode | reviewers | cost |
 |---|---|---|
-| **Claude Code** | `/plugin marketplace add szarkans/multi-code-review` | Native: uses built-in `/code-review` as the Claude side |
-| **Cursor / OpenCode / Gemini CLI / others** | `npx skills add szarkans/multi-code-review` | Host model takes the first-reviewer role |
-| **Codex CLI as host** | `npx skills add szarkans/multi-code-review -a codex` | Works, but the host and the second reviewer are then the same model family — you lose some independence; prefer a non-OpenAI host |
+| `quick` | Codex (`low`) + OpenCode | Cheapest. No Claude sub-agents at all — less of your budget than a plain single-model review. |
+| `normal` *(default)* | Codex (`medium`) + OpenCode + correctness and security sub-agents + the ponytail lens | The PR pass. |
+| `ultra` | Codex (`high`) + an adversarial second Codex pass + OpenCode + correctness, security and design sub-agents + the ponytail lens, every surviving finding independently verified | Minutes and real money. Ask for it deliberately. |
 
-## State file
+> If ponytail mode is active, its `SubagentStart` hook injects the YAGNI ruleset
+> into *every* sub-agent, including the ones hunting bugs. Set
+> `PONYTAIL_SUBAGENT_MATCHER` to a regex that does not match `mcr-` to keep the
+> defect reviewers unbiased.
 
-`~/.config/multi-code-review/state.json` remembers which reviewers are
-known-good so runs stay fast:
+#### Configuration
 
-```json
-{ "codex": "ok", "antigravity": "skipped" }
+| variable | effect |
+|---|---|
+| `MCR_OPENCODE_MODEL` | Pin the third reviewer's model, e.g. `opencode/deepseek-v4-flash-free`. |
+| `MCR_OPENCODE_CANDIDATES` | Space-separated models to auto-pick from when the above is unset. |
+| `MCR_CONTEXT_MAX_BYTES` | Cap on the injected project rules (default 24000). |
+
+Report-only by default: no edits, no commits, no PR comments. An opt-in loop
+mode fixes and re-reviews until nothing new comes back, capped at three rounds.
+
+### Evaluating it
+
+`evals/` holds a recall harness. Each case names a real fix-commit; the runner
+checks the repo out at that commit, reverts the fix in source files only — so
+the diff under review is *the bug being introduced*, with tests and docs left
+at their fixed state — and runs the external reviewers over it.
+
+```bash
+evals/run.sh --repo ~/dev/some-repo --out /tmp/mcr-eval
 ```
 
-- Delete the file to force a full re-probe.
-- `"antigravity": "skipped"` means "not installed, user informed once, stop
-  asking" — flip it by saying "re-check antigravity" or by deleting the file.
+Grading is deliberately not automated: "did it find *this* bug" is a judgement
+a substring match gets wrong in both directions.
 
-## Example report
-
-```
-# 🔍 Multi-review — uncommitted · effort high
-Reviewers: Claude `/code-review high` · Codex `codex exec` (xhigh) · Antigravity `agy` (Gemini 3.1 Pro High)
-
-## ✅ Unanimous consensus — 3/3 reviewers (1)
-1. **High** `api/auth.py:120` — session token compared with `==`, timing-unsafe
-   All three flagged the non-constant-time comparison on a secret.
-
-## 🔷 Majority consensus — 2/3 reviewers (1)
-1. **[Claude + Codex] Med** `worker.py:88` — retry loop can double-charge on timeout
-
-## 🔸 Single-source, verified (1)
-- **[Antigravity] Med** `models.py:44` — nullable FK dereferenced without guard — verified: reproduced on empty fixture
-
-## ⚪ Dropped on verification (1)
-- [Codex] `utils.py:12` — pre-existing, not introduced by this change
-
-## Verdict
-3 confirmed issues (1 High). Fix the token comparison before merging.
-```
-
-## Repo layout
-
-```
-.claude-plugin/
-  plugin.json         ← plugin manifest
-  marketplace.json    ← this repo is also a Claude Code plugin marketplace
-skills/
-  multi-code-review/
-    SKILL.md          ← the skill itself (Agent Skills format)
-    evals/evals.json  ← behavioral test cases / executable spec
-```
-
-## Why this README looks AI-generated?
-
-Because it is lmao
+Known limitation of this method: reverting a fix shows the reviewer a guard
+being **removed**, which is easier to spot than a guard that was never written.
+Treat a high score here as proof the pipeline works, not as a measure of how
+these models do on fresh code.
 
 ## License
 
-[MIT](LICENSE).
+MIT © Sergei Shatrov

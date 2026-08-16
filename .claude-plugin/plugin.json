@@ -1,8 +1,8 @@
 {
-  "name": "multi-code-review",
+  "name": "mcr",
   "displayName": "Multi Code Review",
-  "version": "1.0.0",
-  "description": "Consensus code review by independent models: Claude + OpenAI Codex in parallel, with optional Google Antigravity (Gemini) as a third reviewer. Findings are cross-verified and merged into one report.",
+  "version": "2.0.0",
+  "description": "Multi-model code review: Claude sub-agents, OpenAI Codex, and a third cheap reviewer via OpenCode all read the same diff with the same project rules, then Claude judges their findings into one ranked report. Three review depths; missing reviewers degrade honestly instead of silently.",
   "author": {
     "name": "Sergei Shatrov",
     "url": "https://github.com/szarkans"
@@ -13,10 +13,10 @@
   "keywords": [
     "code-review",
     "codex",
-    "antigravity",
-    "gemini",
-    "consensus",
+    "opencode",
     "multi-model",
-    "review"
+    "consensus",
+    "review",
+    "sub-agents"
   ]
 }
