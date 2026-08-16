@@ -1,6 +1,6 @@
 # Multi Code Review (`mcr`)
 
-[English version →](README.md)
+[English version →](README.md) · [中文 →](README.zh.md)
 
 ## Human Readable
 
@@ -13,6 +13,8 @@
 - **Codex** — headless review (`codex exec review`), в фоне
 - **OpenCode** — headless, инструкция к ревью в промпте, в фоне
 
+`--ponytail` добавляет линзу сверху; по умолчанию она выключена.
+
 Все трое получают один и тот же дифф **и одни и те же правила проекта** — твои
 `CLAUDE.md`, `AGENTS.md` и те файлы из `.claude/rules/*.md`, что совпадают с
 изменёнными путями.
@@ -20,19 +22,32 @@
 В конце основной агент получает отчёт от всех, проверяет находки, которые
 поднял только кто-то один, выбрасывает ложняки и отдаёт тебе один отчёт.
 
-Модели OpenCode настраиваются, effort Codex — тоже. У Claude ручки effort тут
-нет: режим решает, сколько запустить суб-агентов, и они всегда Sonnet.
+Модели OpenCode настраиваются, effort Codex — тоже. У Claude ручки effort нет,
+но модель суб-агентов задаётся аргументом: по умолчанию Sonnet, режим решает,
+сколько их запустить.
 
-**Установка:**
+**Установка** — на выбор:
 
 ```bash
+# маркетплейс Claude Code — всё целиком
+claude plugin marketplace add szarkans/multi-code-review
+claude plugin install mcr@szarkans-skills
+
+# npx skills — только скилл, работает в любом агенте, читающем SKILL.md
+npx skills add szarkans/multi-code-review
+
+# клон в каталог скиллов — всё целиком, подхватывается сам, удобно править
 git clone https://github.com/szarkans/multi-code-review ~/.claude/skills/mcr
 ```
 
-Перезапустить Claude Code и вызвать `/mcr:review`. Codex должен быть установлен
-и залогинен (`codex login`) — без него плагин останавливается, а не притворяется
-мульти-модельным ревью. OpenCode и ponytail необязательны, отсутствующие
-пропускаются.
+Перезапустить Claude Code и вызвать `/mcr:multi-review` (или `/multi-review`
+после установки через npx). Путь через npx приносит скилл и его скрипты, но не
+суб-агентов — они компонент уровня плагина, поэтому там сторона Claude
+откатывается на обычных суб-агентов.
+
+Codex должен быть установлен и залогинен (`codex login`) — без него плагин
+останавливается, а не притворяется мульти-модельным ревью. OpenCode и ponytail
+необязательны, отсутствующие пропускаются.
 
 ---
 
@@ -79,16 +94,16 @@ git clone https://github.com/szarkans/multi-code-review ~/.claude/skills/mcr
 
 ### Установка
 
-```bash
-claude plugin marketplace add szarkans/multi-code-review
-claude plugin install mcr@szarkans-skills
-```
+| способ | что получаешь | команда |
+|---|---|---|
+| маркетплейс Claude Code | скилл + суб-агенты | `claude plugin marketplace add szarkans/multi-code-review`, затем `claude plugin install mcr@szarkans-skills` |
+| [`npx skills`](https://github.com/vercel-labs/skills) | только скилл и скрипты | `npx skills add szarkans/multi-code-review` |
+| git clone | скилл + суб-агенты, подхватывается сам, проще всего править | `git clone https://github.com/szarkans/multi-code-review ~/.claude/skills/mcr` |
 
-Или клоном прямо в каталог скиллов — оттуда он подхватывается сам:
-
-```bash
-git clone https://github.com/szarkans/multi-code-review ~/.claude/skills/mcr
-```
+Суб-агенты — компонент уровня плагина, поэтому через `npx skills` сторона
+Claude откатывается на обычных суб-агентов. Всё остальное — проба, Codex,
+OpenCode, вклейка правил проекта, судейство — работает одинаково, потому что
+скрипты лежат внутри самого скилла.
 
 ### Что нужно
 
@@ -105,11 +120,26 @@ git clone https://github.com/szarkans/multi-code-review ~/.claude/skills/mcr
 ### Как пользоваться
 
 ```
-/mcr:review                      # обычный режим, незакоммиченные изменения
-/mcr:review quick                # самый дешёвый проход — только внешние ревьюверы
-/mcr:review ultra                # всё сразу, с проверкой каждой находки
-/mcr:review branch main          # ветка против main
-/mcr:review commit a1b2c3d       # один коммит
+/mcr:multi-review                    # обычный режим, незакоммиченные изменения
+/mcr:multi-review quick              # самый дешёвый проход — только внешние ревьюверы
+/mcr:multi-review ultra              # всё сразу, с проверкой каждой находки
+/mcr:multi-review branch main        # ветка против main
+/mcr:multi-review commit a1b2c3d     # один коммит
+```
+
+После установки через `npx skills` команда называется `/multi-review`.
+
+Аргументы, все необязательные и опознаются по значению, а не по позиции:
+
+| | |
+|---|---|
+| `haiku` `sonnet` `opus` `fable` | модель для суб-агентов Claude |
+| `low` `medium` `high` `xhigh` `max` | ризонинг-эффорт Codex |
+| `--ponytail` | добавить линзу на переусложнение |
+
+```
+/mcr:multi-review opus max ultra --ponytail
+/mcr:multi-review sonnet low quick
 ```
 
 Claude берёт скилл и сам, когда просишь ревью, второе мнение или проверку
@@ -120,8 +150,12 @@ Claude берёт скилл и сам, когда просишь ревью, в
 | режим | ревьюверы | цена |
 |---|---|---|
 | `quick` | Codex (`low`) + OpenCode | Дешевле всего. Суб-агентов Claude нет вообще — тратит меньше твоего бюджета, чем обычное одномодельное ревью. |
-| `normal` *(по умолчанию)* | Codex (`medium`) + OpenCode + суб-агенты на корректность и безопасность + линза ponytail | Проход перед PR. |
-| `ultra` | Codex (`high`) + второй, adversarial проход Codex + OpenCode + суб-агенты на корректность, безопасность и дизайн + линза ponytail, каждая выжившая находка проверяется отдельно | Минуты и реальные деньги. Включать осознанно. |
+| `normal` *(по умолчанию)* | Codex (`medium`) + OpenCode + суб-агенты на корректность и безопасность | Проход перед PR. |
+| `ultra` | Codex (`high`) + второй, adversarial проход Codex + OpenCode + суб-агенты на корректность, безопасность и дизайн, каждая выжившая находка проверяется отдельно | Минуты и реальные деньги. Включать осознанно. |
+
+`--ponytail` добавляет линзу на простоту к любому режиму. Автоматически она не
+включается никогда: она отвечает на другой вопрос, поэтому идёт отдельной
+секцией и не смешивается с находками про дефекты.
 
 > Если режим ponytail включён, его хук `SubagentStart` вливает правила YAGNI во
 > *все* суб-агенты, включая тех, кто ищет баги. Задай `PONYTAIL_SUBAGENT_MATCHER`
@@ -135,6 +169,7 @@ Claude берёт скилл и сам, когда просишь ревью, в
 | `MCR_OPENCODE_MODEL` | Жёстко задать модель третьего ревьювера, например `opencode/deepseek-v4-flash-free`. |
 | `MCR_OPENCODE_CANDIDATES` | Список моделей через пробел, из которых выбрать автоматически, если предыдущая не задана. |
 | `MCR_CONTEXT_MAX_BYTES` | Потолок на объём вклеиваемых правил (по умолчанию 24000). |
+| `MCR_REVIEWER_MODEL` | Модель для суб-агентов Claude. По умолчанию Sonnet — стая ревьюверов не то место, куда стоит вкладывать дорогую модель, глубина окупается в судействе. В `ultra` берётся Opus, если переменная не задана. |
 
 По умолчанию только отчёт: ничего не правится, не коммитится, комментарии в PR
 не пишутся. Есть режим цикла — правит и перепроверяет, пока не перестанет

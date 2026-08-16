@@ -1,5 +1,5 @@
 ---
-name: review
+name: multi-review
 description: >-
   Review a diff with three independent models at once — Claude sub-agents,
   OpenAI Codex, and a third cheap reviewer via OpenCode — then judge their
@@ -10,21 +10,22 @@ description: >-
   "cross-check my changes". Prefer this over a single-model review whenever
   more than one reviewer is available.
 allowed-tools: Bash, Read, Grep, Glob, Agent, TodoWrite
-argument-hint: "[quick|normal|ultra] [uncommitted|branch <base>|commit <sha>]"
+argument-hint: "[haiku|sonnet|opus|fable] [low|medium|high|xhigh|max] [--ponytail] [quick|normal|ultra] [uncommitted|branch <base>|commit <sha>]"
 ---
 
 # Multi-model code review
 
 Reviewer availability, checked before you read this:
 
-!`sh -c 'P="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/skills/mcr}/scripts/probe.sh"; if [ -x "$P" ]; then "$P"; else echo "probe: NOT FOUND at $P — run the probe yourself before Step 0"; fi'`
+!`sh -c 'for p in "$CLAUDE_PLUGIN_ROOT/skills/multi-review/scripts" "$HOME/.claude/skills/mcr/skills/multi-review/scripts" "$HOME/.claude/skills/multi-review/scripts" "./.claude/skills/multi-review/scripts"; do [ -x "$p/probe.sh" ] && { "$p/probe.sh"; echo "scripts-dir: $p"; exit 0; }; done; echo "probe: NOT FOUND — locate scripts/probe.sh in this skill and run it yourself"'`
 
 Three models look at the **same diff with the same project rules**, and one
 judge — you — decides what reaches the user. The reviewers propose; they do not
 vote and they do not get the last word. Two of them are cheap and external, so
 the user's Claude budget goes almost entirely into judging rather than reading.
 
-`$SCRIPTS` below means `${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/skills/mcr}/scripts`.
+`$SCRIPTS` below means whatever the probe printed as `scripts-dir:` — the
+scripts ship inside this skill, so they are there under every install method.
 
 ## Step 0 — the gate
 
@@ -40,25 +41,47 @@ probe.
 - **`opencode: MISSING` or `NO USABLE MODEL` → carry on with two reviewers.**
   Say once, in the final report's reviewer line, that the third slot was empty
   and why. Never block on it, and never probe for it again during this run.
-- **`ponytail: OK` → you get a fourth lens** in `normal` and `ultra` (see
-  Step 3). `ponytail: absent` → skip it silently; it is a bonus, not a
-  dependency, and its absence is not worth a line in the report.
+- **`ponytail: OK` → the `--ponytail` lens is available** (Step 3). It is never
+  automatic. `ponytail: absent` → the flag has nothing to run; say so only if
+  the user asked for it.
 - **`repo: NOT A GIT REPOSITORY` → stop.** Everything here is diff-scoped.
 - **`dirty-files: 0` with no branch/commit scope given → stop.** There is
   nothing to review; say so.
 
-## Step 1 — mode and scope
+## Step 1 — arguments, mode, scope
+
+**Arguments.** `$1` is the model for the Claude review sub-agents, `$2` is
+Codex's reasoning effort, and `--ponytail` adds the simplicity lens. Every one
+is optional. Match them by *value* rather than by position — the vocabularies
+don't overlap, so `/mcr:multi-review high ultra` means what it looks like:
+
+| token | meaning | default |
+|---|---|---|
+| `haiku` `sonnet` `opus` `fable` | model for the Claude reviewers | Sonnet, or `MCR_REVIEWER_MODEL`, or Opus in `ultra` |
+| `low` `medium` `high` `xhigh` `max` | Codex reasoning effort | set by the mode |
+| `--ponytail` | add the over-engineering lens (Step 3) | off |
+| `quick` `normal` `ultra` | depth | `normal` |
+| `uncommitted` · `branch <base>` · `commit <sha>` | what to review | `uncommitted` |
+
+An explicit argument always beats the mode's default: `ultra low` really does
+mean the full fleet with Codex thinking cheaply.
+
+If the model argument is `haiku`: say `Серьёзно?` to the user — in whatever
+language the conversation is in — and then stop. Nothing else, no explanation.
+Once the user confirms, run the review on Haiku exactly as asked, normally and
+without further comment. If they change their mind, take the model they name
+instead.
 
 **Mode** — from the user's words, defaulting to `normal`:
 
 | | reviewers | use when |
 |---|---|---|
 | `quick` | Codex (effort `low`) + OpenCode. No Claude sub-agents. | The everyday pass. Cheapest — replaces a plain single-model review and costs the user almost no Claude tokens. |
-| `normal` | Codex (`medium`) + OpenCode + `mcr-correctness` + `mcr-security` + the ponytail lens if present | Default. Anything going into a PR. |
-| `ultra` | Codex (`high`) + a second adversarial Codex pass + OpenCode + `mcr-correctness` + `mcr-security` + `mcr-design` + the ponytail lens, and every surviving finding independently verified | Before merging something that is hard to undo, or when the user asks for depth. Minutes and real money — do not pick it on your own. |
+| `normal` | Codex (`medium`) + OpenCode + `mcr-correctness` + `mcr-security` | Default. Anything going into a PR. |
+| `ultra` | Codex (`high`) + a second adversarial Codex pass + OpenCode + `mcr-correctness` + `mcr-security` + `mcr-design`, and every surviving finding independently verified | Before merging something that is hard to undo, or when the user asks for depth. Minutes and real money — do not pick it on your own. |
 
-The user can drop the ponytail lens for one run ("без ponytail", "skip
-simplicity") without changing modes.
+The ponytail lens is orthogonal to the mode: `--ponytail` adds it to any of
+them.
 
 Words like "быстро", "по-быстрому", "just a quick look" → `quick`. "Тщательно",
 "максимально", "ultra", "не жалей" → `ultra`. Ambiguous → `normal`, and say
@@ -108,10 +131,35 @@ different `--out`); it challenges the approach instead of the lines.
 **Then, per mode, spawn the Claude reviewers in parallel in a single message**
 (`mcr-correctness` and `mcr-security` for `normal`; plus `mcr-design` for
 `ultra`; none for `quick`). Give each one the scope, the base/sha, and the
-contents of `/tmp/mcr-ctx.md`. They are Sonnet by definition — never override
-their model upward.
+contents of `/tmp/mcr-ctx.md`.
 
-**The ponytail lens** (`normal` and `ultra`, only when the probe found it).
+**Which model they run on**, first match wins:
+
+1. the model argument, if the user gave one;
+2. `MCR_REVIEWER_MODEL`, which the probe prints as `reviewer-model:`;
+3. `opus` when the mode is `ultra` — that mode exists for changes that are
+   expensive to get wrong;
+4. otherwise the agent files' own default, Sonnet.
+
+Sonnet is the default on purpose: a fleet of reviewers is the wrong place to
+spend the expensive model, and depth pays off in the judging, which happens
+here in the main thread. Never quietly upgrade `quick` or `normal`.
+
+**If the `mcr-*` agents do not exist**, this skill was installed on its own
+(`npx skills add`) rather than as a plugin — the agents are a plugin-level
+component and did not come along. Spawn `general-purpose` sub-agents instead
+and give them the review brief inline: one for correctness (logic, state,
+error paths, races), one for security (authz, injection, secrets, data
+exposure), each told to report only defects on changed lines with a confidence
+of 80+, in the `FILE:LINE | SEVERITY | claim` shape. Say once in the report
+that the specialised reviewers were unavailable, and mention that installing
+the plugin brings them.
+
+**The ponytail lens** — only when the user passed `--ponytail` *and* the probe
+found it. It is off by default because it answers a different question than the
+rest of the pipeline, and most reviews don't want it mixed in. If `--ponytail`
+was passed but the probe says `absent`, say so in one line and carry on.
+
 Invoke the `ponytail:ponytail-review` skill against the same scope. It hunts one
 thing — over-engineering — and says so itself: what to delete, what the standard
 library already ships, which abstraction has exactly one implementation. Run it

@@ -13,7 +13,7 @@
 set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SCRIPTS="$(cd "$HERE/../scripts" && pwd)"
+SCRIPTS="$(cd "$HERE/../skills/multi-review/scripts" && pwd)"
 
 REPO=""; OUT=""; ONLY=""; EFFORT=low; OC_MODEL="${MCR_OPENCODE_MODEL:-opencode/deepseek-v4-flash-free}"; USE_CTX=1
 while [ $# -gt 0 ]; do

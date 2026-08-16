@@ -1,6 +1,6 @@
 # Multi Code Review (`mcr`)
 
-[Русская версия →](README.ru.md)
+[Русская версия →](README.ru.md) · [中文 →](README.zh.md)
 
 ## Human Readable
 
@@ -13,6 +13,8 @@ When you run the command, these start in parallel:
 - **Codex** — headless review (`codex exec review`), in the background
 - **OpenCode** — headless, review instructions in the prompt, in the background
 
+`--ponytail` adds the lens on top; it is off unless you ask.
+
 All three get the same diff **and the same project rules** — your `CLAUDE.md`,
 `AGENTS.md`, and the `.claude/rules/*.md` files matching the changed paths.
 
@@ -21,19 +23,31 @@ single reviewer raised, throws out the false positives, and hands you one
 report.
 
 OpenCode's model is configurable, and so is Codex's effort. Claude has no
-effort knob here — the mode decides how many sub-agents run, and they are
-always Sonnet.
+effort knob, but the sub-agents' model is an argument: Sonnet by default, and
+the mode decides how many of them run.
 
-**Install:**
+**Install** — pick one:
 
 ```bash
+# Claude Code marketplace — the full thing
+claude plugin marketplace add szarkans/multi-code-review
+claude plugin install mcr@szarkans-skills
+
+# npx skills — the skill only, works in any agent that reads SKILL.md
+npx skills add szarkans/multi-code-review
+
+# git clone into the skills dir — the full thing, auto-loads, easy to hack on
 git clone https://github.com/szarkans/multi-code-review ~/.claude/skills/mcr
 ```
 
-Restart Claude Code and run `/mcr:review`. Codex must be installed and logged
-in (`codex login`) — without it the plugin stops instead of pretending to be a
-multi-model review. OpenCode and ponytail are optional; missing ones are
-skipped.
+Restart Claude Code, then `/mcr:multi-review` (or `/multi-review` after the
+npx install). The npx route brings the skill and its scripts but not the
+review sub-agents — those are a plugin-level component, so on that route the
+Claude side falls back to generic sub-agents.
+
+Codex must be installed and logged in (`codex login`) — without it the plugin
+stops instead of pretending to be a multi-model review. OpenCode and ponytail
+are optional; missing ones are skipped.
 
 ---
 
@@ -81,16 +95,16 @@ external, so your Claude budget goes into judging rather than reading.
 
 ### Install
 
-```bash
-claude plugin marketplace add szarkans/multi-code-review
-claude plugin install mcr@szarkans-skills
-```
+| method | what you get | command |
+|---|---|---|
+| Claude Code marketplace | skill + review sub-agents | `claude plugin marketplace add szarkans/multi-code-review` then `claude plugin install mcr@szarkans-skills` |
+| [`npx skills`](https://github.com/vercel-labs/skills) | skill + scripts only | `npx skills add szarkans/multi-code-review` |
+| git clone | skill + review sub-agents, auto-loads, easiest to modify | `git clone https://github.com/szarkans/multi-code-review ~/.claude/skills/mcr` |
 
-Or clone it straight into your skills directory, where it auto-loads:
-
-```bash
-git clone https://github.com/szarkans/multi-code-review ~/.claude/skills/mcr
-```
+The sub-agents are a plugin-level component, so the `npx skills` route falls
+back to generic sub-agents for the Claude side. Everything else — the probe,
+Codex, OpenCode, the project-rule injection, the judging — works identically,
+because the scripts ship inside the skill.
 
 ### Requirements
 
@@ -108,11 +122,26 @@ state.
 ### Usage
 
 ```
-/mcr:review                      # normal mode, uncommitted changes
-/mcr:review quick                # cheapest pass — external reviewers only
-/mcr:review ultra                # everything, plus per-finding verification
-/mcr:review branch main          # this branch against main
-/mcr:review commit a1b2c3d       # one commit
+/mcr:multi-review                    # normal mode, uncommitted changes
+/mcr:multi-review quick              # cheapest pass — external reviewers only
+/mcr:multi-review ultra              # everything, plus per-finding verification
+/mcr:multi-review branch main        # this branch against main
+/mcr:multi-review commit a1b2c3d     # one commit
+```
+
+Installed via `npx skills`, it is `/multi-review`.
+
+Arguments, all optional and matched by value rather than position:
+
+| | |
+|---|---|
+| `haiku` `sonnet` `opus` `fable` | model for the Claude review sub-agents |
+| `low` `medium` `high` `xhigh` `max` | Codex reasoning effort |
+| `--ponytail` | add the over-engineering lens |
+
+```
+/mcr:multi-review opus max ultra --ponytail
+/mcr:multi-review sonnet low quick
 ```
 
 Claude also reaches for it on its own when you ask for a review, a second
@@ -123,8 +152,12 @@ opinion, or a cross-check before a PR.
 | mode | reviewers | cost |
 |---|---|---|
 | `quick` | Codex (`low`) + OpenCode | Cheapest. No Claude sub-agents at all — less of your budget than a plain single-model review. |
-| `normal` *(default)* | Codex (`medium`) + OpenCode + correctness and security sub-agents + the ponytail lens | The PR pass. |
-| `ultra` | Codex (`high`) + an adversarial second Codex pass + OpenCode + correctness, security and design sub-agents + the ponytail lens, every surviving finding independently verified | Minutes and real money. Ask for it deliberately. |
+| `normal` *(default)* | Codex (`medium`) + OpenCode + correctness and security sub-agents | The PR pass. |
+| `ultra` | Codex (`high`) + an adversarial second Codex pass + OpenCode + correctness, security and design sub-agents, every surviving finding independently verified | Minutes and real money. Ask for it deliberately. |
+
+`--ponytail` adds the simplicity lens to any mode. It is never automatic: it
+answers a different question than the rest of the pipeline, so it gets its own
+report section and never mixes with defect findings.
 
 > If ponytail mode is active, its `SubagentStart` hook injects the YAGNI ruleset
 > into *every* sub-agent, including the ones hunting bugs. Set
@@ -138,6 +171,7 @@ opinion, or a cross-check before a PR.
 | `MCR_OPENCODE_MODEL` | Pin the third reviewer's model, e.g. `opencode/deepseek-v4-flash-free`. |
 | `MCR_OPENCODE_CANDIDATES` | Space-separated models to auto-pick from when the above is unset. |
 | `MCR_CONTEXT_MAX_BYTES` | Cap on the injected project rules (default 24000). |
+| `MCR_REVIEWER_MODEL` | Model for the Claude review sub-agents. Default Sonnet — a fleet of reviewers is the wrong place to spend the expensive model, and depth pays off in the judging. `ultra` uses Opus unless this is set. |
 
 Report-only by default: no edits, no commits, no PR comments. An opt-in loop
 mode fixes and re-reviews until nothing new comes back, capped at three rounds.

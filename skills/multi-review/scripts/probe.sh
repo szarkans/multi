@@ -44,6 +44,12 @@ else
   say "opencode: MISSING (optional — third reviewer will be skipped)"
 fi
 
+# --- reviewer model -----------------------------------------------------
+# Sonnet by default: a fleet of reviewers is the wrong place to spend the
+# expensive model, and the judge (the main thread) is where depth pays off.
+# Override per-machine or per-run with MCR_REVIEWER_MODEL.
+say "reviewer-model: ${MCR_REVIEWER_MODEL:-sonnet (default)}"
+
 # --- ponytail (optional fourth lens) ------------------------------------
 # Not a reviewer backend: a Claude skill that hunts over-engineering only, and
 # says so itself. Worth adding as a separate lens, never as a vote on defects.
