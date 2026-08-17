@@ -1,8 +1,8 @@
 {
-  "name": "mcr",
-  "displayName": "Multi Code Review",
-  "version": "2.0.0",
-  "description": "Multi-model code review: Claude sub-agents, OpenAI Codex, and a third cheap reviewer via OpenCode all read the same diff with the same project rules, then Claude judges their findings into one ranked report. Three review depths; missing reviewers degrade honestly instead of silently.",
+  "name": "multi",
+  "displayName": "Multi",
+  "version": "3.0.0",
+  "description": "Several models on the same question at once — Claude sub-agents, OpenAI Codex and a cheap third via OpenCode. Review code (`code-review`), check whether the work is actually finished rather than finished-looking (`check-if-done`), or just ask all of them something (`ask`). Missing reviewers degrade honestly instead of silently.",
   "author": {
     "name": "Sergei Shatrov",
     "url": "https://github.com/szarkans"

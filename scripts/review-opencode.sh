@@ -15,7 +15,7 @@
 #   this in the background alongside Codex.
 set -uo pipefail
 
-TARGET=""; DIFF=""; OUT=""; CONTEXT=""; MODEL="${MCR_OPENCODE_MODEL:-}"; AGENT=""; PATHS=""; FOCUS_TEXT=""; FALLBACK=""
+TARGET=""; DIFF=""; OUT=""; CONTEXT=""; MODEL="${MULTI_OPENCODE_MODEL:-}"; AGENT=""; PATHS=""; FOCUS_TEXT=""; FALLBACK=""
 need() { [ "$1" -ge 2 ] || { echo "missing value for $2" >&2; exit 2; }; }
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -33,7 +33,7 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$OUT" ] || { echo "--out is required" >&2; exit 2; }
 [ -n "$TARGET" ] || { echo "--target is required" >&2; exit 2; }
-[ -n "$MODEL" ] || { echo "no model: set --model or MCR_OPENCODE_MODEL" >&2; exit 2; }
+[ -n "$MODEL" ] || { echo "no model: set --model or MULTI_OPENCODE_MODEL" >&2; exit 2; }
 case "$DIFF" in -*) echo "--diff must be a revision, not an option: $DIFF" >&2; exit 2 ;; esac
 
 PS=""
@@ -121,7 +121,7 @@ USED="$MODEL"
 # either CLI about remaining quota beforehand, so this is where we find out —
 # retry once on the free fallback, and only then give up.
 if ! usable && [ -n "$FALLBACK" ] && [ "$FALLBACK" != "$MODEL" ]; then
-  echo "[mcr] $MODEL produced nothing (exit $rc) — retrying on $FALLBACK" >&2
+  echo "[multi] $MODEL produced nothing (exit $rc) — retrying on $FALLBACK" >&2
   cp "$RAW" "${RAW}.first" 2>/dev/null
   attempt "$FALLBACK"; rc=$?
   USED="$FALLBACK"
@@ -136,5 +136,5 @@ if [ ! -s "$OUT" ]; then
     echo "NO PARSEABLE OUTPUT — model=$USED exit=$rc — see $RAW" > "$OUT"
   fi
 fi
-[ "$USED" = "$MODEL" ] || echo "[mcr] reviewed by fallback model $USED" >> "$OUT"
+[ "$USED" = "$MODEL" ] || echo "[multi] reviewed by fallback model $USED" >> "$OUT"
 exit $rc

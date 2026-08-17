@@ -22,8 +22,8 @@
 set -uo pipefail
 
 DIFF=""; PATHS=""
-MAX_TOTAL_BYTES="${MCR_CONTEXT_MAX_BYTES:-24000}"
-MAX_FILE_BYTES="${MCR_CONTEXT_MAX_FILE_BYTES:-8000}"
+MAX_TOTAL_BYTES="${MULTI_CONTEXT_MAX_BYTES:-24000}"
+MAX_FILE_BYTES="${MULTI_CONTEXT_MAX_FILE_BYTES:-8000}"
 
 need() { [ "$1" -ge 2 ] || { echo "missing value for $2" >&2; exit 2; }; }
 while [ $# -gt 0 ]; do

@@ -1,6 +1,6 @@
 ---
-name: mcr-design
-description: Challenges the approach behind whatever it is pointed at — whether this is the right shape of solution, what it assumes, and what it will cost to undo. Spawned by the mcr multi-review skill; not meant to be called directly.
+name: design
+description: Challenges the approach behind whatever it is pointed at — whether this is the right shape of solution, what it assumes, and what it will cost to undo. Spawned by the multi code-review skill; not meant to be called directly.
 tools: Bash, Glob, Grep, Read
 model: sonnet
 ---

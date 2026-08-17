@@ -27,17 +27,17 @@ fi
 
 # --- OpenCode -----------------------------------------------------------
 # Model resolution:
-#   1. $MCR_OPENCODE_MODEL           — explicit override, used as-is
-#   2. first entry of $MCR_OPENCODE_CANDIDATES that `opencode models` lists
+#   1. $MULTI_OPENCODE_MODEL           — explicit override, used as-is
+#   2. first entry of $MULTI_OPENCODE_CANDIDATES that `opencode models` lists
 #   3. nothing -> reviewer skipped
 # The default candidate order puts the free model first on purpose: it is the
 # one measured working here, and a review is not worth burning paid usage on
-# by default. Set MCR_OPENCODE_MODEL to spend the subscription deliberately.
-CANDIDATES="${MCR_OPENCODE_CANDIDATES:-opencode/deepseek-v4-flash-free opencode-go/deepseek-v4-flash}"
+# by default. Set MULTI_OPENCODE_MODEL to spend the subscription deliberately.
+CANDIDATES="${MULTI_OPENCODE_CANDIDATES:-opencode/deepseek-v4-flash-free opencode-go/deepseek-v4-flash}"
 
 if command -v opencode >/dev/null 2>&1; then
-  if [ -n "${MCR_OPENCODE_MODEL:-}" ]; then
-    say "opencode: OK — ${MCR_OPENCODE_MODEL} (pinned by MCR_OPENCODE_MODEL)"
+  if [ -n "${MULTI_OPENCODE_MODEL:-}" ]; then
+    say "opencode: OK — ${MULTI_OPENCODE_MODEL} (pinned by MULTI_OPENCODE_MODEL)"
   else
     available="$(timeout 20 opencode models 2>/dev/null)"
     picked=""
@@ -52,7 +52,7 @@ if command -v opencode >/dev/null 2>&1; then
     if [ -n "$picked" ]; then
       say "opencode: OK — ${picked}${fallback:+ (fallback: ${fallback})}"
     else
-      say "opencode: NO USABLE MODEL — none of [$CANDIDATES] is available; set MCR_OPENCODE_MODEL to one of: $(printf '%s' "$available" | head -5 | tr '\n' ' ')"
+      say "opencode: NO USABLE MODEL — none of [$CANDIDATES] is available; set MULTI_OPENCODE_MODEL to one of: $(printf '%s' "$available" | head -5 | tr '\n' ' ')"
     fi
   fi
 else
@@ -78,7 +78,7 @@ else
 fi
 
 # --- reviewer model -----------------------------------------------------
-say "reviewer-model: ${MCR_REVIEWER_MODEL:-sonnet (default)}"
+say "reviewer-model: ${MULTI_REVIEWER_MODEL:-sonnet (default)}"
 
 # --- where we are -------------------------------------------------------
 # Raw material for guessing what the user means, not a decision. This skill is

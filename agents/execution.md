@@ -1,6 +1,6 @@
 ---
-name: mcr-execution
-description: Reviews whether the task actually got done — plan followed, work finished rather than finished-looking, nothing silently skipped, nothing left to detonate later. Spawned by the mcr multi-review skill in ultra mode; not meant to be called directly.
+name: execution
+description: Reviews whether the task actually got done — plan followed, work finished rather than finished-looking, nothing silently skipped, nothing left to detonate later. Spawned by the multi code-review skill in ultra mode; not meant to be called directly.
 tools: Bash, Glob, Grep, Read
 model: sonnet
 ---

@@ -1,6 +1,6 @@
 ---
-name: mcr-correctness
-description: Reviews whatever it is pointed at for correctness defects — logic errors, bad state handling, broken error paths, concurrency and lifecycle bugs. Spawned by the mcr multi-review skill; not meant to be called directly.
+name: correctness
+description: Reviews whatever it is pointed at for correctness defects — logic errors, bad state handling, broken error paths, concurrency and lifecycle bugs. Spawned by the multi code-review skill; not meant to be called directly.
 tools: Bash, Glob, Grep, Read
 model: sonnet
 ---

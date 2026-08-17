@@ -7,10 +7,10 @@
   "description": "Skills and plugins by szarkans",
   "plugins": [
     {
-      "name": "mcr",
+      "name": "multi",
       "source": "./",
-      "description": "Multi-model code review: Claude sub-agents, OpenAI Codex, and a third cheap reviewer via OpenCode all read the same diff with the same project rules, then Claude judges their findings into one ranked report.",
-      "version": "2.0.0",
+      "description": "Several models on the same question at once — Claude sub-agents, OpenAI Codex and a cheap third via OpenCode. Review code, check whether the work is actually finished, or just ask all of them something.",
+      "version": "3.0.0",
       "author": {
         "name": "Sergei Shatrov",
         "url": "https://github.com/szarkans"
@@ -24,7 +24,8 @@
         "opencode",
         "multi-model",
         "consensus",
-        "review"
+        "review",
+        "verification"
       ],
       "category": "productivity"
     }

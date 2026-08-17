@@ -1,18 +1,18 @@
 ---
-name: multi-review
+name: code-review
 description: >-
   Code review by several models at once — Claude sub-agents, OpenAI Codex, and
   a cheap third reviewer via OpenCode — reconciled into one report. Reviews
   whatever is named: a diff, a branch, specific files, one function, a legacy
   module, a whole repo. Use for any review request, a second or third opinion,
-  a cross-check before a PR, or "multi-review", "mcr", "consensus review".
+  a cross-check before a PR, or "code-review", "multi", "consensus review".
 allowed-tools: Bash, Read, Grep, Glob, Agent, TodoWrite
 argument-hint: "[what to review, in words] [lite|normal|ultra] [haiku|sonnet|opus|fable] [low|medium|high|xhigh|max]"
 ---
 
 # Multi-model code review
 
-!`sh -c 'for p in "$CLAUDE_PLUGIN_ROOT/skills/multi-review/scripts" "$HOME/.claude/skills/mcr/skills/multi-review/scripts" "$HOME/.claude/skills/multi-review/scripts" "./.claude/skills/multi-review/scripts"; do [ -x "$p/probe.sh" ] && { "$p/probe.sh"; echo "scripts-dir: $p"; exit 0; }; done; echo "probe: NOT FOUND — locate scripts/probe.sh in this skill and run it yourself"'`
+!`sh -c 'for p in "$CLAUDE_PLUGIN_ROOT/scripts" "$HOME/.claude/skills/multi/scripts" "./.claude/skills/multi/scripts"; do [ -x "$p/probe.sh" ] && { "$p/probe.sh"; echo "scripts-dir: $p"; exit 0; }; done; echo "probe: NOT FOUND — locate scripts/probe.sh in this plugin and run it yourself"'`
 
 Several models read the same code, and you decide what reaches the user. That
 is the whole idea: one model invents problems and walks past real ones, and you
@@ -93,14 +93,14 @@ once** — OpenCode spends about a minute just warming up — and do everything
 else while they run.
 
 ```bash
-$SCRIPTS/collect-context.sh [--diff <spec>] [--paths "<paths>"] > /tmp/mcr-ctx.md
+$SCRIPTS/collect-context.sh [--diff <spec>] [--paths "<paths>"] > /tmp/multi-ctx.md
 
 $SCRIPTS/review-codex.sh    --target "<in words>" [--diff <spec>] [--paths "<paths>"] \
                             --effort <low|medium|high|xhigh|max> [--focus "<user text>"] \
-                            --context /tmp/mcr-ctx.md --out /tmp/mcr-codex.txt
+                            --context /tmp/multi-ctx.md --out /tmp/multi-codex.txt
 $SCRIPTS/review-opencode.sh --target "<in words>" [--diff <spec>] [--paths "<paths>"] \
                             --model <from probe> --fallback <from probe> [--focus "<user text>"] \
-                            --context /tmp/mcr-ctx.md --out /tmp/mcr-opencode.txt
+                            --context /tmp/multi-ctx.md --out /tmp/multi-opencode.txt
 ```
 
 `--diff` is what makes it a *change* review; leave it off and the reviewers read
@@ -139,22 +139,22 @@ An explicitly named mode skips all of this. Obey it.
 
 | | Claude sub-agents | when |
 |---|---|---|
-| `lite` | `mcr-correctness` only | small, low-risk, external reviewers agree and found little |
-| `normal` *(default)* | `mcr-correctness` · `mcr-security` · `mcr-design` | anything heading for a PR |
-| `ultra` | those three, plus `mcr-execution`, plus an adversarial second Codex pass (`--adversarial`), plus one `mcr-verify` per single-source finding | expensive to get wrong, or asked for |
+| `lite` | `correctness` only | small, low-risk, external reviewers agree and found little |
+| `normal` *(default)* | `correctness` · `security` · `design` | anything heading for a PR |
+| `ultra` | those three, plus `execution`, plus an adversarial second Codex pass (`--adversarial`), plus one `verify` per single-source finding | expensive to get wrong, or asked for |
 
 Spawn them **in parallel, in one message**. Give each the target, the paths or
-range, the contents of `/tmp/mcr-ctx.md`, and the user's own words if there
+range, the contents of `/tmp/multi-ctx.md`, and the user's own words if there
 were any.
 
-**Model**: the argument if given, else `MCR_REVIEWER_MODEL` from the probe, else
+**Model**: the argument if given, else `MULTI_REVIEWER_MODEL` from the probe, else
 the agent files' default (Sonnet). **No mode raises it on its own** — `ultra`
 buys depth through more angles and real verification, not a bigger model.
 
 **`ultra` is not a deeper code review — it reviews whether the task got done.**
 Was there a plan and was it followed; is the thing actually finished or only
 finished-looking; what was silently skipped; what will detonate later. That
-needs the task context — the plan, the spec, the conversation. Hand `mcr-execution`
+needs the task context — the plan, the spec, the conversation. Hand `execution`
 what you actually know about the job. Without any of that, `ultra` degrades to
 `normal` plus an architecture angle, and you should say so rather than pretend.
 
@@ -174,7 +174,7 @@ different descriptions:
   evidence this pipeline produces.
 - **Single-source** — one reviewer. Check each before the user sees it: open the
   cited lines, confirm it is real and reachable. In `ultra`, spawn one
-  `mcr-verify` per finding instead and take its verdict.
+  `verify` per finding instead and take its verdict.
 - **Minor** — a real defect that is simply small. Not verified — that costs more
   than it is worth — and listed at the bottom, one line each.
 - **Dropped** — only two things belong here: the code contradicts it, or (in a
@@ -205,19 +205,19 @@ Reviewers: Claude <n> · Codex <effort> · OpenCode <model> · ponytail
 
 ## ✅ Corroborated (<n>)
 1. **HIGH** `path/file.py:120` — <what is wrong>
-   <the concrete failure case> — Codex + mcr-correctness
+   <the concrete failure case> — Codex + correctness
 
 ## 🔸 Single-source, verified (<m>)
 - **MEDIUM** `path/file.py:88` — <what is wrong> — [OpenCode] verified: <what you confirmed>
 
 ## ⚖️ Reviewers disagreed (<k>)
-- `path/file.py:44` — Codex calls it a race; mcr-correctness says the caller holds the lock. <Your call, and why.>
+- `path/file.py:44` — Codex calls it a race; correctness says the caller holds the lock. <Your call, and why.>
 
 ## 🪒 Simplicity — ponytail (<p>)
 - `path/file.py:52-71` — delete: retry wrapper around an idempotent local call.
 
 ## 🔹 Minor (<q>)
-- `path/file.py:12` — [mcr-correctness] log line interpolates the wrong id; misleads during an incident.
+- `path/file.py:12` — [correctness] log line interpolates the wrong id; misleads during an incident.
 
 ## ⚪ Dropped (<j>)
 - [Codex] `path/x.py:12` — pre-existing, not introduced by this change

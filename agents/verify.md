@@ -1,6 +1,6 @@
 ---
-name: mcr-verify
-description: Tries to refute a single code-review finding by reading the actual code, and returns a verdict with evidence. Spawned by the mcr multi-review skill to check findings only one reviewer raised.
+name: verify
+description: Tries to refute a single code-review finding by reading the actual code, and returns a verdict with evidence. Spawned by the multi code-review skill to check findings only one reviewer raised.
 tools: Bash, Glob, Grep, Read
 model: sonnet
 ---

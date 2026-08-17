@@ -1,6 +1,6 @@
 ---
-name: mcr-security
-description: Reviews whatever it is pointed at for security defects — authz gaps, injection, secret handling, unsafe deserialization, data exposure. Spawned by the mcr multi-review skill; not meant to be called directly.
+name: security
+description: Reviews whatever it is pointed at for security defects — authz gaps, injection, secret handling, unsafe deserialization, data exposure. Spawned by the multi code-review skill; not meant to be called directly.
 tools: Bash, Glob, Grep, Read
 model: sonnet
 ---
