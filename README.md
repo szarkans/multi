@@ -42,6 +42,10 @@ and tbh just ask claude what this plugin about. we ALL do that w/o reading actua
 
 ---
 
+## Evals
+
+I mean... works for me lol. Test it yourself lmao
+
 ## License
 
 MIT © Sergei Shatrov
