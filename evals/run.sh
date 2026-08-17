@@ -64,16 +64,16 @@ while IFS=$'\t' read -r -u 3 id sha paths truth; do
 
   ctx_arg=()
   if [ "$USE_CTX" = 1 ]; then
-    ( cd "$wt" && bash "$SCRIPTS/collect-context.sh" --scope uncommitted ) > "$OUT/$id.ctx.md" 2>/dev/null
+    ( cd "$wt" && bash "$SCRIPTS/collect-context.sh" --diff uncommitted ) > "$OUT/$id.ctx.md" 2>/dev/null
     [ -s "$OUT/$id.ctx.md" ] && ctx_arg=(--context "$OUT/$id.ctx.md")
   fi
 
   echo "[$id] reviewing ($(wc -l < "$OUT/$id.diff.txt") diff lines)"
 
-  ( cd "$wt" && bash "$SCRIPTS/review-codex.sh" --scope uncommitted --effort "$EFFORT" \
+  ( cd "$wt" && bash "$SCRIPTS/review-codex.sh" --target "the uncommitted changes" --diff uncommitted --effort "$EFFORT" \
       "${ctx_arg[@]}" --out "$OUT/$id.codex.txt" ) > "$OUT/$id.codex.log" 2>&1 &
   cx=$!
-  ( cd "$wt" && bash "$SCRIPTS/review-opencode.sh" --scope uncommitted --model "$OC_MODEL" \
+  ( cd "$wt" && bash "$SCRIPTS/review-opencode.sh" --target "the uncommitted changes" --diff uncommitted --model "$OC_MODEL" \
       "${ctx_arg[@]}" --out "$OUT/$id.opencode.txt" ) > "$OUT/$id.opencode.log" 2>&1 &
   oc=$!
   wait $cx; echo "[$id] codex done"

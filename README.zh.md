@@ -4,19 +4,23 @@
 
 ## Human Readable
 
-本插件用 2–3 个模型做代码审查，外加一个可选的
-[ponytail-review](https://github.com/DietrichGebert/ponytail) 视角。
+本插件用 2–3 个模型做代码审查，外加
+[ponytail-review](https://github.com/DietrichGebert/ponytail) 这个"简洁性"视角。
 
-执行命令后，以下几路并行启动：
+**审查对象由你指定** —— 一份 diff、一个分支、几个文件、一个函数、一个多年没人碰
+的遗留模块、整个仓库都行。不给参数就是"刚才做的这份工作"。
 
-- **Claude** —— 自带的审查子代理（Sonnet），不是内置的 `/code-review`
-- **Codex** —— 无头审查（`codex exec review`），后台运行
-- **OpenCode** —— 无头运行，审查要求写在提示词里，后台运行
+以下几路立刻并行启动，因为它们每次运行都不额外花钱：
 
-`--ponytail` 会额外加上那个视角；不指定就不启用。
+- **Codex** —— 无头运行，后台
+- **OpenCode** —— 无头运行，审查要求写在提示词里，后台
+- **ponytail** —— 简洁性视角，装了就一直开着
 
-三方拿到的是**同一份 diff 和同一套项目规则** —— 你的 `CLAUDE.md`、`AGENTS.md`，
-以及 `.claude/rules/*.md` 里与改动路径相符的那些文件。
+等它们报回来之后，Claude 再决定在此之上投入多少**自己的**审查子代理 —— 依据是
+免费那几路真正发现了什么，而不是审查开始前的一个猜测。
+
+所有人拿到的是**同一个目标和同一套项目规则** —— 你的 `CLAUDE.md`、`AGENTS.md`，
+以及 `.claude/rules/*.md` 里与本次审查相符的那些文件。
 
 最后主代理收齐所有人的结论，逐条核实只有一方提出的问题，剔除误报，交给你一份
 报告。
@@ -52,7 +56,7 @@ Codex 必须已安装并登录（`codex login`）—— 没有它插件会直接
 
 ## AI Generated README
 
-> 三个模型看同一份 diff、同一套项目规则，再由 Claude Code 裁决，汇成一份排好序的报告。
+> 多个模型看同一份代码、同一套项目规则，再由 Claude Code 裁决，汇成一份排好序的报告。
 
 一个模型审代码，会编造不存在的问题，也会对真问题视而不见。相互独立的模型会意见
 不一 —— 而分歧恰恰是最有价值的部分。`mcr` 让至多三位审查者读同一份 diff，把只有
@@ -60,11 +64,11 @@ Codex 必须已安装并登录（`codex login`）—— 没有它插件会直接
 
 ```mermaid
 flowchart LR
-    IN["同一份 diff<br/>+ 项目规则"]
+    IN["目标<br/>+ 项目规则"]
     CL["Claude 子代理<br/>正确性 · 安全 · 设计"]
-    CX["OpenAI Codex<br/>codex exec review"]
+    CX["OpenAI Codex<br/>codex exec"]
     OC["OpenCode<br/>任意廉价模型"]
-    PT["ponytail-review<br/>--ponytail"]
+    PT["ponytail-review<br/>简洁性视角"]
     J{{"Claude Code<br/>裁决"}}
     R(["一份排好序的报告"])
 
@@ -75,7 +79,9 @@ flowchart LR
     J --> R
 ```
 
-实线始终存在；虚线是可选的，缺失时直接跳过。
+Codex、OpenCode 和 ponytail 视角每次运行都不额外花钱，所以总是立刻并行启动。在
+此之上投入多少 Claude，是在它们报回来**之后**才决定的 —— 依据是它们真正发现了
+什么，而不是开始前的猜测。虚线表示没装时会被跳过的那几路。
 
 审查者只**提出意见**。他们不投票，也没有最终发言权 —— Claude Code 会去读被引用的代码
 然后自己判断。三位里有两位又便宜又在外部跑，所以你的 Claude 预算花在裁决上，而不
@@ -111,7 +117,7 @@ skill 内部。
 | **Claude Code** | 必需 | 裁决者，以及子代理审查者。 |
 | **[OpenAI Codex CLI](https://github.com/openai/codex)** | **必需** | 第二个模型。必须已安装并登录（`codex login`）。没有它就谈不上多模型审查，此时 skill 会停下，而不是假装。 |
 | **[OpenCode](https://opencode.ai)** | 可选 | 第三个审查者槽位 —— 你手上任何模型都行。缺失或跑不通就跳过并注明。 |
-| **[ponytail](https://github.com/DietrichGebert/ponytail)** | 可选 | 第四个*视角*，不是第四位审查者：`ponytail-review` 只盯过度设计。它的结论单列一节，绝不与缺陷类结论混在一起。 |
+| **[ponytail](https://github.com/DietrichGebert/ponytail)** | 建议装 | 一个*视角*，不是第四位审查者：`ponytail-review` 只盯过度设计，装了就每次审查都跑。风格口味归它管，所以查缺陷的审查者被明确要求不要碰那块。它的结论单列一节，绝不与 bug 混在一起。 |
 
 可用性由一个 shell 脚本探测，其输出在模型读到 skill 之前就被注入进去，所以这次
 检查不花 token，也不保存任何状态。
@@ -119,11 +125,11 @@ skill 内部。
 ### 用法
 
 ```
-/mcr:multi-review                    # 默认模式，未提交的改动
-/mcr:multi-review quick              # 最省的一遍 —— 只跑外部审查者
-/mcr:multi-review ultra              # 全套，外加逐条核实
-/mcr:multi-review branch main        # 当前分支对比 main
-/mcr:multi-review commit a1b2c3d     # 单个提交
+/mcr:multi-review                              # 刚才做的这份工作
+/mcr:multi-review src/auth.py src/session.py   # 两个文件，完全不涉及 diff
+/mcr:multi-review 遗留的计费模块                # 老代码，整个都在范围内
+/mcr:multi-review 这个分支对比 main             # 改动审查
+/mcr:multi-review ultra                        # 任务到底做完了没有？
 ```
 
 走 `npx skills` 安装时命令是 `/multi-review`。
@@ -147,25 +153,31 @@ skill 内部。
 |---|---|
 | `haiku` `sonnet` `opus` `fable` | Claude 审查子代理用的模型 |
 | `low` `medium` `high` `xhigh` `max` | Codex 的推理 effort |
-| `--ponytail` | 加上过度设计视角 |
-| `quick` `normal` `ultra` | 深度 |
+| `lite` `normal` `ultra` | 深度 |
 
 ```
-/mcr:multi-review opus max ultra --ponytail
+/mcr:multi-review opus max ultra
 ```
+
+指定了模式就跳过升级判断，直接按它来。
 
 你直接说要做审查、想要第二意见、或者提 PR 前想交叉验证时，Claude 也会自己调用它。
 
 #### 模式
 
-| 模式 | 审查者 | 代价 |
-|---|---|---|
-| `quick` | Codex（`low`）+ OpenCode | 最省。完全不用 Claude 子代理 —— 比普通的单模型审查还少花你的预算。 |
-| `normal` *(默认)* | Codex（`medium`）+ OpenCode + 正确性与安全子代理 | 提 PR 前跑这个。 |
-| `ultra` | Codex（`high`）+ 第二遍对抗式 Codex + OpenCode + 正确性、安全、设计子代理，每条存活的结论都被独立核实 | 要花几分钟和真金白银。请刻意选择它。 |
+Codex、OpenCode 和 ponytail 在所有模式下都跑 —— 它们是免费的，压着不放没有任何
+好处。模式只决定在此之上投入多少 **Claude**，而且它不是提前选的：先由免费的那几
+路报回来，深度再从它们的发现里推出来。
 
-`--ponytail` 可以给任何模式加上简洁性视角。它永远不会自动启用：它回答的是另一个
-问题，所以单列一节，绝不与缺陷类结论混在一起。
+| 模式 | Claude 子代理 | 什么时候 |
+|---|---|---|
+| `lite` | 正确性 | 小、风险低，且免费那几路一致认为没什么东西 |
+| `normal` *(默认)* | 正确性 · 安全 · 设计 | 任何要进 PR 的东西 |
+| `ultra` | 以上三个，再加**执行**，再加第二遍对抗式 Codex，再给每条单一来源结论配一个核实者 | 搞砸了代价很大 |
+
+`ultra` 不是更深的代码审查，它审查的是**任务到底做完了没有**：有没有计划、有没有
+照着做、是真做完了还是只是看着像做完了、什么被悄悄跳过了、什么以后会爆。这需要任
+务上下文，所以它最适合紧接着干完活时用；没有计划可对照时，它会直说。
 
 > 如果 ponytail 模式处于激活状态，它的 `SubagentStart` 钩子会把 YAGNI 规则注入
 > **每一个**子代理，包括那些专门找 bug 的。把 `PONYTAIL_SUBAGENT_MATCHER` 设成一个

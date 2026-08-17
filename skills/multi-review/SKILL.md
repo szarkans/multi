@@ -1,336 +1,253 @@
 ---
 name: multi-review
 description: >-
-  Review a diff with three independent models at once — Claude sub-agents,
-  OpenAI Codex, and a third cheap reviewer via OpenCode — then judge their
-  findings into one ranked report. Use whenever the user wants a code review,
-  a second or third model's eyes on a change, a cross-model or "double"
-  review, a higher-confidence pass before opening a PR or merging, or says
-  "multi-review", "mcr", "consensus review", "have Codex review this", or
-  "cross-check my changes". Prefer this over a single-model review whenever
-  more than one reviewer is available.
+  Code review by several models at once — Claude sub-agents, OpenAI Codex, and
+  a cheap third reviewer via OpenCode — reconciled into one report. Reviews
+  whatever is named: a diff, a branch, specific files, one function, a legacy
+  module, a whole repo. Use for any review request, a second or third opinion,
+  a cross-check before a PR, or "multi-review", "mcr", "consensus review".
 allowed-tools: Bash, Read, Grep, Glob, Agent, TodoWrite
-argument-hint: "[haiku|sonnet|opus|fable] [low|medium|high|xhigh|max] [--ponytail] [quick|normal|ultra] [uncommitted|branch <base>|commit <sha>]"
+argument-hint: "[what to review, in words] [lite|normal|ultra] [haiku|sonnet|opus|fable] [low|medium|high|xhigh|max]"
 ---
 
 # Multi-model code review
 
-Reviewer availability, checked before you read this:
-
 !`sh -c 'for p in "$CLAUDE_PLUGIN_ROOT/skills/multi-review/scripts" "$HOME/.claude/skills/mcr/skills/multi-review/scripts" "$HOME/.claude/skills/multi-review/scripts" "./.claude/skills/multi-review/scripts"; do [ -x "$p/probe.sh" ] && { "$p/probe.sh"; echo "scripts-dir: $p"; exit 0; }; done; echo "probe: NOT FOUND — locate scripts/probe.sh in this skill and run it yourself"'`
 
-Three models look at the **same diff with the same project rules**, and one
-judge — you — decides what reaches the user. The reviewers propose; they do not
-vote and they do not get the last word. Two of them are cheap and external, so
-the user's Claude budget goes almost entirely into judging rather than reading.
+Several models read the same code, and you decide what reaches the user. That
+is the whole idea: one model invents problems and walks past real ones, and you
+cannot tell which from a single report. Independent models disagree, and the
+disagreement is the signal.
 
-`$SCRIPTS` below means whatever the probe printed as `scripts-dir:` — the
-scripts ship inside this skill, so they are there under every install method.
+You are the judge, not a dispatcher. The reviewers propose; they do not vote,
+and none of them gets the last word. When they conflict, open the code and
+decide.
 
-## Step 0 — the gate
+This is normally reached at the end of a session — work is done, PR or push
+comes next. Act like it: the question is "is this ready", not "here are some
+observations".
 
-Read the availability lines above. They are already there; do not re-run the
-probe.
+`$SCRIPTS` below is whatever the probe printed as `scripts-dir:`.
 
-- **`codex: MISSING` or `NOT LOGGED IN` → stop.** Tell the user plainly: this
-  skill is multi-model review, and without Codex there is no second model, so
-  there is nothing here that a plain single-model review does not already do.
-  Point them at `codex login` (or installing Codex), or at running the built-in
-  `/code-review` instead. Do not silently fall back — that would hand them a
-  one-model review wearing a three-model label.
-- **`opencode: MISSING` or `NO USABLE MODEL` → carry on with two reviewers.**
-  Say once, in the final report's reviewer line, that the third slot was empty
-  and why. Never block on it, and never probe for it again during this run.
-- **`ponytail: OK` → the `--ponytail` lens is available** (Step 3). It is never
-  automatic. `ponytail: absent` → the flag has nothing to run; say so only if
-  the user asked for it.
-- **`repo: NOT A GIT REPOSITORY` → stop.** Everything here is diff-scoped.
-- **`dirty-files: 0` with no branch/commit scope given → stop.** There is
-  nothing to review; say so.
+## The gate
 
-## Step 1 — arguments, mode, scope
+From the probe lines above — they are already there, do not re-run it.
 
-**Arguments — everything after the command name is free text.** Pull the
-recognised tokens out of it; **whatever is left is the user's instruction to
-the reviewers**, and it goes to all of them verbatim.
+**No Codex, or not logged in → stop.** This is multi-model review; without a
+second model there is nothing here that a single-model review does not already
+do. Say so and point at `codex login`. Do not quietly deliver a one-model
+review wearing a three-model label.
 
-| token | meaning | default |
-|---|---|---|
-| `haiku` `sonnet` `opus` `fable` | model for the Claude reviewers | Sonnet, or `MCR_REVIEWER_MODEL` |
-| `low` `medium` `high` `xhigh` `max` | Codex reasoning effort | set by the mode |
-| `--ponytail` | add the over-engineering lens (Step 3) | off |
-| `quick` `normal` `ultra` | depth | `normal` |
-| `uncommitted` · `branch <base>` · `commit <sha>` | what to review | `uncommitted` |
+Anything else missing is a note, not a stop: no OpenCode, no ponytail, not a
+git repo (fine — then the target is files, not a diff). Name what was missing
+in the report and carry on.
 
-Recognise tokens by *value*, not position, and only when they stand alone — in
-`/mcr:multi-review ultra посмотри низкоуровневый парсер`, `ultra` is the mode
-and `низкоуровневый` is not an effort just because it contains "low". An
-explicit token always beats the mode's default: `ultra low` really does mean
-the full fleet with Codex thinking cheaply.
+## Decide what you are reviewing
 
-**The leftover text is the point, not a leftover.** This skill exists partly
-because the alternatives refuse custom instructions, so never drop it, never
-paraphrase it, and never turn it into a question back to the user. Pass it as
-`--focus "<text>"` to both external reviewers and hand the same string to every
-Claude sub-agent. The reviewers still do the full review; the focus tells them
-what to lead with.
+**Whatever the user named.** A diff, a branch, two files, one function, a line
+range, a module nobody has touched in three years, the whole repository. There
+is no fixed vocabulary here and no menu — read what they wrote and work out
+what they mean, the way a colleague would.
+
+When nothing was named, in this order:
+
+1. **What this session was about.** If you just wrote or changed something, that
+   is the target — you know which files, what the task was, where you were
+   unsure, what you fixed blind. That is better than a diff, which in a dirty
+   tree also holds debug leftovers and unrelated edits, and which misses the old
+   code the change leans on.
+2. **The branch**, if it is ahead of main and the tree is clean.
+3. **The uncommitted diff** otherwise.
+
+Ask only when the answer genuinely changes what gets reviewed and you cannot
+tell — dirty tree *and* they mentioned a PR, say. Never open with a
+questionnaire: this skill runs at the end of a session, sometimes inside an
+autonomous run, and three questions there are worse than a wrong guess you
+announced. Guess, say what you guessed, let them correct you.
+
+Whatever you settle on, resolve it into **concrete paths, or a concrete git
+range, before dispatching**. Every reviewer must look at the same thing —
+otherwise "two of them agreed" means nothing, they just happened to read the
+same file. If the target is vague, resolve it and say what you resolved it to.
+
+## Say what you are about to do
+
+**Always, before launching anything.** Short, then go — this is not a request
+for permission, and you do not wait for an answer:
 
 ```
-/mcr:multi-review проверь миграции, там точно race
-/mcr:multi-review ultra is the retry idempotent? what happens on a double webhook
-/mcr:multi-review high только про безопасность, остальное не интересует
+Reviewing: <target, and where it came from — "what we just did", "branch vs main", "you asked for src/auth.py">
+Running now: Codex <effort> · OpenCode <model> · ponytail          <— or why one is missing
+Then: <what decides the Claude spend>
 ```
 
-If the free text names **specific files or directories**, also pass
-`--paths "<paths>"` to the three scripts. That is a hard narrowing — the diff
-itself gets restricted, so all reviewers and the project-rule collection agree
-on the same smaller range instead of merely being asked to focus. Reserve it
-for paths you can actually resolve in the repo; anything vaguer stays focus
-text.
+If they wanted something else they will say so, and interrupting is cheaper
+than an interrogation.
 
-If the model argument is `haiku`: say `Серьёзно?` to the user — in whatever
-language the conversation is in — and then stop. Nothing else, no explanation.
-Once the user confirms, run the review on Haiku exactly as asked, normally and
-without further comment. If they change their mind, take the model they name
-instead.
+## Launch everything free, immediately
 
-**Mode** — from the user's words, defaulting to `normal`:
-
-| | reviewers | use when |
-|---|---|---|
-| `quick` | Codex (effort `low`) + OpenCode. No Claude sub-agents. | The everyday pass. Cheapest — replaces a plain single-model review and costs the user almost no Claude tokens. |
-| `normal` | Codex (`medium`) + OpenCode + `mcr-correctness` + `mcr-security` | Default. Anything going into a PR. |
-| `ultra` | Codex (`high`) + a second adversarial Codex pass + OpenCode + `mcr-correctness` + `mcr-security` + `mcr-design`, and every surviving finding independently verified | Before merging something that is hard to undo, or when the user asks for depth. Minutes and real money — do not pick it on your own. |
-
-The ponytail lens is orthogonal to the mode: `--ponytail` adds it to any of
-them.
-
-Words like "быстро", "по-быстрому", "just a quick look" → `quick`. "Тщательно",
-"максимально", "ultra", "не жалей" → `ultra`. Ambiguous → `normal`, and say
-which one you picked in the report header.
-
-**Scope** — all reviewers must see exactly the same range:
-
-- `uncommitted` — staged + unstaged + untracked. Default when the tree is dirty.
-- `branch` — the branch against its base. Resolve the base explicitly:
-  `git merge-base main HEAD` (or `master`, or whatever the user named).
-- `commit <sha>` — one commit.
-
-If the tree is dirty **and** the user said nothing about scope, take
-`uncommitted` and say so in one clause. Only ask when the tree is dirty *and*
-they mentioned a branch or PR — that genuinely changes what gets reviewed.
-
-## Step 2 — assemble the project rules
+Codex, OpenCode and the ponytail lens cost nothing per run and take 30–70
+seconds wall clock. There is never a reason to hold them back or make them
+conditional on a mode. Start the two external ones **in the background, both at
+once** — OpenCode spends about a minute just warming up — and do everything
+else while they run.
 
 ```bash
-$SCRIPTS/collect-context.sh --scope <scope> [--ref <base-or-sha>] [--paths "<paths>"] > /tmp/mcr-ctx.md
-```
+$SCRIPTS/collect-context.sh [--diff <spec>] [--paths "<paths>"] > /tmp/mcr-ctx.md
 
-This gathers the repo's `CLAUDE.md`/`AGENTS.md`, the `.claude/rules/*.md` files
-whose names match the changed paths, and any nested guidance beside the changed
-files. Pass the resulting file to **every** reviewer.
-
-This step is what separates this skill from three models guessing
-independently. External reviewers know nothing about the project's settled
-decisions, and without the rules they spend their findings re-litigating them.
-
-## Step 3 — launch the reviewers
-
-Start the two external reviewers **in the background first** — OpenCode alone
-spends about a minute on cold start — then do the Claude side while they run.
-
-```bash
-# background, both at once
-$SCRIPTS/review-codex.sh    --scope <scope> [--ref <r>] --effort <low|medium|high> \
-                            [--focus "<user text>"] [--paths "<paths>"] \
+$SCRIPTS/review-codex.sh    --target "<in words>" [--diff <spec>] [--paths "<paths>"] \
+                            --effort <low|medium|high|xhigh|max> [--focus "<user text>"] \
                             --context /tmp/mcr-ctx.md --out /tmp/mcr-codex.txt
-$SCRIPTS/review-opencode.sh --scope <scope> [--ref <r>] \
-                            [--focus "<user text>"] [--paths "<paths>"] \
+$SCRIPTS/review-opencode.sh --target "<in words>" [--diff <spec>] [--paths "<paths>"] \
+                            --model <from probe> --fallback <from probe> [--focus "<user text>"] \
                             --context /tmp/mcr-ctx.md --out /tmp/mcr-opencode.txt
 ```
 
-In `ultra`, also start a second Codex pass with `--adversarial` (writing to a
-different `--out`); it challenges the approach instead of the lines.
+`--diff` is what makes it a *change* review; leave it off and the reviewers read
+the actual code instead, with old code fully in scope. `--paths` narrows hard.
+`--target` is always required — it is the human sentence, and it is what keeps
+the reviewers pointed at the same thing.
 
-**Then, per mode, spawn the Claude reviewers in parallel in a single message**
-(`mcr-correctness` and `mcr-security` for `normal`; plus `mcr-design` for
-`ultra`; none for `quick`). Give each one the scope, the base/sha, the
-contents of `/tmp/mcr-ctx.md`, and — if there was any — the user's focus text,
-word for word.
+`collect-context.sh` gathers the repo's `CLAUDE.md`/`AGENTS.md` and the
+`.claude/rules/*.md` matching the target, and every reviewer gets it. This is
+what separates this from three models guessing: an external reviewer that does
+not know the project's settled decisions spends its findings re-litigating them.
 
-**Which model they run on**, first match wins:
+**The ponytail lens** — invoke the `ponytail:ponytail-review` skill on the same
+target whenever the probe found it. It hunts one thing, over-engineering, and
+that keeps the defect reviewers out of matters of taste entirely (see below).
+Its findings are a different kind of thing and never mix with defects: they get
+their own section and cannot corroborate or contradict a bug.
 
-1. the model argument, if the user gave one;
-2. `MCR_REVIEWER_MODEL`, which the probe prints as `reviewer-model:`;
-3. otherwise the agent files' own default, Sonnet.
+> If ponytail mode is *active*, its `SubagentStart` hook injects the YAGNI
+> ruleset into every sub-agent, including the ones hunting bugs. If findings
+> start reading like simplification advice, that is why; `PONYTAIL_SUBAGENT_MATCHER`
+> is the fix. Mention it once, move on.
 
-**No mode ever upgrades the model on its own, `ultra` included.** `ultra` buys
-its depth elsewhere — Codex at `high`, a second adversarial Codex pass, a third
-reviewer angle, and per-finding verification. If the user wants a bigger model
-they will say so; spending their budget for them is not this skill's call.
+## Then decide how much Claude to spend
 
-**If the `mcr-*` agents do not exist**, this skill was installed on its own
-(`npx skills add`) rather than as a plugin — the agents are a plugin-level
-component and did not come along. Spawn `general-purpose` sub-agents instead
-and give them the review brief inline: one for correctness (logic, state,
-error paths, races), one for security (authz, injection, secrets, data
-exposure), each told to report only defects on changed lines with a confidence
-of 80+, in the `FILE:LINE | SEVERITY | claim` shape. Say once in the report
-that the specialised reviewers were unavailable, and mention that installing
-the plugin brings them.
+The external reviewers are free; your sub-agents are the user's money. So do
+not guess the depth up front — **wait for the free results and decide on
+evidence**. A two-line change both reviewers called clean does not need three
+sub-agents. A change where Codex reports two HIGH and OpenCode disagrees with
+one of them does.
 
-**The ponytail lens** — only when the user passed `--ponytail` *and* the probe
-found it. It is off by default because it answers a different question than the
-rest of the pipeline, and most reviews don't want it mixed in. If `--ponytail`
-was passed but the probe says `absent`, say so in one line and carry on.
+Say the decision in one line when you make it: *"going to normal — Codex found
+two HIGH, OpenCode contradicts one."*
 
-Invoke the `ponytail:ponytail-review` skill against the same scope. It hunts one
-thing — over-engineering — and says so itself: what to delete, what the standard
-library already ships, which abstraction has exactly one implementation. Run it
-in the main thread rather than a sub-agent: its output is one terse line per
-finding, so it is cheap, and its own hooks make sub-agent behaviour harder to
-reason about (below).
+An explicitly named mode skips all of this. Obey it.
 
-Its findings are a **different kind of thing** from the defect reviewers'. "This
-retry wrapper is pointless" cannot corroborate or contradict "this is a race
-condition". Never merge the two — keep the lens in its own bucket all the way
-through to its own section of the report.
+| | Claude sub-agents | when |
+|---|---|---|
+| `lite` | `mcr-correctness` only | small, low-risk, external reviewers agree and found little |
+| `normal` *(default)* | `mcr-correctness` · `mcr-security` · `mcr-design` | anything heading for a PR |
+| `ultra` | those three, plus `mcr-execution`, plus an adversarial second Codex pass (`--adversarial`), plus one `mcr-verify` per single-source finding | expensive to get wrong, or asked for |
 
-> **Interaction worth knowing.** When ponytail mode is *active*, its
-> `SubagentStart` hook injects the YAGNI ruleset into **every** sub-agent —
-> including `mcr-correctness` and `mcr-security`, whose job is finding bugs, not
-> shortening code. If findings start reading like simplification advice, that is
-> why. The fix is `PONYTAIL_SUBAGENT_MATCHER`, a regex naming which agent types
-> should get the injection; anything that does not match `mcr-` keeps the defect
-> reviewers clean. Mention it once if you see the bias, and move on.
+Spawn them **in parallel, in one message**. Give each the target, the paths or
+range, the contents of `/tmp/mcr-ctx.md`, and the user's own words if there
+were any.
 
-**Watchdog.** A background reviewer that has produced no output for 60 seconds
-gets one kill-and-restart, then another 60 seconds. Still silent → treat it as
-absent, note it in the report, move on. A reviewer that is still writing is
-alive however long it takes. Never block the whole review on one backend.
+**Model**: the argument if given, else `MCR_REVIEWER_MODEL` from the probe, else
+the agent files' default (Sonnet). **No mode raises it on its own** — `ultra`
+buys depth through more angles and real verification, not a bigger model.
 
-## Step 4 — judge
+**`ultra` is not a deeper code review — it reviews whether the task got done.**
+Was there a plan and was it followed; is the thing actually finished or only
+finished-looking; what was silently skipped; what will detonate later. That
+needs the task context — the plan, the spec, the conversation. Hand `mcr-execution`
+what you actually know about the job. Without any of that, `ultra` degrades to
+`normal` plus an architecture angle, and you should say so rather than pretend.
 
-You are the judge. The reviewers disagree by design: that is the signal.
+## Judge
 
-Normalize everything to `{file, line, severity, claim}`. Codex reports as
-`- [P1] <title> — <abs path>:<line>-<line>` with the explanation indented below
-(P1/P2/P3 → high/medium/low) and uses absolute paths — convert them to
-repo-relative. OpenCode reports `FILE:LINE | SEVERITY | reason`. The sub-agents
-report `FILE:LINE | SEVERITY | confidence NN` with two lines under it.
+Normalize everything to `{file, line, severity, claim}`. Codex reports
+`- [P1] <title> — <abs path>:<line>-<line>` with the explanation indented
+(P1/P2/P3 → high/medium/low) and absolute paths; make them repo-relative.
+OpenCode reports `FILE:LINE | SEVERITY | reason`. Sub-agents report
+`FILE:LINE | SEVERITY | confidence NN` with two lines under it.
 
-Then bucket by *the underlying problem*, not by wording — the same bug gets
-described three different ways:
+Bucket by *the underlying problem*, not by wording — the same bug gets three
+different descriptions:
 
-- **Corroborated** — flagged by two or more reviewers from different families
-  (Claude / Codex / OpenCode). These lead the report. Independent agreement is
-  the strongest evidence this pipeline can produce, so raise severity one step
-  when a `medium` is corroborated by all three.
-- **Single-source** — raised by exactly one. Every one of these gets checked
-  before the user sees it, because each reviewer hallucinates confidently:
-  - `quick` / `normal`: check it yourself — open the cited lines, confirm the
-    problem is real, is on a line this change touched, and is reachable.
-  - `ultra`: spawn one `mcr-verify` per finding, in parallel, and take its
-    verdict. `REFUTED` findings are dropped.
-- **Minor** — real but small: nitpicks, style, naming, a missing test, anything
-  a reviewer marked `LOW` or hedged on. These do **not** get dropped and they do
-  not get verified either — that would cost more than they are worth. They go at
-  the bottom of the report, one line each, for the user to skim.
-- **Dropped** — did not survive verification. Only two things belong here: a
-  claim the code contradicts, and a problem that predates the change. "Too
-  minor" is never a reason to drop; that is what **Minor** is for.
+- **Corroborated** — two or more reviewers from different families (Claude /
+  Codex / OpenCode). Leads the report; independent agreement is the strongest
+  evidence this pipeline produces.
+- **Single-source** — one reviewer. Check each before the user sees it: open the
+  cited lines, confirm it is real and reachable. In `ultra`, spawn one
+  `mcr-verify` per finding instead and take its verdict.
+- **Minor** — a real defect that is simply small. Not verified — that costs more
+  than it is worth — and listed at the bottom, one line each.
+- **Dropped** — only two things belong here: the code contradicts it, or (in a
+  diff review) it predates the change. "Too small" is never a reason.
 
-Three rules that make the report trustworthy:
+Rules that make the report worth reading:
 
-- Apply the same scepticism to every source. Codex being expensive does not
-  make it right, and the cheap reviewer being cheap does not make it wrong — in
-  practice the cheap one catches things the expensive one misses.
-- When reviewers **contradict** each other on the same lines, do not average
-  them. Read the code, decide, and put the disagreement in the report — the
-  places where good reviewers split are exactly where the user should look.
-- **Nothing a reviewer raised disappears silently.** Every finding lands in one
-  of the buckets above, and a dropped one carries its reason. The user should
-  be able to tell what was found from what survived; deciding for them which
-  small thing was not worth mentioning is exactly how a real problem gets lost.
+- **Same scepticism for everyone.** Codex being expensive does not make it
+  right; the cheap reviewer being cheap does not make it wrong. In measurement
+  here the cheap one caught a real bug Codex missed.
+- **Disagreements are surfaced, not averaged.** Read the code, decide, and put
+  the disagreement in the report — where good reviewers split is where the user
+  should look.
+- **Nothing raised disappears silently.** Every finding lands in a bucket, and a
+  dropped one carries its reason.
+- **Answer the user's own words first**, if they gave any — even when the answer
+  is "no, that path is fine, here is why".
 
-When the user gave focus text, **answer it in the report**, at the top, in one
-or two lines — even when the answer is "no, that path is fine, here is why".
-A focused review that comes back with a generic finding list has ignored the
-question they actually asked.
+## Report
 
-## Step 5 — report
-
-Report only. No edits, no commits, no PR comments — the user decides what
-happens next.
+Report only: no edits, no commits, no PR comments. This is the default shape,
+not a schema — drop empty sections, and match the surrounding conversation.
 
 ```
-# 🔍 Multi-review — <scope> · <mode>
-Reviewers: Claude <n sub-agents> · Codex <effort> · OpenCode <model><· ponytail>
-<one line if a reviewer was absent or died, and why>
+# 🔍 Multi-review — <target> · <mode>
+Reviewers: Claude <n> · Codex <effort> · OpenCode <model> · ponytail
+<one line if something was missing or died, and why>
 
 ## ✅ Corroborated (<n>)
 1. **HIGH** `path/file.py:120` — <what is wrong>
-   <the concrete failure case> — flagged by Codex + mcr-correctness
+   <the concrete failure case> — Codex + mcr-correctness
 
 ## 🔸 Single-source, verified (<m>)
 - **MEDIUM** `path/file.py:88` — <what is wrong> — [OpenCode] verified: <what you confirmed>
 
+## ⚖️ Reviewers disagreed (<k>)
+- `path/file.py:44` — Codex calls it a race; mcr-correctness says the caller holds the lock. <Your call, and why.>
+
 ## 🪒 Simplicity — ponytail (<p>)
 - `path/file.py:52-71` — delete: retry wrapper around an idempotent local call.
-- `path/other.ts:4` — native: a dependency for one format call; `Intl.DateTimeFormat`.
-
-## ⚖️ Reviewers disagreed (<k>)
-- `path/file.py:44` — Codex calls it a race; mcr-correctness says the caller
-  holds the lock. <Your call, and why.>
 
 ## 🔹 Minor (<q>)
-- `path/file.py:12` — [mcr-correctness] variable shadows the outer `items`.
-- `path/api.ts:77` — [OpenCode] new branch has no test.
+- `path/file.py:12` — [mcr-correctness] log line interpolates the wrong id; misleads during an incident.
 
 ## ⚪ Dropped (<j>)
 - [Codex] `path/x.py:12` — pre-existing, not introduced by this change
-- [OpenCode] `path/y.py:5` — false positive: <reason>
 
 ## Verdict
-<n corroborated + m verified, j dropped>. <Ship it, or fix these first.>
+<Ship it, or fix these first.> <If ultra: is the task actually done, and what is missing.>
 ```
 
-Drop empty sections rather than printing zeros. If every reviewer came back
-clean, say so in one line and stop — do not pad it into a report.
-
-Then stop. Offer to fix the top findings or to re-run at a higher mode, but do
-not do either unprompted.
+Then stop. Offer to fix the top findings or to re-run deeper — do not do either
+unprompted.
 
 ## Loop mode (opt-in) — fix, re-review, repeat
 
-Only when the user explicitly asks ("loop", "until it's clean", `loop[N]`).
-It changes the contract: the working tree gets edited. Say so before the first
-edit if they were not explicit about that.
+Only when explicitly asked ("loop", "until it's clean"). It edits the working
+tree; say so before the first edit if they were not explicit.
 
-Each round: run Steps 2–4 → take the surviving findings → `new` = those not
-already handled this session → apply minimal targeted fixes → next round.
-
-Stop when a round brings nothing new, when everything left is `LOW`, or at the
-cap (default **3**, or the N the user gave). Hard rules:
-
-- **Only ever fix findings that survived Step 4.** Patching code to silence a
-  dropped finding is worse than the finding.
-- **Never** commit. Leave the changes in the working tree.
-- After each round, list what changed as `file:line` one-liners so it is
-  trivial to eyeball or revert.
-- If the cap is hit with findings still open, list them. Never imply everything
-  was handled.
-- Loop only makes sense on live changes. A historical commit has nothing to
-  iterate on — decline the loop and do a single pass.
+Each round: re-run the reviewers → take what survived judging → fix what is new
+→ go again. Stop when a round brings nothing new, when only `Minor` is left, or
+at the cap (default 3). Never fix a dropped finding — silencing a false
+positive is worse than the finding. Never commit. After each round list what
+changed as `file:line` one-liners. If the cap is hit with findings open, say so.
 
 ## Edge cases
 
-- **Huge diff** — reviewers will be slow and shallow. Say so up front and offer
-  a narrower scope rather than quietly reviewing 4000 lines badly.
-- **Diff is all lockfiles, generated code, or vendored files** — say that and
-  skip the external reviewers; there is nothing for them to find.
-- **A reviewer flags this skill's own invocation** (a permission entry, a
-  script) — that is a normal finding, include it.
-- **OpenCode present but the configured model is broken** — that is what the
-  watchdog is for. Note it once and suggest `MCR_OPENCODE_MODEL`; do not debug
-  it mid-review.
+- **Huge target** — say up front it will be slow and shallow, and offer a
+  narrower one, rather than quietly reviewing four hundred files badly.
+- **Lockfiles, generated code, vendored trees** — say so and skip the external
+  reviewers; there is nothing there for them.
+- **A reviewer dies or goes silent for 60s** — one kill-and-restart, then treat
+  it as absent and name it in the report. A reviewer still writing is alive,
+  however long it takes. Never block the whole review on one backend.
+- **OpenCode falls back to its free model** — its output says so. Repeat it in
+  the reviewer line; the user is entitled to know which model actually ran.
