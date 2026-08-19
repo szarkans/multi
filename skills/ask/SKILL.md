@@ -40,8 +40,8 @@ prompt: the point is what different models do with the same words. Add context
 they would need and could not see — the file you are both looking at, what was
 already ruled out — but leave the question itself alone.
 
-Effort defaults to `medium`. Raise it for a hard design question, drop it to
-`low` for something factual.
+Effort defaults to `high`. Raise it for a hard design question, drop it to
+`medium` or `low` for something factual.
 
 If neither external model is available, say so and just answer normally. This
 skill has nothing to add without them, and pretending otherwise is worse than

@@ -13,6 +13,12 @@ set -uo pipefail
 
 say() { printf '%s\n' "$*"; }
 
+# Keys and the extra backends. Sourced, not run: this only reads what is
+# configured, it does not call anybody.
+SELF_DIR="$(cd -- "$(dirname -- "$0")" && pwd)"
+# shellcheck source=providers.sh
+. "$SELF_DIR/providers.sh"
+
 # --- Codex (required) ---------------------------------------------------
 if command -v codex >/dev/null 2>&1; then
   ver="$(codex --version 2>/dev/null | head -1)"
@@ -57,6 +63,33 @@ if command -v opencode >/dev/null 2>&1; then
   fi
 else
   say "opencode: MISSING (third reviewer will be skipped)"
+fi
+
+# --- OpenRouter ---------------------------------------------------------
+# A key here is the widest single upgrade available: OpenRouter speaks the
+# Anthropic protocol, so every family it carries can be driven by Claude Code
+# itself. Reported as configured / not configured only — actually checking the
+# key costs a network round trip, which /multi:setup does and this does not.
+if multi_have_openrouter; then
+  say "openrouter: OK — ${MULTI_OPENROUTER_MODEL} (set MULTI_OPENROUTER_MODEL to change)"
+elif [ -n "${OPENROUTER_API_KEY:-}" ]; then
+  say "openrouter: KEY SET BUT claude CLI MISSING"
+else
+  say "openrouter: NOT CONFIGURED (run /multi:setup to add a key — one key adds every model family)"
+fi
+
+# --- Gemini -------------------------------------------------------------
+# Its own CLI, not Claude Code: Google exposes no Anthropic-compatible
+# endpoint, and the CLI spends the key's free daily quota rather than paying a
+# router for the same model.
+if multi_have_gemini; then
+  say "gemini: OK${MULTI_GEMINI_MODEL:+ — $MULTI_GEMINI_MODEL}"
+elif [ -n "${GEMINI_API_KEY:-}" ]; then
+  say "gemini: KEY SET BUT gemini CLI MISSING (npm i -g @google/gemini-cli)"
+elif command -v gemini >/dev/null 2>&1; then
+  say "gemini: NOT CONFIGURED (CLI present, no GEMINI_API_KEY — run /multi:setup)"
+else
+  say "gemini: MISSING"
 fi
 
 # --- ponytail -----------------------------------------------------------

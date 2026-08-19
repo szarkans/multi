@@ -5,10 +5,23 @@
 #
 #   ask.sh --question "is a channel or a mutex better here?" --out-prefix /tmp/multi-ask
 #   ask.sh --question-file /tmp/prompt.md --out-prefix /tmp/multi-done --effort high
+#   ask.sh --question "..." --out-prefix /tmp/f2 --backend codex
+#   ask.sh --question "..." --out-prefix /tmp/f4 --backend openrouter --or-model x-ai/grok-4.5
+#   ask.sh --question "..." --out-prefix /tmp/all --backend all
+#
+# --backend picks who answers: both (the two CLIs, default), all (everything
+# configured on this machine), or a comma-separated list of codex, opencode,
+# openrouter, gemini. One backend at a time is what lets a caller send a
+# DIFFERENT question to each model in parallel instead of the same one to all.
+#
+# openrouter runs Claude Code itself against OpenRouter's Anthropic endpoint —
+# same agent loop, different weights. gemini runs the Google CLI, because
+# Google has no Anthropic-compatible endpoint and its own CLI keeps the free
+# daily quota. Both need a key: see scripts/providers.sh and /multi:setup.
 #
 # Writes:
-#   <prefix>-codex.txt      Codex answer
-#   <prefix>-opencode.txt   OpenCode answer (or a line saying it did not run)
+#   <prefix>-<backend>.txt  one file per backend that ran, or a line saying
+#                           why it did not
 #
 # Both run read-only: they can read the repository to answer, and cannot change
 # it. Anything that needs to actually execute is the caller's job.
@@ -20,7 +33,12 @@
 #   always launched together rather than in sequence.
 set -uo pipefail
 
-QUESTION=""; QFILE=""; PREFIX=""; EFFORT=medium; MODEL="${MULTI_OPENCODE_MODEL:-}"; FALLBACK=""; CODEX_MODEL=""
+# Keys, the child-process isolation and the non-CLI backends all live here.
+SELF_DIR="$(cd -- "$(dirname -- "$0")" && pwd)"
+# shellcheck source=providers.sh
+. "$SELF_DIR/providers.sh"
+
+QUESTION=""; QFILE=""; PREFIX=""; EFFORT=medium; MODEL="${MULTI_OPENCODE_MODEL:-}"; FALLBACK=""; CODEX_MODEL=""; BACKEND=both
 need() { [ "$1" -ge 2 ] || { echo "missing value for $2" >&2; exit 2; }; }
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -31,6 +49,9 @@ while [ $# -gt 0 ]; do
     --model)         need $# "$1"; MODEL="$2"; shift 2 ;;
     --fallback)      need $# "$1"; FALLBACK="$2"; shift 2 ;;
     --codex-model)   need $# "$1"; CODEX_MODEL="$2"; shift 2 ;;
+    --backend)       need $# "$1"; BACKEND="$2"; shift 2 ;;
+    --or-model)      need $# "$1"; MULTI_OPENROUTER_MODEL="$2"; shift 2 ;;
+    --gemini-model)  need $# "$1"; MULTI_GEMINI_MODEL="$2"; shift 2 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
@@ -41,6 +62,22 @@ if [ -n "$QFILE" ]; then
   QUESTION="$(cat "$QFILE")"
 fi
 [ -n "$QUESTION" ] || { echo "--question or --question-file is required" >&2; exit 2; }
+# `both` is the historical default (the two CLIs). `all` is everything this
+# machine is set up for. Anything else is a comma-separated list, so a caller
+# can send a DIFFERENT question to each backend in parallel.
+case "$BACKEND" in
+  both) SELECTED="codex opencode" ;;
+  all)  SELECTED="codex opencode"
+        multi_have_openrouter && SELECTED="$SELECTED openrouter"
+        multi_have_gemini     && SELECTED="$SELECTED gemini" ;;
+  *)    SELECTED="$(printf '%s' "$BACKEND" | tr ',' ' ')" ;;
+esac
+for b in $SELECTED; do
+  case "$b" in
+    codex|opencode|openrouter|gemini) ;;
+    *) echo "--backend: unknown backend '$b' (codex, opencode, openrouter, gemini, both, all)" >&2; exit 2 ;;
+  esac
+done
 
 CODEX_OUT="${PREFIX}-codex.txt"
 OC_OUT="${PREFIX}-opencode.txt"
@@ -77,10 +114,24 @@ run_opencode() {
   fi
 }
 
-run_codex & cpid=$!
-run_opencode & opid=$!
-wait "$cpid"; crc=$?
-wait "$opid"
+run_openrouter() { multi_run_openrouter "$QUESTION" "${PREFIX}-openrouter.txt" "$MULTI_OPENROUTER_MODEL"; }
+run_gemini()     { multi_run_gemini     "$QUESTION" "${PREFIX}-gemini.txt"     "$MULTI_GEMINI_MODEL"; }
 
-[ -s "$CODEX_OUT" ] || echo "codex: NO OUTPUT — exit=$crc" > "$CODEX_OUT"
-echo "wrote: $CODEX_OUT $OC_OUT"
+# All backends start at once. OpenCode spends most of a minute waking up and
+# every model takes 30-90s, so anything sequential here is pure wall clock.
+pids=""
+for b in $SELECTED; do
+  "run_$b" & pids="$pids $!:$b"
+done
+for pb in $pids; do wait "${pb%%:*}"; done
+
+wrote=""; alive=0
+for b in $SELECTED; do
+  f="${PREFIX}-${b}.txt"
+  # An empty file must never read as an answer: say who did not run.
+  [ -s "$f" ] || echo "${b}: NO OUTPUT" > "$f"
+  grep -qiE "^${b}: (NO OUTPUT|MISSING|NO KEY|TIMEOUT|NO MODEL)" "$f" || alive=$((alive+1))
+  wrote="$wrote${wrote:+ }$f"
+done
+echo "wrote: $wrote"
+[ "$alive" -gt 0 ]
