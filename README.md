@@ -2,7 +2,7 @@
 
 [Русская версия →](README.ru.md) · [中文 →](README.zh.md)
 
-ask two-three models to do same thing, get better review/answers.
+ask Claude, Codex and OpenCode models to do same thing, get better review/answers.
 
 | command | what it does |
 |---|---|
