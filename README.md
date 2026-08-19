@@ -28,14 +28,14 @@ soo basically its what the name implies - several models instead of one. four co
 
 install
 ```bash
-claude plugin marketplace add szarkans/multi-code-review
-claude plugin install multi@szarkans-skills
+claude plugin marketplace add szarkans/multi
+claude plugin install multi@szkills
 
 or
-npx skills add szarkans/multi-code-review
+npx skills add szarkans/multi
 
 or
-git clone https://github.com/szarkans/multi-code-review ~/.claude/skills/multi
+git clone https://github.com/szarkans/multi ~/.claude/skills/multi
 ```
 
 then restart claude code and just ask claude code to setup everything why bother

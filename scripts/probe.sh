@@ -69,13 +69,13 @@ fi
 # A key here is the widest single upgrade available: OpenRouter speaks the
 # Anthropic protocol, so every family it carries can be driven by Claude Code
 # itself. Reported as configured / not configured only — actually checking the
-# key costs a network round trip, which /multi:setup does and this does not.
+# key costs a network round trip, which scripts/setup.sh status does and this does not.
 if multi_have_openrouter; then
   say "openrouter: OK — ${MULTI_OPENROUTER_MODEL} (set MULTI_OPENROUTER_MODEL to change)"
 elif [ -n "${OPENROUTER_API_KEY:-}" ]; then
   say "openrouter: KEY SET BUT claude CLI MISSING"
 else
-  say "openrouter: NOT CONFIGURED (run /multi:setup to add a key — one key adds every model family)"
+  say "openrouter: NOT CONFIGURED (run scripts/setup.sh set OPENROUTER_API_KEY <key> — one key adds every model family)"
 fi
 
 # --- Gemini -------------------------------------------------------------
@@ -87,7 +87,7 @@ if multi_have_gemini; then
 elif [ -n "${GEMINI_API_KEY:-}" ]; then
   say "gemini: KEY SET BUT gemini CLI MISSING (npm i -g @google/gemini-cli)"
 elif command -v gemini >/dev/null 2>&1; then
-  say "gemini: NOT CONFIGURED (CLI present, no GEMINI_API_KEY — run /multi:setup)"
+  say "gemini: NOT CONFIGURED (CLI present, no GEMINI_API_KEY — run scripts/setup.sh set GEMINI_API_KEY <key>)"
 else
   say "gemini: MISSING"
 fi

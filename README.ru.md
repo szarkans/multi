@@ -25,14 +25,14 @@
 
 установка
 ```bash
-claude plugin marketplace add szarkans/multi-code-review
-claude plugin install multi@szarkans-skills
+claude plugin marketplace add szarkans/multi
+claude plugin install multi@szkills
 
 или
-npx skills add szarkans/multi-code-review
+npx skills add szarkans/multi
 
 или
-git clone https://github.com/szarkans/multi-code-review ~/.claude/skills/multi
+git clone https://github.com/szarkans/multi ~/.claude/skills/multi
 ```
 
 потом перезапусти claude code и в целом просто попроси его всё настроить и всё. там кодекс логин, опенкод + модель в нём и т.д., клауд разберёстя сам

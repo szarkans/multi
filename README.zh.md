@@ -26,14 +26,14 @@
 
 安装
 ```bash
-claude plugin marketplace add szarkans/multi-code-review
-claude plugin install multi@szarkans-skills
+claude plugin marketplace add szarkans/multi
+claude plugin install multi@szkills
 
 或
-npx skills add szarkans/multi-code-review
+npx skills add szarkans/multi
 
 或
-git clone https://github.com/szarkans/multi-code-review ~/.claude/skills/multi
+git clone https://github.com/szarkans/multi ~/.claude/skills/multi
 ```
 
 然后重启 claude code，基本上直接让它把一切都配好就行。什么 codex 登录、opencode 加里面的模型之类的，claude 自己会搞定

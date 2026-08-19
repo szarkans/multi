@@ -17,7 +17,7 @@
 # openrouter runs Claude Code itself against OpenRouter's Anthropic endpoint —
 # same agent loop, different weights. gemini runs the Google CLI, because
 # Google has no Anthropic-compatible endpoint and its own CLI keeps the free
-# daily quota. Both need a key: see scripts/providers.sh and /multi:setup.
+# daily quota. Both need a key: see scripts/providers.sh and scripts/setup.sh.
 #
 # Writes:
 #   <prefix>-<backend>.txt  one file per backend that ran, or a line saying
