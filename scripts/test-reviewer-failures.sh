@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# Every external CLI must be killable. A hung `codex` or `opencode` used to
-# block the run until something upstream killed the whole script, and the file
-# the judge reads stayed empty -- which reads as "no issues found", the one
+# How a reviewer is allowed to fail. Whatever goes wrong -- a hung CLI, an
+# answer in the wrong shape -- the file the judge reads must say so out loud.
+# An empty or discarded file reads as "no issues found", which is the one
 # outcome this plugin exists to prevent.
 #
 # Uses stub CLIs that just sleep, so it needs no network, no keys and no real
 # CLI installed. Runs the fallback path too: on a machine with no GNU timeout
 # (stock macOS) multi_timeout does the killing itself.
 #
-#   bash scripts/test-timeouts.sh
+#   bash scripts/test-reviewer-failures.sh
 set -uo pipefail
 TREE="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
@@ -52,6 +52,20 @@ say "returns fast" "$([ $d -le 15 ] && echo yes || echo "no(${d}s)")" "yes"
 echo "   says: $(head -1 "$TMP/ro.txt" 2>/dev/null)"
 say "not empty" "$([ -s "$TMP/ro.txt" ] && echo yes || echo no)" "yes"
 say "says TIMEOUT" "$(grep -qi 'TIMEOUT' "$TMP/ro.txt" && echo yes || echo no)" "yes"
+
+echo "== a reviewer that answers off-format keeps its answer =="
+cat > "$TMP/bin/opencode" <<'STUB'
+#!/usr/bin/env bash
+printf '\033[32m> build - deepseek\033[0m\n'
+echo "I looked at the diff. The retry loop in worker.py can spin forever when"
+echo "the queue is empty, and nobody resets the counter."
+STUB
+chmod +x "$TMP/bin/opencode"
+bash "$TREE/scripts/review-opencode.sh" --target t --model m --out "$TMP/off.txt" >/dev/null 2>&1
+say "labelled off-format" "$(grep -q 'DID NOT MATCH THE FORMAT' "$TMP/off.txt" && echo yes || echo no)" "yes"
+say "the answer survived" "$(grep -q 'retry loop in worker.py' "$TMP/off.txt" && echo yes || echo no)" "yes"
+say "marked as prose, not findings" "$(grep -q 'NOT as findings' "$TMP/off.txt" && echo yes || echo no)" "yes"
+say "ANSI stripped" "$(LC_ALL=C grep -q "$(printf '\033')" "$TMP/off.txt" && echo no || echo yes)" "yes"
 
 [ $fail -eq 0 ] && echo "ALL PASS" || echo "FAILURES"
 exit $fail

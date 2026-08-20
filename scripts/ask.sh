@@ -131,9 +131,12 @@ run_codex_one() {
     -s read-only \
     -c model_reasoning_effort="$EFFORT" \
     -o "$out" \
-    "$QUESTION" >/dev/null 2>&1
+    "$QUESTION" >/dev/null 2>"${out}.log"
   rc=$?
+  # stderr used to go to /dev/null, so a codex that failed left "NO OUTPUT" and
+  # nothing to go on. The openrouter path keeps a .log for exactly this reason.
   [ -s "$out" ] || [ "$rc" -ne 124 ] || echo "codex: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s" > "$out"
+  [ -s "$out" ] || [ ! -s "${out}.log" ] || echo "codex: NO OUTPUT — exit=$rc (stderr in ${out}.log)" > "$out"
 }
 
 run_opencode_one() {

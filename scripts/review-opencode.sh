@@ -144,6 +144,23 @@ if [ ! -s "$OUT" ]; then
     # Say so explicitly rather than letting an empty file read as "all clear".
     if [ "$rc" -eq 124 ]; then
       echo "opencode: TIMEOUT after ${MULTI_REVIEW_TIMEOUT}s — model=$USED, no review was produced — see $RAW" > "$OUT"
+    elif [ -s "$RAW" ]; then
+      # There IS an answer, it just is not in the required shape. Throwing it
+      # away and reporting "NO PARSEABLE OUTPUT" loses a real review, and the
+      # default third reviewer is the weakest model in the line-up — the one
+      # most likely to drift off format. So hand the judge the tail of the
+      # transcript, clearly labelled as prose: a transcript also carries tool
+      # output and file contents, and a line in a reviewed file can look
+      # exactly like a finding.
+      ESC="$(printf '\033')"
+      {
+        echo "opencode: OUTPUT DID NOT MATCH THE FORMAT — model=$USED exit=$rc"
+        echo "The model answered, but not as 'path:line | SEVERITY | why'. Its last lines"
+        echo "are quoted below as prose, NOT as findings — anything you take from here you"
+        echo "must confirm in the code yourself. Full transcript: $RAW"
+        echo "--- last 80 transcript lines, verbatim ---"
+        tail -n 80 "$RAW" | sed "s/${ESC}\[[0-9;]*[a-zA-Z]//g"
+      } > "$OUT"
     else
       echo "NO PARSEABLE OUTPUT — model=$USED exit=$rc — see $RAW" > "$OUT"
     fi
