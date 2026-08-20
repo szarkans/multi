@@ -75,7 +75,7 @@ if multi_have_openrouter; then
 elif [ -n "${OPENROUTER_API_KEY:-}" ]; then
   say "openrouter: KEY SET BUT claude CLI MISSING"
 else
-  say "openrouter: NOT CONFIGURED (run scripts/setup.sh set OPENROUTER_API_KEY <key> — one key adds every model family)"
+  say "openrouter: NOT CONFIGURED (run scripts/setup.sh set OPENROUTER_API_KEY (it asks for the key, no echo) — one key adds every model family)"
 fi
 
 # --- Gemini -------------------------------------------------------------
@@ -87,7 +87,7 @@ if multi_have_gemini; then
 elif [ -n "${GEMINI_API_KEY:-}" ]; then
   say "gemini: KEY SET BUT gemini CLI MISSING (npm i -g @google/gemini-cli)"
 elif command -v gemini >/dev/null 2>&1; then
-  say "gemini: NOT CONFIGURED (CLI present, no GEMINI_API_KEY — run scripts/setup.sh set GEMINI_API_KEY <key>)"
+  say "gemini: NOT CONFIGURED (CLI present, no GEMINI_API_KEY — run scripts/setup.sh set GEMINI_API_KEY (it asks for the key, no echo))"
 else
   say "gemini: MISSING"
 fi

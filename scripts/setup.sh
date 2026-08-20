@@ -2,8 +2,8 @@
 # Read and write the provider keys, and say honestly which ones work.
 #
 #   setup.sh status                 what is configured, and does it still work
-#   setup.sh set OPENROUTER_API_KEY sk-or-v1-...
-#   setup.sh set GEMINI_API_KEY AIza...
+#   setup.sh set OPENROUTER_API_KEY   reads the key from stdin, never echoed
+#   setup.sh set GEMINI_API_KEY       same; or pipe it: printf %s "$k" | ...
 #   setup.sh unset GEMINI_API_KEY
 #
 # `status` is the only command that touches the network. It uses curl rather
@@ -54,6 +54,22 @@ cmd_set() {
     OPENROUTER_API_KEY|GEMINI_API_KEY|MULTI_OPENROUTER_MODEL|MULTI_OPENROUTER_MODELS|MULTI_GEMINI_MODEL|MULTI_OPENCODE_MODEL) ;;
     *) echo "refusing to set unknown variable: $name" >&2; exit 2 ;;
   esac
+
+  # Without a value on the command line the key is read from stdin -- typed
+  # without echo, or piped in. This is the way to do it: a key in argv is in
+  # the shell history, visible in `ps` to every user on the machine, and, when
+  # the setup skill runs the command, sitting in the session transcript. The
+  # file being chmod 600 afterwards does not undo any of that.
+  if [ -z "$value" ]; then
+    if [ -t 0 ]; then
+      printf 'paste %s (not echoed), then Enter: ' "$name" >&2
+      IFS= read -rs value; printf '\n' >&2
+    else
+      IFS= read -r value
+    fi
+  else
+    echo "note: a value passed as an argument stays in your shell history and is visible in ps — '$(basename "$0") set $name' reads it without echoing" >&2
+  fi
   [ -n "$value" ] || { echo "empty value for $name" >&2; exit 2; }
 
   mkdir -p "$(dirname "$MULTI_PROVIDERS_ENV")"
@@ -70,6 +86,18 @@ cmd_set() {
   mv "$tmp" "$MULTI_PROVIDERS_ENV"
   chmod 600 "$MULTI_PROVIDERS_ENV"
   echo "set $name ($(mask "$value")) in $MULTI_PROVIDERS_ENV"
+
+  # chmod is not always obeyed: on MSYS/Git-for-Windows and on mounts like
+  # exFAT or a default-mounted NTFS it returns success and changes nothing --
+  # measured on Git for Windows, where the file stays -rw-r--r--. The setup
+  # skill tells the user the file is owner-only "enforced, not a promise", so
+  # where it is not enforced, say so rather than let the promise stand.
+  # `ls -l` rather than stat: stat's flags differ between GNU and BSD.
+  perms="$(ls -l "$MULTI_PROVIDERS_ENV" 2>/dev/null | cut -c1-10)"
+  case "$perms" in
+    -rw-------|-rw-rw----|"") ;;
+    *) echo "warning: $MULTI_PROVIDERS_ENV is $perms, not owner-only — this filesystem ignores chmod (Windows/MSYS, exFAT, some NTFS mounts). Anyone who can read this machine's disk can read the key." >&2 ;;
+  esac
 }
 
 cmd_unset() {
@@ -83,7 +111,7 @@ cmd_unset() {
 
 case "${1:-}" in
   status) cmd_status ;;
-  set)    [ $# -ge 3 ] || usage; cmd_set "$2" "$3" ;;
+  set)    [ $# -ge 2 ] || usage; cmd_set "$2" "${3:-}" ;;
   unset)  [ $# -ge 2 ] || usage; cmd_unset "$2" ;;
   *) usage ;;
 esac

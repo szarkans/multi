@@ -64,30 +64,42 @@ Order to work through, skipping anything already `OK`:
    for or sign up to — it works with free models right out of the box.
 
 3. **OpenRouter not configured**
-   ```
-   $SCRIPTS/setup.sh set OPENROUTER_API_KEY <key>
-   ```
    Key comes from [openrouter.ai](https://openrouter.ai) — sign up, create a
-   key. There's a free tier, no card needed to get one key working.
+   key. There's a free tier, no card needed to get one key working. Then they
+   run this **themselves, in their own terminal** — it asks for the key and
+   does not echo it:
+   ```
+   $SCRIPTS/setup.sh set OPENROUTER_API_KEY
+   ```
 
 4. **Gemini not configured**
+   Key is free, from [aistudio.google.com](https://aistudio.google.com). The
+   second line is theirs to run in their own terminal, same as above:
    ```
    npm i -g @google/gemini-cli
-   $SCRIPTS/setup.sh set GEMINI_API_KEY <key>
+   $SCRIPTS/setup.sh set GEMINI_API_KEY
    ```
-   Key is free, from [aistudio.google.com](https://aistudio.google.com).
 
 Give one fix, wait for them to do it or ask a question, then move to the
 next. Do not paste all four blocks in one message — that's the thing this
 skill exists to avoid.
 
-## Never ask for a key in chat
+## Never ask for a key in chat, and never run the command yourself
 
-If pasting a key into the conversation makes them uneasy, say they can run
-the `$SCRIPTS/setup.sh set ...` command themselves in their own terminal —
-you never need to see the value. Keys live outside this plugin's folder, in
-`~/.claude/multi/providers.env`, permission `600` (only their own user can
-read the file) — that's enforced by `scripts/setup.sh` itself, not a promise.
+Not a preference — a key that reaches this conversation is a leaked key: it is
+in the transcript, and if it also reached a command line it is in their shell
+history and was visible in `ps` to everyone on the machine. So `setup.sh set
+<NAME>` is given **without** a value and run **by them**, in their own
+terminal: it prompts, reads the key without echoing it, and writes it out of
+sight. If a key does land in the chat anyway, say plainly that it should be
+rotated at the provider — a leaked key is not un-leaked by deleting a message.
+
+Keys live outside this plugin's folder, in `~/.claude/multi/providers.env`,
+which `scripts/setup.sh` sets to permission `600` — only their own user can
+read it. On Windows/MSYS and on some mounts (exFAT, some NTFS) `chmod` is
+accepted and does nothing; the script checks afterwards and prints a warning
+when that happened, so if you see no warning the file really is owner-only,
+and if you see one, repeat it to them rather than restating the `600` line.
 
 ## Finish: show where things stand
 

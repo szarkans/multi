@@ -198,7 +198,7 @@ multi_run_openrouter() {
   local prompt="$1" out="$2" model="${3:-}" rc=0
   local log="${out}.log"
   if [ -z "${OPENROUTER_API_KEY:-}" ]; then
-    echo "openrouter: NO KEY — run scripts/setup.sh set OPENROUTER_API_KEY <key>" > "$out"; return 0
+    echo "openrouter: NO KEY — run scripts/setup.sh set OPENROUTER_API_KEY (it asks for the key, no echo)" > "$out"; return 0
   fi
   # No model pinned by the caller: pick one whose pool is actually up.
   if [ -z "$model" ]; then
@@ -246,7 +246,7 @@ multi_run_openrouter() {
 multi_run_gemini() {
   local prompt="$1" out="$2" model="${3:-$MULTI_GEMINI_MODEL}" rc=0
   if [ -z "${GEMINI_API_KEY:-}" ]; then
-    echo "gemini: NO KEY — run scripts/setup.sh set GEMINI_API_KEY <key>" > "$out"; return 0
+    echo "gemini: NO KEY — run scripts/setup.sh set GEMINI_API_KEY (it asks for the key, no echo)" > "$out"; return 0
   fi
   command -v gemini >/dev/null 2>&1 || { echo "gemini: MISSING (npm i -g @google/gemini-cli)" > "$out"; return 0; }
   GEMINI_API_KEY="$GEMINI_API_KEY" \
