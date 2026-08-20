@@ -153,16 +153,21 @@ run_opencode_one() {
     multi_timeout "$MULTI_BACKEND_TIMEOUT" opencode run --pure --auto -m "$fallback" --dir . "$QUESTION" > "$raw" 2>&1; rc=$?
     used="$fallback"
   fi
-  if [ -s "$raw" ]; then
+  if [ "$rc" -eq 124 ]; then
+    # Checked BEFORE the transcript is accepted: opencode prints a startup
+    # header within a second, so a run that hangs after it still leaves a
+    # non-empty file. Copying that as the answer made a backend that never
+    # answered count as alive at the end of this script.
+    {
+      echo "opencode: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s — model=$used"
+      [ -s "$raw" ] && echo "(a partial transcript was left in $raw)"
+    } > "$out"
+  elif [ -s "$raw" ]; then
     cp "$raw" "$out"
     [ "$used" = "$model" ] || echo "[multi] answered by fallback model $used" >> "$out"
   else
     # Say so explicitly rather than letting an empty file read as an answer.
-    if [ "$rc" -eq 124 ]; then
-      echo "opencode: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s — model=$used" > "$out"
-    else
-      echo "opencode: NO OUTPUT — model=$used exit=$rc" > "$out"
-    fi
+    echo "opencode: NO OUTPUT — model=$used exit=$rc" > "$out"
   fi
 }
 

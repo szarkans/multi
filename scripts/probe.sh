@@ -59,10 +59,19 @@ if command -v opencode >/dev/null 2>&1; then
       && [ -n "$(find "$models_cache" -mmin "-${cache_min}" 2>/dev/null)" ] \
       && available="$(cat "$models_cache")"
     if [ -z "$available" ]; then
-      available="$(multi_timeout 20 opencode models 2>/dev/null)"
-      if [ -n "$available" ]; then
+      available="$(multi_timeout 20 opencode models 2>/dev/null)"; models_rc=$?
+      # Only a run that finished cleanly may be cached. A listing that printed
+      # half its models and then timed out is non-empty, and caching it would
+      # pin a truncated catalogue for the next hour -- long enough to make the
+      # probe report "no usable model" on a machine where the model exists.
+      if [ "$models_rc" -eq 0 ] && [ -n "$available" ]; then
         mkdir -p "$MULTI_HOME" 2>/dev/null
-        printf '%s\n' "$available" > "$models_cache"
+        # Written elsewhere and renamed: a reader in another session must never
+        # catch this file mid-write and cache-hit on half a list for an hour.
+        cache_tmp="${models_cache}.$$"
+        if printf '%s\n' "$available" > "$cache_tmp" 2>/dev/null; then
+          mv -f "$cache_tmp" "$models_cache" 2>/dev/null || rm -f "$cache_tmp"
+        fi
       fi
     fi
     picked=""

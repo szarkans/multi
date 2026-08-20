@@ -30,4 +30,16 @@ say "opencode models called once, not twice" "$(grep -c CALLED "$MARKER")" "1"
 : > "$MARKER"
 MULTI_PROBE_CACHE_MIN=0 bash "$TREE/scripts/probe.sh" >/dev/null 2>&1
 say "cache can be turned off" "$(grep -c CALLED "$MARKER")" "1"
+
+echo "== a listing that failed halfway is not cached =="
+rm -f "$MULTI_HOME/opencode-models.cache"
+cat > "$TMP/bin/opencode" <<'STUB'
+#!/usr/bin/env bash
+echo "opencode/deepseek-v4-flash-free"
+exit 1
+STUB
+chmod +x "$TMP/bin/opencode"
+bash "$TREE/scripts/probe.sh" >/dev/null 2>&1
+say "no cache written from a failed run" "$([ -e "$MULTI_HOME/opencode-models.cache" ] && echo yes || echo no)" "no"
+
 [ $fail -eq 0 ] && echo "ALL PASS" || echo "FAILURES"; exit $fail
