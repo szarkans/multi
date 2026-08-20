@@ -30,7 +30,7 @@ Start the external models first — they take 30–90 seconds and OpenCode spend
 most of a minute just waking up. Answer the question yourself while they run.
 
 ```bash
-RUN="${TMPDIR:-/tmp}/multi-${CLAUDE_CODE_SESSION_ID:-shared}"; mkdir -p "$RUN"
+RUN="$($SCRIPTS/run-dir.sh --slug <two-to-four words: the project and the job, e.g. skills-fixing-multi>)"
 
 $SCRIPTS/ask.sh --question "<the user's question, verbatim>" \
                 --out-prefix "$RUN/ask" \

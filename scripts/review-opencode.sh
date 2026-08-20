@@ -82,17 +82,6 @@ override your general priors about this codebase:
 $(cat "$CONTEXT")"
 fi
 
-# The markers carry a per-run token, and that is the point. OpenCode echoes
-# every file it reads into the transcript, so a fixed marker -- or the finding
-# pattern itself -- also appears in whatever source file happens to contain it.
-# Measured here on 2026-08-20: this script was the file under review, the model
-# returned no findings at all, and the parser handed the judge two lines that
-# were the comment "# Findings look like: path/file.py:12 | HIGH | why" read
-# out of this very file. A token minted per run cannot be in any file on disk.
-MARK_TOKEN="$$$RANDOM"
-BEGIN_MARK="MULTI-FINDINGS-${MARK_TOKEN}-BEGIN"
-END_MARK="MULTI-FINDINGS-${MARK_TOKEN}-END"
-
 PROMPT="You are a code reviewer. ${TARGET_LINE}
 
 Report everything you would raise: logic bugs, security holes, data loss,
@@ -107,99 +96,81 @@ reviewer runs on this same target and owns all of that.
 
 ${SCOPE_RULE} Do not run the build or the tests.
 
-Put your answer between these two marker lines, each alone on its line, and put
-nothing else between them:
-${BEGIN_MARK}
+Output ONLY finding lines, nothing before or after, one per line, exactly:
 FILE:LINE | HIGH|MEDIUM|LOW | what is wrong and the concrete case where it bites
-${END_MARK}
 
-One finding per line, in exactly that shape. If nothing is genuinely wrong, put
-the single line: No issues found${FOCUS}${CTX}"
+If nothing is genuinely wrong, output exactly: No issues found.${FOCUS}${CTX}"
 
-# OpenCode echoes every tool call and its output, so a review arrives wrapped in
-# the files it read. Keep the whole transcript next to the result for auditing,
-# but hand the judge only the finding lines.
-RAW="${OUT}.raw"
+# --format json, not the terminal transcript. The transcript interleaves the
+# model's answer with every file it opened, and no amount of grepping tells the
+# two apart -- on 2026-08-20 this file was the review target, the model reported
+# nothing, and the parser handed the judge two "findings" that were comments
+# read out of this very script. The JSON events keep them apart by construction:
+# `text` is what the model said, `tool_use` is what it did.
+RAW="${OUT}.jsonl"
 
-# Findings look like: path/file.py:12 | HIGH | why
-FINDING_RE='^[^|]*:[0-9]+[^|]*\|[[:space:]]*(HIGH|MEDIUM|LOW)[[:space:]]*\|'
-
-ESC="$(printf '\033')"
-
-# Everything downstream reads THIS, never the raw transcript: only the text the
-# model put between its own markers. A transcript is full of other people's
-# lines -- files it opened, tool output, this script's own comments -- and any
-# of them can look exactly like a finding.
-answer() {
-  sed "s/${ESC}\[[0-9;]*[a-zA-Z]//g" "$RAW" 2>/dev/null | awk -v b="$BEGIN_MARK" -v e="$END_MARK" '
-    index($0, b) { buf=""; inb=1; next }
-    index($0, e) { inb=0; next }
-    inb { buf = buf $0 "\n" }
-    END { printf "%s", buf }'
-}
-
-# Timed out because the skill promises a kill-and-restart and nothing here
-# delivered one: a hung `opencode run` wrote nothing and the skill waited on a
-# file that was never coming. The retry below already handles "produced
-# nothing", so a killed attempt lands in the same path a dead one does.
-attempt() { # attempt <model> ; leaves the transcript in $RAW
-  multi_timeout "$MULTI_REVIEW_TIMEOUT" opencode run --pure --auto \
+attempt() { # attempt <model> ; leaves the events in $RAW
+  multi_timeout "$MULTI_REVIEW_TIMEOUT" opencode run --pure --auto --format json \
     -m "$1" \
     ${AGENT:+--agent "$AGENT"} \
     --dir . \
     "$PROMPT" > "$RAW" 2>&1
 }
 
-usable() { answer | grep -qaiE "$FINDING_RE" || answer | grep -qai 'No issues found'; }
+# 0 = there is an answer, 3 = the model said nothing, 2 = not JSON at all
+# (an opencode older than --format json), 4 = no python to read it with.
+render() {
+  local py; py="$(multi_python)" || return 4
+  "$py" "$SELF_DIR/opencode-report.py" "$RAW" \
+    --out "$OUT" --calls "${OUT}.calls" --model "$1" 2>/dev/null
+}
 
 attempt "$MODEL"; rc=$?
 USED="$MODEL"
+render "$USED"; rrc=$?
 
-# Neither findings nor a clean verdict means the run did not happen: exhausted
-# usage, an expired subscription, a model that hangs. There is no way to ask
-# either CLI about remaining quota beforehand, so this is where we find out —
+# No answer means the run did not happen: exhausted usage, an expired
+# subscription, a model that reads files until it runs out. There is no way to
+# ask the CLI about remaining quota beforehand, so this is where we find out --
 # retry once on the free fallback, and only then give up.
-if ! usable && [ -n "$FALLBACK" ] && [ "$FALLBACK" != "$MODEL" ]; then
-  echo "[multi] $MODEL produced nothing (exit $rc) — retrying on $FALLBACK" >&2
+if [ "$rrc" = 3 ] && [ -n "$FALLBACK" ] && [ "$FALLBACK" != "$MODEL" ]; then
+  echo "[multi] $MODEL produced no answer (exit $rc) — retrying on $FALLBACK" >&2
   cp "$RAW" "${RAW}.first" 2>/dev/null
   attempt "$FALLBACK"; rc=$?
   USED="$FALLBACK"
+  render "$USED"; rrc=$?
 fi
 
-SECTION="$(answer)"
-printf '%s' "$SECTION" | grep -aiE "$FINDING_RE" > "$OUT"
-
-if [ -s "$OUT" ]; then
-  # Whatever else sits between the markers is still the reviewer talking. A
-  # finding written as prose next to three well-formed ones used to vanish with
-  # no trace at all, so count it and point at the transcript.
-  extra="$(printf '%s' "$SECTION" | grep -aviE "$FINDING_RE" | grep -cv '^[[:space:]]*$')"
-  [ "${extra:-0}" -eq 0 ] || \
-    echo "[multi] $extra more line(s) between the markers were not in finding format — read them in $RAW" >> "$OUT"
-elif printf '%s' "$SECTION" | grep -qai 'No issues found'; then
-  echo "No issues found." > "$OUT"
-elif [ "$rc" -eq 124 ]; then
-  echo "opencode: TIMEOUT after ${MULTI_REVIEW_TIMEOUT}s — model=$USED, no review was produced — see $RAW" > "$OUT"
-elif [ -s "$RAW" ]; then
-  # The model produced something but never marked an answer -- it drifted off
-  # format, or stopped after reading files. Hand the judge the tail of the
-  # transcript, clearly labelled: it is prose at best, and at worst it is other
-  # people's lines, because a transcript carries every file the model opened.
-  {
-    echo "opencode: NO MARKED ANSWER — model=$USED exit=$rc"
-    echo "The model never produced its answer between the markers it was given. What"
-    echo "follows is the tail of its transcript, quoted as prose and NOT as findings:"
-    echo "it also contains files the model read, so confirm anything you take from it."
-    echo "Full transcript: $RAW"
-    echo "--- last 80 transcript lines, each prefixed 'raw|' ---"
-    # The prefix is load-bearing, and it contains a pipe on purpose: a finding
-    # line is "path:line | SEVERITY | why", so anything whose first field is
-    # already "raw" cannot be read as one. A plain "raw> " prefix does not do
-    # it -- "raw> src/x.py:99 | HIGH | ..." still matches the finding shape.
-    tail -n 80 "$RAW" | sed "s/${ESC}\[[0-9;]*[a-zA-Z]//g" | sed 's/^/raw| /' 
+if [ "$rc" -eq 124 ]; then
+  # A timeout can still leave a partial report; keep it, but never let it read
+  # as a completed review.
+  # `cat` last inside the group would decide the group's exit status, and an
+  # absent partial report would then skip the mv and leave $OUT empty -- the
+  # one state that reads as "no issues found".
+  { echo "opencode: TIMEOUT after ${MULTI_REVIEW_TIMEOUT}s — model=$USED, the review was cut off"
+    if [ -s "$OUT" ]; then
+      echo "What it had done up to that point:"
+      cat "$OUT"
+    fi
+  } > "${OUT}.tmp"
+  mv "${OUT}.tmp" "$OUT"
+elif [ "$rrc" = 3 ]; then
+  echo "opencode: NO ANSWER — model=$USED exit=$rc — it ran but never wrote a review; what it did is in ${OUT}.calls" > "$OUT"
+elif [ "$rrc" = 2 ] || [ "$rrc" = 4 ]; then
+  # Either this opencode predates --format json, or there is no python3 here.
+  # Fall back to what was captured, prefixed so that a line the model merely
+  # READ cannot be mistaken for a finding: a finding starts with a path, and
+  # "raw|" is not one.
+  why="an opencode without --format json"; [ "$rrc" = 4 ] && why="no python3 on this machine"
+  { echo "opencode: RAW CAPTURE ONLY — model=$USED exit=$rc ($why)"
+    echo "Below is its output as captured, quoted as prose and NOT as findings —"
+    echo "it also contains whatever files the model opened. Full capture: $RAW"
+    echo "--- last 80 lines, each prefixed 'raw|' ---"
+    tail -n 80 "$RAW" 2>/dev/null | sed "s/$(printf '\033')\[[0-9;]*[a-zA-Z]//g" | sed 's/^/raw| /'
   } > "$OUT"
-else
+elif [ ! -s "$OUT" ]; then
   echo "opencode: NO OUTPUT — model=$USED exit=$rc — see $RAW" > "$OUT"
 fi
+
 [ "$USED" = "$MODEL" ] || echo "[multi] reviewed by fallback model $USED" >> "$OUT"
 exit $rc

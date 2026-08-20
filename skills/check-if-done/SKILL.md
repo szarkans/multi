@@ -57,7 +57,7 @@ They are free and slow to start, so they go first and run in the background
 while you do the real work below.
 
 ```bash
-RUN="${TMPDIR:-/tmp}/multi-${CLAUDE_CODE_SESSION_ID:-shared}"; mkdir -p "$RUN"
+RUN="$($SCRIPTS/run-dir.sh --slug <two-to-four words: the project and the job, e.g. skills-fixing-multi>)"
 
 cat > "$RUN/done-prompt.md" <<'EOF'
 <the promise, as a concrete list of what was supposed to end up working>

@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# The transcript is not the answer. OpenCode echoes every file it opens, so a
-# comment or a line inside a reviewed file can look exactly like a finding --
-# measured on 2026-08-20, when this repo was the target: the model returned no
-# findings at all and the parser handed the judge two lines lifted out of
-# scripts/review-opencode.sh itself. The model now marks its answer with a
-# token minted per run, and only what sits between those markers is parsed.
+# What the reviewer SAID versus what it merely READ. opencode's terminal
+# transcript mixes the two, and no grep can separate them: on 2026-08-20 this
+# repo was the review target, the model reported nothing at all, and the old
+# reader handed the judge two "findings" that were comments inside
+# scripts/review-opencode.sh itself. The JSON event stream keeps them apart --
+# `text` is the model talking, `tool_use` is the model working -- and this
+# checks that separation holds, including on the fallback paths.
 #
-#   bash scripts/test-answer-markers.sh
+#   bash scripts/test-opencode-answer.sh
 set -uo pipefail
 TREE="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
@@ -14,40 +15,46 @@ mkdir -p "$TMP/bin"
 fail=0
 say(){ if [ "$2" = "$3" ]; then echo "  ok   $1"; else echo "  FAIL $1: got '$2' want '$3'"; fail=1; fi; }
 
-# The stub reads the markers out of the prompt it was handed, like the model would.
+# stub: emits json events like `opencode run --format json` does, including a
+# tool_use whose output contains a finding-shaped line (a file it "read")
 cat > "$TMP/bin/opencode" <<'STUB'
 #!/usr/bin/env bash
-prompt="${!#}"
-b="$(printf '%s\n' "$prompt" | grep -o 'MULTI-FINDINGS-[0-9]*-BEGIN' | head -1)"
-e="$(printf '%s\n' "$prompt" | grep -o 'MULTI-FINDINGS-[0-9]*-END' | head -1)"
-# transcript noise first: this is what reading a source file looks like
-echo "> build - deepseek"
-echo "cat scripts/review-opencode.sh"
-echo "# Findings look like: path/file.py:12 | HIGH | why"
-echo "src/other.py:99 | HIGH | this line lives inside a file the model read"
 case "${MODE:-normal}" in
-  nomarkers) exit 0 ;;
-  clean)     printf '%s\nNo issues found\n%s\n' "$b" "$e" ;;
-  *)         printf '%s\nsrc/app.py:12 | HIGH | the real finding\nand a sentence that is not a finding line\n%s\n' "$b" "$e" ;;
+  legacy)  echo "> build - deepseek"; echo "src/x.py:1 | HIGH | plain text output, no json" ;;
+  silent)  echo '{"type":"step_start","timestamp":1000,"part":{}}'
+           echo '{"type":"tool_use","timestamp":1200,"part":{"tool":"read","state":{"status":"completed","input":{"filePath":"/repo/scripts/review-opencode.sh"},"output":"# Findings look like: path/file.py:12 | HIGH | why"}}}' ;;
+  *)       echo '{"type":"step_start","timestamp":1000,"part":{}}'
+           echo '{"type":"tool_use","timestamp":1200,"part":{"tool":"read","state":{"status":"completed","input":{"filePath":"/repo/scripts/ask.sh"},"output":"src/other.py:99 | HIGH | this line is inside a file, not an answer"}}}'
+           echo '{"type":"tool_use","timestamp":1400,"part":{"tool":"bash","state":{"status":"error","input":{"command":"git diff main...HEAD"}}}}'
+           echo '{"type":"text","timestamp":1600,"part":{"text":"scripts/ask.sh:159 | HIGH | the real finding"}}' ;;
 esac
 STUB
 chmod +x "$TMP/bin/opencode"
 export PATH="$TMP/bin:$PATH" MULTI_HOME="$TMP/h"
 
-echo "== transcript noise must not become findings =="
+# No python here means the JSON reader cannot run and every case below would
+# be testing the raw-capture fallback instead. Say so rather than fail.
+. "$TREE/scripts/providers.sh"
+if ! multi_python >/dev/null; then
+  echo "  skip — no working python on this machine; the JSON reader cannot run here"
+  echo "ALL PASS"; exit 0
+fi
+
+echo "== the answer is the answer; the files it read are not =="
 bash "$TREE/scripts/review-opencode.sh" --target t --model m --out "$TMP/a.txt" >/dev/null 2>&1
-say "real finding kept"        "$(grep -c 'the real finding' "$TMP/a.txt")" "1"
-say "file content NOT a finding" "$(grep -c 'inside a file the model read' "$TMP/a.txt")" "0"
-say "own comment NOT a finding"  "$(grep -c 'Findings look like' "$TMP/a.txt")" "0"
-say "off-format line counted"    "$(grep -c 'were not in finding format' "$TMP/a.txt")" "1"
+say "real finding kept"          "$(grep -c 'the real finding' "$TMP/a.txt")" "1"
+say "file content is not a finding" "$(grep -c 'not an answer' "$TMP/a.txt")" "0"
+say "what it read is listed"     "$(grep -c 'read.*scripts/ask.sh' "$TMP/a.txt")" "1"
+say "failed call is marked"      "$(grep -c 'error' "$TMP/a.txt")" "1"
 
-echo "== a clean verdict still works =="
-MODE=clean bash "$TREE/scripts/review-opencode.sh" --target t --model m --out "$TMP/b.txt" >/dev/null 2>&1
-say "reads as clean" "$(head -1 "$TMP/b.txt")" "No issues found."
+echo "== a reviewer that answered nothing says so =="
+MODE=silent bash "$TREE/scripts/review-opencode.sh" --target t --model m --out "$TMP/b.txt" >/dev/null 2>&1
+say "says NO ANSWER"             "$(grep -c 'NO ANSWER' "$TMP/b.txt")" "1"
+say "nothing passes as a finding" "$(grep -cE '^[^|]*:[0-9]+[^|]*\| *(HIGH|MEDIUM|LOW) *\|' "$TMP/b.txt")" "0"
 
-echo "== no markers at all is reported, not parsed out of the transcript =="
-MODE=nomarkers bash "$TREE/scripts/review-opencode.sh" --target t --model m --out "$TMP/c.txt" >/dev/null 2>&1
-say "says no marked answer" "$(grep -c 'NO MARKED ANSWER' "$TMP/c.txt")" "1"
-say "nothing in it can pass as a finding" "$(grep -cE '^[^|]*:[0-9]+[^|]*\| *(HIGH|MEDIUM|LOW) *\|' "$TMP/c.txt")" "0"
-say "transcript lines are prefixed" "$(grep -c '^raw| ' "$TMP/c.txt" | awk '{print ($1>0)?"yes":"no"}')" "yes"
+echo "== an opencode without --format json still gives something usable =="
+MODE=legacy bash "$TREE/scripts/review-opencode.sh" --target t --model m --out "$TMP/c.txt" >/dev/null 2>&1
+say "says raw capture"           "$(grep -c 'RAW CAPTURE ONLY' "$TMP/c.txt")" "1"
+say "raw lines prefixed"         "$(grep -c '^raw| ' "$TMP/c.txt")" "2"
+say "nothing passes as a finding" "$(grep -cE '^[^|]*:[0-9]+[^|]*\| *(HIGH|MEDIUM|LOW) *\|' "$TMP/c.txt")" "0"
 [ $fail -eq 0 ] && echo "ALL PASS" || echo "FAILURES"; exit $fail

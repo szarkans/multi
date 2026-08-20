@@ -53,7 +53,7 @@ echo "   says: $(head -1 "$TMP/ro.txt" 2>/dev/null)"
 say "not empty" "$([ -s "$TMP/ro.txt" ] && echo yes || echo no)" "yes"
 say "says TIMEOUT" "$(grep -qi 'TIMEOUT' "$TMP/ro.txt" && echo yes || echo no)" "yes"
 
-echo "== a reviewer that answers without the markers keeps its answer =="
+echo "== an opencode too old for --format json still reaches the judge =="
 cat > "$TMP/bin/opencode" <<'STUB'
 #!/usr/bin/env bash
 printf '\033[32m> build - deepseek\033[0m\n'
@@ -62,12 +62,10 @@ echo "the queue is empty, and nobody resets the counter."
 STUB
 chmod +x "$TMP/bin/opencode"
 bash "$TREE/scripts/review-opencode.sh" --target t --model m --out "$TMP/off.txt" >/dev/null 2>&1
-say "labelled as unmarked" "$(grep -q 'NO MARKED ANSWER' "$TMP/off.txt" && echo yes || echo no)" "yes"
+say "labelled as a raw capture" "$(grep -q 'RAW CAPTURE ONLY' "$TMP/off.txt" && echo yes || echo no)" "yes"
 say "the answer survived" "$(grep -q 'retry loop in worker.py' "$TMP/off.txt" && echo yes || echo no)" "yes"
-say "marked as prose, not findings" "$(grep -q 'NOT as findings' "$TMP/off.txt" && echo yes || echo no)" "yes"
 say "quoted lines cannot pass as findings" "$(grep -cE '^[^|]*:[0-9]+[^|]*\| *(HIGH|MEDIUM|LOW) *\|' "$TMP/off.txt")" "0"
 say "ANSI stripped" "$(LC_ALL=C grep -q "$(printf '\033')" "$TMP/off.txt" && echo no || echo yes)" "yes"
-
 
 echo "== a hang that printed a header is not an answer =="
 cat > "$TMP/bin/opencode" <<'STUB'

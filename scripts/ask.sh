@@ -73,8 +73,8 @@ while [ $# -gt 0 ]; do
   esac
 done
 [ -n "$PREFIX" ] || { echo "--out-prefix is required" >&2; exit 2; }
-# The caller hands us a per-run directory (see MULTI_RUN_DIR in providers.sh);
-# create it here so every entry point gets it, not just the ones that remember.
+# The caller hands us a per-run directory (scripts/run-dir.sh); create it here
+# so every entry point gets it, not just the ones that remember.
 mkdir -p "$(dirname "$PREFIX")" 2>/dev/null || true
 if [ -n "$QFILE" ]; then
   [ -z "$QUESTION" ] || { echo "pass --question or --question-file, not both" >&2; exit 2; }
@@ -120,6 +120,13 @@ for entry in $ENTRIES; do
   NAMES+=("$name"); MODELS+=("$model"); SUFFIXES+=("$suffix")
 done
 
+# 0 = there is an answer, 3 = the model said nothing, 2 = the capture is not
+# JSON (an opencode older than --format json), 4 = no python3 to read it with.
+render_opencode() { # render_opencode <raw> <out> <model>
+  local py; py="$(multi_python)" || return 4
+  "$py" "$SELF_DIR/opencode-report.py" "$1" --out "$2" --calls "${2}.calls" --model "$3" 2>/dev/null
+}
+
 run_codex_one() {
   local out="$1" model="$2" rc=0
   command -v codex >/dev/null 2>&1 || { echo "codex: MISSING" > "$out"; return 0; }
@@ -143,32 +150,41 @@ run_opencode_one() {
   local out="$1" model="$2" fallback="$3"
   command -v opencode >/dev/null 2>&1 || { echo "opencode: MISSING" > "$out"; return 0; }
   [ -n "$model" ] || { echo "opencode: NO MODEL (set --model or MULTI_OPENCODE_MODEL)" > "$out"; return 0; }
-  local raw="${out}.raw" used="$model" rc=0
-  multi_timeout "$MULTI_BACKEND_TIMEOUT" opencode run --pure --auto -m "$model" --dir . "$QUESTION" > "$raw" 2>&1; rc=$?
-  # An empty transcript means the run never happened — exhausted usage, an
-  # expired subscription, a model that hangs. Neither CLI can be asked about
-  # remaining quota beforehand, so this is where it is discovered.
-  if [ ! -s "$raw" ] && [ -n "$fallback" ] && [ "$fallback" != "$model" ]; then
-    echo "[multi] $model produced nothing (exit $rc) — retrying on $fallback" >&2
-    multi_timeout "$MULTI_BACKEND_TIMEOUT" opencode run --pure --auto -m "$fallback" --dir . "$QUESTION" > "$raw" 2>&1; rc=$?
+  # --format json rather than the terminal transcript: the transcript mixes the
+  # model's answer with every file it opened, and the reader downstream cannot
+  # tell those apart. The JSON events can. opencode-report.py turns them into
+  # what it did, then what it said.
+  local raw="${out}.jsonl" used="$model" rc=0 rrc=0
+  multi_timeout "$MULTI_BACKEND_TIMEOUT" opencode run --pure --auto --format json \
+    -m "$model" --dir . "$QUESTION" > "$raw" 2>&1; rc=$?
+  render_opencode "$raw" "$out" "$used"; rrc=$?
+
+  # No answer means the run did not happen: exhausted usage, an expired
+  # subscription, a model that hangs. Neither CLI can be asked about remaining
+  # quota beforehand, so this is where it is discovered.
+  if [ "$rrc" = 3 ] && [ "$rc" -ne 124 ] && [ -n "$fallback" ] && [ "$fallback" != "$model" ]; then
+    echo "[multi] $model produced no answer (exit $rc) — retrying on $fallback" >&2
     used="$fallback"
+    multi_timeout "$MULTI_BACKEND_TIMEOUT" opencode run --pure --auto --format json \
+      -m "$fallback" --dir . "$QUESTION" > "$raw" 2>&1; rc=$?
+    render_opencode "$raw" "$out" "$used"; rrc=$?
   fi
+
   if [ "$rc" -eq 124 ]; then
-    # Checked BEFORE the transcript is accepted: opencode prints a startup
-    # header within a second, so a run that hangs after it still leaves a
-    # non-empty file. Copying that as the answer made a backend that never
-    # answered count as alive at the end of this script.
-    {
-      echo "opencode: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s — model=$used"
-      [ -s "$raw" ] && echo "(a partial transcript was left in $raw)"
+    # Checked before the output is accepted: opencode prints its first event
+    # within a second, so a run that hangs afterwards still leaves a file.
+    echo "opencode: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s — model=$used (partial capture in $raw)" > "$out"
+  elif [ "$rrc" = 3 ]; then
+    echo "opencode: NO ANSWER — model=$used exit=$rc — it ran but said nothing; what it did is in ${out}.calls" > "$out"
+  elif [ "$rrc" = 2 ] || [ "$rrc" = 4 ]; then
+    local why="an opencode without --format json"; [ "$rrc" = 4 ] && why="no python3 on this machine"
+    { echo "opencode: RAW CAPTURE ONLY — model=$used exit=$rc ($why)"
+      cat "$raw" 2>/dev/null
     } > "$out"
-  elif [ -s "$raw" ]; then
-    cp "$raw" "$out"
-    [ "$used" = "$model" ] || echo "[multi] answered by fallback model $used" >> "$out"
-  else
-    # Say so explicitly rather than letting an empty file read as an answer.
+  elif [ ! -s "$out" ]; then
     echo "opencode: NO OUTPUT — model=$used exit=$rc" > "$out"
   fi
+  [ "$used" = "$model" ] || echo "[multi] answered by fallback model $used" >> "$out"
 }
 
 run_openrouter_one() { multi_run_openrouter "$QUESTION" "$1" "$2"; }

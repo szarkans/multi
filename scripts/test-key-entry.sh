@@ -36,4 +36,18 @@ echo "== empty stdin is refused, not stored as an empty key =="
 printf '' | bash "$TREE/scripts/setup.sh" set OPENROUTER_API_KEY >/dev/null 2>&1
 say "refused" "$?" "2"
 say "old value intact" "$(grep -c 'SECRETVALUE' "$MULTI_HOME/providers.env")" "1"
+
+echo "== a key piped from a CRLF file is stored without the CR =="
+printf 'sk-crlf-key\r\n' | bash "$TREE/scripts/setup.sh" set OPENROUTER_API_KEY >/dev/null 2>&1
+# Compare the whole line: grep for a bare CR behaves differently across
+# platforms, and what matters is the exact bytes that were stored.
+say "stored exactly, no trailing CR" \
+  "$(grep -c "^export OPENROUTER_API_KEY='sk-crlf-key'$" "$MULTI_HOME/providers.env")" "1"
+
+echo "== a non-secret setting still wants its value on the command line =="
+bash "$TREE/scripts/setup.sh" set MULTI_OPENROUTER_MODEL </dev/null >/dev/null 2>&1
+say "refused without a value" "$?" "2"
+bash "$TREE/scripts/setup.sh" set MULTI_OPENROUTER_MODEL some/model >/dev/null 2>&1
+say "accepted with one" "$(grep -c 'some/model' "$MULTI_HOME/providers.env")" "1"
+
 [ $fail -eq 0 ] && echo "ALL PASS" || echo "FAILURES"; exit $fail

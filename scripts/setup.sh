@@ -55,6 +55,14 @@ cmd_set() {
     *) echo "refusing to set unknown variable: $name" >&2; exit 2 ;;
   esac
 
+  # Only secrets are worth this dance. A model name is not a secret, and
+  # prompting "paste ... (not echoed)" for MULTI_OPENROUTER_MODEL turned a
+  # clear usage error into a hidden input.
+  case "$name" in
+    *_API_KEY) ;;
+    *) [ -n "$value" ] || { echo "usage: $(basename "$0") set $name <value>" >&2; exit 2; } ;;
+  esac
+
   # Without a value on the command line the key is read from stdin -- typed
   # without echo, or piped in. This is the way to do it: a key in argv is in
   # the shell history, visible in `ps` to every user on the machine, and, when
@@ -67,6 +75,10 @@ cmd_set() {
     else
       IFS= read -r value
     fi
+    # A key piped from a CRLF file (`type key.txt | ...` under Git Bash) keeps a
+    # trailing CR, which is stored, invisible, and rejected by the provider
+    # while the key looks exactly right in the file.
+    value="${value%$'\r'}"
   else
     echo "note: a value passed as an argument stays in your shell history and is visible in ps — '$(basename "$0") set $name' reads it without echoing" >&2
   fi
@@ -95,7 +107,8 @@ cmd_set() {
   # `ls -l` rather than stat: stat's flags differ between GNU and BSD.
   perms="$(ls -l "$MULTI_PROVIDERS_ENV" 2>/dev/null | cut -c1-10)"
   case "$perms" in
-    -rw-------|"") ;;
+    -rw-------) ;;
+    "") echo "warning: could not read the permissions of $MULTI_PROVIDERS_ENV — check by hand that only you can read it" >&2 ;;
     *) echo "warning: $MULTI_PROVIDERS_ENV is $perms, not owner-only — this filesystem ignores chmod (Windows/MSYS, exFAT, some NTFS mounts). Anyone who can read this machine's disk — or, for a group-readable file, anyone in that group — can read the key." >&2 ;;
   esac
 }

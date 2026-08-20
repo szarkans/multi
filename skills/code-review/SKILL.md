@@ -96,7 +96,7 @@ once** — OpenCode spends about a minute just warming up — and do everything
 else while they run.
 
 ```bash
-RUN="${TMPDIR:-/tmp}/multi-${CLAUDE_CODE_SESSION_ID:-shared}"; mkdir -p "$RUN"
+RUN="$($SCRIPTS/run-dir.sh --slug <two-to-four words: the project and the job, e.g. skills-fixing-multi>)"
 
 $SCRIPTS/collect-context.sh [--diff <spec>] [--paths "<paths>"] > "$RUN/ctx.md"
 
@@ -108,10 +108,12 @@ $SCRIPTS/review-opencode.sh --target "<in words>" [--diff <spec>] [--paths "<pat
                             --context "$RUN/ctx.md" --out "$RUN/opencode.txt"
 ```
 
-`$RUN` is this session's own directory — two sessions reviewing at once used to
-share `/tmp/multi-*` and overwrite each other's files. Shell variables do not
-survive between commands, so repeat that first line at the top of every later
-block that needs `$RUN`.
+`run-dir.sh` prints this session's own directory, `/tmp/multi/<session>--<slug>`,
+and creates it. Two sessions reviewing at once used to share fixed `/tmp` names
+and overwrite each other's files. Shell variables do not survive between
+commands, so repeat that first line in every later block that needs `$RUN` —
+`--slug` only labels the directory the first time, so a different wording later
+still lands in the same place. Runs older than a week are swept.
 
 `--diff` is what makes it a *change* review; leave it off and the reviewers read
 the actual code instead, with old code fully in scope. `--paths` narrows hard.
@@ -173,8 +175,18 @@ what you actually know about the job. Without any of that, `ultra` degrades to
 Normalize everything to `{file, line, severity, claim}`. Codex reports
 `- [P1] <title> — <abs path>:<line>-<line>` with the explanation indented
 (P1/P2/P3 → high/medium/low) and absolute paths; make them repo-relative.
-OpenCode reports `FILE:LINE | SEVERITY | reason`. Sub-agents report
-`FILE:LINE | SEVERITY | confidence NN` with two lines under it.
+OpenCode's file has two parts: `## <model>` listing every tool call it made,
+then `## Answer` with what it wrote, as `FILE:LINE | SEVERITY | reason`.
+Sub-agents report `FILE:LINE | SEVERITY | confidence NN` with two lines under
+it.
+
+**Read OpenCode's call list before its findings.** It is there to answer one
+question: did this reviewer actually look at the code it is talking about? A
+finding about a file that never appears in the call list was invented, and it
+goes in `Dropped`. `(none — this reviewer answered without opening anything)`
+means the whole report is guesswork. `NO ANSWER` means it ran and said
+nothing: that reviewer was absent, say so rather than reading silence as
+agreement.
 
 Bucket by *the underlying problem*, not by wording — the same bug gets three
 different descriptions:

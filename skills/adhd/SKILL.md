@@ -53,7 +53,7 @@ Start the external models **first** — they take 30–90 seconds and OpenCode
 spends most of a minute waking up. Launch the Claude agents while they run.
 
 ```bash
-RUN="${TMPDIR:-/tmp}/multi-${CLAUDE_CODE_SESSION_ID:-shared}"; mkdir -p "$RUN"
+RUN="$($SCRIPTS/run-dir.sh --slug <two-to-four words: the project and the job, e.g. skills-fixing-multi>)"
 
 $SCRIPTS/ask.sh --question-file "$RUN/adhd-f2.md" --out-prefix "$RUN/adhd-f2" \
                 --backend codex --effort medium &
@@ -107,9 +107,14 @@ escapes, a `> build · <model>` header, sometimes tool calls before the answer.
 Run both through the parser rather than eyeballing them:
 
 ```bash
-RUN="${TMPDIR:-/tmp}/multi-${CLAUDE_CODE_SESSION_ID:-shared}"
-python3 $SCRIPTS/parse-branch.py "$RUN/adhd-f2-codex.txt" "$RUN/adhd-f3-opencode.txt"
+RUN="$($SCRIPTS/run-dir.sh)"
+python3 $SCRIPTS/parse-branch.py "$RUN/adhd-f2-codex.txt" "$RUN/adhd-f3-opencode.txt" \
+  || python $SCRIPTS/parse-branch.py "$RUN/adhd-f2-codex.txt" "$RUN/adhd-f3-opencode.txt"
 ```
+
+The `|| python` is not superstition: on Windows the name `python3` resolves to
+a Microsoft Store stub that prints "Python was not found" and exits 0, so the
+first command can look like it succeeded while doing nothing.
 
 It strips the escapes, takes the last valid `[ ... ]` block, and prints
 `NO FILE` / `EMPTY` / `NO JSON ARRAY` for a branch that produced nothing. That

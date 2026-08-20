@@ -125,6 +125,22 @@ multi_check_paths() {
   return 0
 }
 
+# Which python actually runs, if any. `command -v python3` is not the test:
+# on Windows that name resolves to the Microsoft Store stub, which prints
+# "Python was not found" and exits 0 -- so a script "run" through it produces
+# nothing and reports success (measured on Git for Windows, 2026-08-20).
+# Printing 42 costs ~30ms and is the only answer that proves an interpreter.
+multi_python() {
+  local p
+  for p in python3 python; do
+    command -v "$p" >/dev/null 2>&1 || continue
+    [ "$("$p" -c 'print(6*7)' 2>/dev/null)" = "42" ] || continue
+    printf '%s' "$p"
+    return 0
+  done
+  return 1
+}
+
 MULTI_HOME="${MULTI_HOME:-$HOME/.claude/multi}"
 MULTI_PROVIDERS_ENV="${MULTI_PROVIDERS_ENV:-$MULTI_HOME/providers.env}"
 
@@ -160,13 +176,6 @@ MULTI_BACKEND_TIMEOUT="${MULTI_BACKEND_TIMEOUT:-300}"
 # a hung CLI, not to pace a slow one.
 MULTI_REVIEW_TIMEOUT="${MULTI_REVIEW_TIMEOUT:-900}"
 
-# Where one run keeps its files. The skills used to name them outright --
-# /tmp/multi-ctx.md, /tmp/multi-codex.txt -- so two Claude Code sessions
-# reviewing at the same time wrote over each other: session B's context file
-# became session A's, and neither noticed. Keyed on the session id, so every
-# session gets its own directory and the path is the same in every command of
-# that session without anything having to be remembered between them.
-MULTI_RUN_DIR="${MULTI_RUN_DIR:-${TMPDIR:-/tmp}/multi-${CLAUDE_CODE_SESSION_ID:-$PPID}}"
 
 # --- availability -------------------------------------------------------
 # Cheap and local: is there a key and a binary at all. Says nothing about
@@ -231,7 +240,7 @@ multi_run_openrouter() {
   local prompt="$1" out="$2" model="${3:-}" rc=0
   local log="${out}.log"
   if [ -z "${OPENROUTER_API_KEY:-}" ]; then
-    echo "openrouter: NO KEY — run scripts/setup.sh set OPENROUTER_API_KEY (it asks for the key, no echo)" > "$out"; return 0
+    echo "openrouter: NO KEY — ask the user to run scripts/setup.sh set OPENROUTER_API_KEY in their own terminal (it prompts for the key)" > "$out"; return 0
   fi
   # No model pinned by the caller: pick one whose pool is actually up.
   if [ -z "$model" ]; then
@@ -279,7 +288,7 @@ multi_run_openrouter() {
 multi_run_gemini() {
   local prompt="$1" out="$2" model="${3:-$MULTI_GEMINI_MODEL}" rc=0
   if [ -z "${GEMINI_API_KEY:-}" ]; then
-    echo "gemini: NO KEY — run scripts/setup.sh set GEMINI_API_KEY (it asks for the key, no echo)" > "$out"; return 0
+    echo "gemini: NO KEY — ask the user to run scripts/setup.sh set GEMINI_API_KEY in their own terminal (it prompts for the key)" > "$out"; return 0
   fi
   command -v gemini >/dev/null 2>&1 || { echo "gemini: MISSING (npm i -g @google/gemini-cli)" > "$out"; return 0; }
   GEMINI_API_KEY="$GEMINI_API_KEY" \
