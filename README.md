@@ -3,7 +3,7 @@
 [Русская версия →](README.ru.md) · [中文 →](README.zh.md)
 
 use **Multi**ple models for bunch of tasks - code-review, verifying task is done, [adhd](https://github.com/UditAkhourii/adhd) planning or just questions.  
-currently it uses Claude Code's subagents + Codex + OpenCode + Gemini + Headless Claude Code with openrouter key if you provide one. good base setup - claude code + codex, other are optional.  
+currently it **can** use Claude Code's subagents + Codex + OpenCode + Gemini + Headless Claude Code with openrouter key if you provide one. use whatever you want but good base setup - claude code + codex, other are optional.  
 it **can** use all of those models but it doesnt mean its gonna be **better** because theyall still llms. just use whatever you have or you want (or everything at once idc yolo)
 
 ## Commands
