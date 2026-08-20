@@ -41,7 +41,7 @@ PS=""
 
 if [ -n "$DIFF" ]; then
   case "$DIFF" in
-    uncommitted) HOW="Run this to see it: git status --porcelain --untracked-files=all${PS} && git diff${PS} && git diff --cached${PS}" ;;
+    uncommitted) HOW="Run this to see it: git diff${PS} && git diff --cached${PS}   (do NOT list the working tree yourself — untracked files reach you only through the paths restriction below)" ;;
     *)           HOW="Run this to see it: git diff ${DIFF}${PS}   (if that is a single commit, use git show ${DIFF}${PS} instead)" ;;
   esac
   TARGET_LINE="Review this change: ${TARGET}

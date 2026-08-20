@@ -95,6 +95,26 @@ conditional on a mode. Start the two external ones **in the background, both at
 once** — OpenCode spends about a minute just warming up — and do everything
 else while they run.
 
+**Decide what may leave the machine, before anything is read.** The external
+reviewers run somewhere else, and an uncommitted target is exactly where a
+working tree keeps what was never meant to travel — `.env.local`, a stray
+deploy key, a service-account JSON, this plugin's own `providers.env`. So the
+allow-list is settled first, by path name only:
+
+```bash
+$SCRIPTS/safe-paths.sh [--diff <spec>] [--paths "<paths>"]
+```
+
+It prints `allow:` lines, `withheld:` lines with the rule that caught them, and
+a one-line summary. Pass the allowed paths on as `--paths` to both external
+reviewers below — that is what keeps them from widening the scope themselves —
+and repeat the withheld count in the report, so a reviewer that saw less than
+the whole change says so out loud. An empty allow-list means send nothing, not
+send everything.
+
+Ordinary repositories withhold nothing and the line is free. Skip the step only
+when the target is a committed range you already know is clean.
+
 ```bash
 $SCRIPTS/collect-context.sh [--diff <spec>] [--paths "<paths>"] > /tmp/multi-ctx.md
 

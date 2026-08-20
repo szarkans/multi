@@ -56,6 +56,18 @@ Changed:  <concrete paths or range>
 They are free and slow to start, so they go first and run in the background
 while you do the real work below.
 
+Settle the allow-list first — this skill hands the outside reviewers a target
+just like the review skill does, and an unfinished task lives in an untracked
+working tree more often than not:
+
+```bash
+$SCRIPTS/safe-paths.sh [--diff <spec>] [--paths "<paths>"]
+```
+
+Describe only the allowed paths in the prompt below, and say in the report if
+anything was withheld — a completion check that silently skipped part of the
+change is the one failure this skill cannot afford.
+
 ```bash
 cat > /tmp/multi-done-prompt.md <<'EOF'
 <the promise, as a concrete list of what was supposed to end up working>
