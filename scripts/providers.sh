@@ -37,12 +37,32 @@ elif command -v gtimeout >/dev/null 2>&1; then
 else
   multi_timeout() {
     local secs="$1"; shift
+    # The watchdog leaves a marker before it kills, because the caller has to
+    # tell "timed out" from "died on its own": multi_run_openrouter keys its
+    # "the key was probably rejected" message on exit 124, which is what GNU
+    # timeout returns and what a bare `wait` after a SIGTERM does not (143).
+    local flag="${TMPDIR:-/tmp}/multi-timeout.$$.${RANDOM}"
+    rm -f "$flag"
     "$@" &
     local pid=$!
-    ( sleep "$secs"; kill -TERM "$pid" 2>/dev/null ) >/dev/null 2>&1 &
+    # Sleeping in one-second steps rather than one long sleep: when the command
+    # finishes early the watchdog notices and exits, instead of a `sleep 300`
+    # sitting in the process table for five minutes after the call returned.
+    (
+      local n=0
+      while [ "$n" -lt "$secs" ]; do
+        sleep 1
+        kill -0 "$pid" 2>/dev/null || exit 0
+        n=$((n+1))
+      done
+      : > "$flag"
+      kill -TERM "$pid" 2>/dev/null
+    ) >/dev/null 2>&1 &
     local watcher=$!
     wait "$pid" 2>/dev/null
     local rc=$?
+    [ -e "$flag" ] && rc=124
+    rm -f "$flag"
     kill -TERM "$watcher" >/dev/null 2>&1
     wait "$watcher" 2>/dev/null
     return "$rc"
