@@ -94,7 +94,6 @@ esac
 # Parse each entry into (backend name, model). Split on the FIRST colon only,
 # and only when the prefix is a known backend — a model name can contain
 # colons itself (z-ai/glm-5.2:free), a bare model name cannot look like one.
-declare -A COUNT
 NAMES=(); MODELS=(); SUFFIXES=()
 for entry in $ENTRIES; do
   case "$entry" in
@@ -106,8 +105,15 @@ for entry in $ENTRIES; do
     *) echo "--backend: unknown backend '$name' (codex, opencode, openrouter, gemini, both, all)" >&2; exit 2 ;;
   esac
   # A backend repeated with a different model must not collide on one file.
-  COUNT[$name]=$(( ${COUNT[$name]:-0} + 1 ))
-  suffix="$name"; [ "${COUNT[$name]}" -gt 1 ] && suffix="${name}-${COUNT[$name]}"
+  # Counted by walking what is already collected. An associative array reads
+  # better, but bash 3.2 -- the /bin/bash every stock macOS ships -- has none,
+  # and `declare -A` fails there at run time, mid-script, with exit 0: ask.sh
+  # printed "declare: -A: invalid option" and the caller saw success.
+  seen=0
+  for prev in ${NAMES[@]+"${NAMES[@]}"}; do
+    [ "$prev" = "$name" ] && seen=$((seen+1))
+  done
+  suffix="$name"; [ "$seen" -gt 0 ] && suffix="${name}-$((seen+1))"
   NAMES+=("$name"); MODELS+=("$model"); SUFFIXES+=("$suffix")
 done
 
