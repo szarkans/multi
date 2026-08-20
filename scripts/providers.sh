@@ -16,6 +16,39 @@
 #      validated with curl (instant, unambiguous), never by launching the
 #      agent, and every child process gets a hard timeout.
 
+# --- timeout, portably --------------------------------------------------
+# `timeout` is GNU coreutils and is NOT on a stock macOS — Homebrew's coreutils
+# installs it as `gtimeout`, and plenty of machines have neither. That matters
+# more than it looks: `timeout 10 codex login status | grep -qi 'logged in'`
+# does not fail loudly when the binary is missing. The shell writes
+# "command not found" to stderr, grep reads an empty stdin, and the probe
+# concludes the user is NOT LOGGED IN — on a machine where Codex is perfectly
+# logged in. The review skill then hits its own gate ("no Codex → stop") and
+# the whole plugin refuses to run.
+#
+# So: real timeout if there is one, otherwise run it ourselves. The fallback
+# is not "skip the timeout" — providers below rely on it, and the note under
+# multi_run_openrouter is exactly why: Claude Code does not fail fast on a bad
+# key, it retries silently, and without a hard limit that call never returns.
+if command -v timeout >/dev/null 2>&1; then
+  multi_timeout() { command timeout "$@"; }
+elif command -v gtimeout >/dev/null 2>&1; then
+  multi_timeout() { command gtimeout "$@"; }
+else
+  multi_timeout() {
+    local secs="$1"; shift
+    "$@" &
+    local pid=$!
+    ( sleep "$secs"; kill -TERM "$pid" 2>/dev/null ) >/dev/null 2>&1 &
+    local watcher=$!
+    wait "$pid" 2>/dev/null
+    local rc=$?
+    kill -TERM "$watcher" >/dev/null 2>&1
+    wait "$watcher" 2>/dev/null
+    return "$rc"
+  }
+fi
+
 MULTI_HOME="${MULTI_HOME:-$HOME/.claude/multi}"
 MULTI_PROVIDERS_ENV="${MULTI_PROVIDERS_ENV:-$MULTI_HOME/providers.env}"
 
@@ -131,7 +164,7 @@ multi_run_openrouter() {
   ANTHROPIC_MODEL="$model" \
   ANTHROPIC_SMALL_FAST_MODEL="$model" \
   ANTHROPIC_DEFAULT_HAIKU_MODEL="$model" \
-    timeout "$MULTI_BACKEND_TIMEOUT" claude -p "$prompt" \
+    multi_timeout "$MULTI_BACKEND_TIMEOUT" claude -p "$prompt" \
       --strict-mcp-config --mcp-config '{"mcpServers":{}}' \
       > "$out" 2> "$log"
   rc=$?
@@ -161,7 +194,7 @@ multi_run_gemini() {
   fi
   command -v gemini >/dev/null 2>&1 || { echo "gemini: MISSING (npm i -g @google/gemini-cli)" > "$out"; return 0; }
   GEMINI_API_KEY="$GEMINI_API_KEY" \
-    timeout "$MULTI_BACKEND_TIMEOUT" gemini -p "$prompt" \
+    multi_timeout "$MULTI_BACKEND_TIMEOUT" gemini -p "$prompt" \
       ${model:+-m "$model"} --approval-mode plan \
       > "$out" 2>&1
   rc=$?
