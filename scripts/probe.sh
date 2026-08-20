@@ -45,7 +45,26 @@ if command -v opencode >/dev/null 2>&1; then
   if [ -n "${MULTI_OPENCODE_MODEL:-}" ]; then
     say "opencode: OK — ${MULTI_OPENCODE_MODEL} (pinned by MULTI_OPENCODE_MODEL)"
   else
-    available="$(multi_timeout 20 opencode models 2>/dev/null)"
+    # `opencode models` is the whole cost of this probe: 2.9s against 49ms for
+    # the codex check, measured 2026-08-20 -- and this probe runs before every
+    # single skill invocation. The list is a catalogue, not a live state, so it
+    # is cached; a model that disappeared mid-hour is already handled, since the
+    # reviewer falls back when its first choice dies. Delete the file or set
+    # MULTI_PROBE_CACHE_MIN=0 to force a fresh read.
+    models_cache="$MULTI_HOME/opencode-models.cache"
+    cache_min="${MULTI_PROBE_CACHE_MIN:-60}"
+    available=""
+    # `find -mmin` rather than stat: stat's flags differ between GNU and BSD.
+    [ "$cache_min" != "0" ] && [ -s "$models_cache" ] \
+      && [ -n "$(find "$models_cache" -mmin "-${cache_min}" 2>/dev/null)" ] \
+      && available="$(cat "$models_cache")"
+    if [ -z "$available" ]; then
+      available="$(multi_timeout 20 opencode models 2>/dev/null)"
+      if [ -n "$available" ]; then
+        mkdir -p "$MULTI_HOME" 2>/dev/null
+        printf '%s\n' "$available" > "$models_cache"
+      fi
+    fi
     picked=""
     for m in $CANDIDATES; do
       printf '%s\n' "$available" | grep -qxF "$m" && { picked="$m"; break; }
