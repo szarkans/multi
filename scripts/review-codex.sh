@@ -52,7 +52,7 @@ case "$DIFF" in -*) echo "--diff must be a revision, not an option: $DIFF" >&2; 
 # --- what to look at -----------------------------------------------------
 if [ -n "$DIFF" ]; then
   case "$DIFF" in
-    uncommitted) HOW="Find it with: git status --porcelain --untracked-files=all, git diff, git diff --cached. Untracked files count as changes." ;;
+    uncommitted) HOW="Find it with: git diff and git diff --cached. Do NOT list the working tree yourself -- new files reach you only through the line below, which was decided before this prompt was built.$(multi_untracked_note "$PATHS")" ;;
     *)           HOW="Find it with: git diff ${DIFF} (or git show ${DIFF} if that is a single commit)." ;;
   esac
   TARGET_LINE="Review this change: ${TARGET}. ${HOW}"
