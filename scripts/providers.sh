@@ -30,10 +30,24 @@
 # is not "skip the timeout" — providers below rely on it, and the note under
 # multi_run_openrouter is exactly why: Claude Code does not fail fast on a bad
 # key, it retries silently, and without a hard limit that call never returns.
+# -k: SIGKILL a few seconds after SIGTERM. Without it a CLI that ignores TERM
+# survives its own timeout, and both branches below must behave the same way --
+# the fallback escalates too.
+# 137 -> 124: with -k, GNU timeout reports 124 when SIGTERM was enough and 137
+# when it had to escalate. Both are the same event to every caller here, and
+# every caller tests for 124, so a CLI that ignores SIGTERM would otherwise
+# come back as a mysterious "exit=137" instead of "TIMEOUT".
+multi_gnu_timeout() {
+  local bin="$1"; shift
+  command "$bin" -k "${MULTI_TIMEOUT_GRACE:-5}" "$@"
+  local rc=$?
+  [ "$rc" -eq 137 ] && rc=124
+  return "$rc"
+}
 if command -v timeout >/dev/null 2>&1; then
-  multi_timeout() { command timeout "$@"; }
+  multi_timeout() { multi_gnu_timeout timeout "$@"; }
 elif command -v gtimeout >/dev/null 2>&1; then
-  multi_timeout() { command gtimeout "$@"; }
+  multi_timeout() { multi_gnu_timeout gtimeout "$@"; }
 else
   multi_timeout() {
     local secs="$1"; shift
@@ -41,8 +55,12 @@ else
     # tell "timed out" from "died on its own": multi_run_openrouter keys its
     # "the key was probably rejected" message on exit 124, which is what GNU
     # timeout returns and what a bare `wait` after a SIGTERM does not (143).
-    local flag="${TMPDIR:-/tmp}/multi-timeout.$$.${RANDOM}"
-    rm -f "$flag"
+    # In a private directory, not a guessable name in /tmp: the marker is
+    # deleted and recreated, and on a shared machine another user can park a
+    # symlink at a predictable path in between, which would make a timing-out
+    # review truncate whatever that symlink points at. mktemp -d is 0700.
+    local fdir; fdir="$(mktemp -d)" || { echo "multi_timeout: no tmpdir" >&2; return 125; }
+    local flag="$fdir/timed-out"
     "$@" &
     local pid=$!
     # Sleeping in one-second steps rather than one long sleep: when the command
@@ -57,12 +75,27 @@ else
       done
       : > "$flag"
       kill -TERM "$pid" 2>/dev/null
+      # A CLI that ignores SIGTERM would leave the `wait` below blocked for
+      # ever -- a hard timeout that is not hard is worse than none, because
+      # the promise in the skill text says the hang is handled.
+      local g=0
+      while [ "$g" -lt "${MULTI_TIMEOUT_GRACE:-5}" ]; do
+        sleep 1
+        kill -0 "$pid" 2>/dev/null || exit 0
+        g=$((g+1))
+      done
+      kill -KILL "$pid" 2>/dev/null
+      # Only the process itself, not its process group -- same as GNU timeout,
+      # which also leaves grandchildren behind (verified 2026-08-20). Killing
+      # the group from here is not available cheaply: without setsid, which
+      # stock macOS does not ship, the child shares OUR group, and a group
+      # kill would take down the caller.
     ) >/dev/null 2>&1 &
     local watcher=$!
     wait "$pid" 2>/dev/null
     local rc=$?
     [ -e "$flag" ] && rc=124
-    rm -f "$flag"
+    rm -rf "$fdir"
     kill -TERM "$watcher" >/dev/null 2>&1
     wait "$watcher" 2>/dev/null
     return "$rc"
