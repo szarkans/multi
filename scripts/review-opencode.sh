@@ -85,7 +85,7 @@ edge case that bites once a year. Losing one because it looked minor is worse
 than a line the reader skips.
 
 Matters of taste do NOT count, at any severity: formatting, naming, import
-order, "this could be cleaner", blanket "add tests". A separate simplicity
+order, \"this could be cleaner\", blanket \"add tests\". A separate simplicity
 reviewer runs on this same target and owns all of that.
 
 ${SCOPE_RULE} Do not run the build or the tests.

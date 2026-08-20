@@ -97,7 +97,7 @@ an edge case that bites once a year. Losing one of those because it looked
 minor is worse than a line the reader skips.
 
 Matters of taste do NOT count, at any severity: formatting, naming, import
-order, "this could be cleaner", "this function is long", blanket "add tests".
+order, \"this could be cleaner\", \"this function is long\", blanket \"add tests\".
 A separate simplicity reviewer runs on this same target and owns all of that,
 so leaving it out costs nothing. A missing test is a finding only when you can
 name the specific path that breaks silently without it.
