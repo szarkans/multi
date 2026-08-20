@@ -6,15 +6,7 @@ use **Multi**ple models for bunch of tasks - code-review, verifying task is done
 currently it uses Claude Code's subagents + Codex + OpenCode + Gemini + Headless Claude Code with openrouter key if you provide one. good base setup - claude code + codex, other are optional.  
 it **can** use all of those models but it doesnt mean its gonna be **better** because theyall still llms. just use whatever you have or you want (or everything at once idc yolo)
 
-| command | what it does |
-|---|---|
-| `/multi:code-review` | code review by all agents, judged by Claude Code (!) into one report |
-| `/multi:check-if-done` | is the work actually finished, or only finished-looking - every claim backed by a command that was really run |
-| `/multi:ask` | put one question to all of them and see the three answers side by side |
-| `/multi:adhd` | brainstorm wide - 5 cognitive frames, each one handed to a different model, then scored and grouped into a shortlist |
-| `/multi:setup` | walks you through connecting the other models step b step |
-
-## Human-written README
+## Commands
 
 soo basically its what the name implies - several models instead of one:
 
