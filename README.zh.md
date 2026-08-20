@@ -8,14 +8,6 @@
 目前能用：Claude Code 的子代理 + Codex + OpenCode + Gemini + headless 模式的 Claude Code（给个 openrouter 的 key 就行）。起步搭配推荐 claude code + codex，其他都可选。  
 **能**用这么多模型不等于结果一定**更好**，毕竟都是 llm。有啥用啥，想用啥用啥（或者全开也行，随你 yolo）
 
-| 命令 | 作用 |
-|---|---|
-| `/multi:code-review` | 让所有接进来的模型一起做代码评审，再由 Claude Code (!) 汇总成一份报告 |
-| `/multi:check-if-done` | 活儿是真干完了，还是只是看着像干完了，每个「完成」都得有一条真正跑过的命令来证明 |
-| `/multi:ask` | 把同一个问题一次性抛给所有模型，三个答案摆一起看。没人评判，没人复核 |
-| `/multi:adhd` | 放开了想点子 - 5 个思考视角，每个交给不同的模型，最后打分归类，给你一份候选清单 |
-| `/multi:setup` | 一步步教你把其他模型接进来，不讲术语 |
-
 ## 说人话的 README
 
 不难猜，就是用好几个模型而不是一个：
