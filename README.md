@@ -31,12 +31,12 @@ or
 git clone https://github.com/szarkans/multi ~/.claude/skills/multi
 ```
 
-then restart claude code and just ask claude code to setup everything why bother
+then restart claude code and `/multi:setup`
 
 ### Why your README written like that?
 
 im tired of ai-slop-saas-b2b-skill readme's. plain user-readable text is better, no garbage noise, only what you actually need.  
-and tbh just ask claude what this plugin about. we ALL do that w/o reading actual readme.  
+like... is there something i missed? i can guide you throuugh every script but do you **really** want it?
 
 ## Evals
 
