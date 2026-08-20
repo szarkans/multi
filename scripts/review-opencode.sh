@@ -82,6 +82,17 @@ override your general priors about this codebase:
 $(cat "$CONTEXT")"
 fi
 
+# The markers carry a per-run token, and that is the point. OpenCode echoes
+# every file it reads into the transcript, so a fixed marker -- or the finding
+# pattern itself -- also appears in whatever source file happens to contain it.
+# Measured here on 2026-08-20: this script was the file under review, the model
+# returned no findings at all, and the parser handed the judge two lines that
+# were the comment "# Findings look like: path/file.py:12 | HIGH | why" read
+# out of this very file. A token minted per run cannot be in any file on disk.
+MARK_TOKEN="$$$RANDOM"
+BEGIN_MARK="MULTI-FINDINGS-${MARK_TOKEN}-BEGIN"
+END_MARK="MULTI-FINDINGS-${MARK_TOKEN}-END"
+
 PROMPT="You are a code reviewer. ${TARGET_LINE}
 
 Report everything you would raise: logic bugs, security holes, data loss,
@@ -96,10 +107,14 @@ reviewer runs on this same target and owns all of that.
 
 ${SCOPE_RULE} Do not run the build or the tests.
 
-Output ONLY finding lines, nothing before or after, one per line, exactly:
+Put your answer between these two marker lines, each alone on its line, and put
+nothing else between them:
+${BEGIN_MARK}
 FILE:LINE | HIGH|MEDIUM|LOW | what is wrong and the concrete case where it bites
+${END_MARK}
 
-If nothing is genuinely wrong, output exactly: No issues found.${FOCUS}${CTX}"
+One finding per line, in exactly that shape. If nothing is genuinely wrong, put
+the single line: No issues found${FOCUS}${CTX}"
 
 # OpenCode echoes every tool call and its output, so a review arrives wrapped in
 # the files it read. Keep the whole transcript next to the result for auditing,
@@ -108,6 +123,20 @@ RAW="${OUT}.raw"
 
 # Findings look like: path/file.py:12 | HIGH | why
 FINDING_RE='^[^|]*:[0-9]+[^|]*\|[[:space:]]*(HIGH|MEDIUM|LOW)[[:space:]]*\|'
+
+ESC="$(printf '\033')"
+
+# Everything downstream reads THIS, never the raw transcript: only the text the
+# model put between its own markers. A transcript is full of other people's
+# lines -- files it opened, tool output, this script's own comments -- and any
+# of them can look exactly like a finding.
+answer() {
+  sed "s/${ESC}\[[0-9;]*[a-zA-Z]//g" "$RAW" 2>/dev/null | awk -v b="$BEGIN_MARK" -v e="$END_MARK" '
+    index($0, b) { buf=""; inb=1; next }
+    index($0, e) { inb=0; next }
+    inb { buf = buf $0 "\n" }
+    END { printf "%s", buf }'
+}
 
 # Timed out because the skill promises a kill-and-restart and nothing here
 # delivered one: a hung `opencode run` wrote nothing and the skill waited on a
@@ -121,7 +150,7 @@ attempt() { # attempt <model> ; leaves the transcript in $RAW
     "$PROMPT" > "$RAW" 2>&1
 }
 
-usable() { grep -qaiE "$FINDING_RE" "$RAW" || grep -qai 'No issues found' "$RAW"; }
+usable() { answer | grep -qaiE "$FINDING_RE" || answer | grep -qai 'No issues found'; }
 
 attempt "$MODEL"; rc=$?
 USED="$MODEL"
@@ -137,35 +166,40 @@ if ! usable && [ -n "$FALLBACK" ] && [ "$FALLBACK" != "$MODEL" ]; then
   USED="$FALLBACK"
 fi
 
-grep -aiE "$FINDING_RE" "$RAW" > "$OUT"
-if [ ! -s "$OUT" ]; then
-  if grep -qai 'No issues found' "$RAW"; then
-    echo "No issues found." > "$OUT"
-  else
-    # Say so explicitly rather than letting an empty file read as "all clear".
-    if [ "$rc" -eq 124 ]; then
-      echo "opencode: TIMEOUT after ${MULTI_REVIEW_TIMEOUT}s — model=$USED, no review was produced — see $RAW" > "$OUT"
-    elif [ -s "$RAW" ]; then
-      # There IS an answer, it just is not in the required shape. Throwing it
-      # away and reporting "NO PARSEABLE OUTPUT" loses a real review, and the
-      # default third reviewer is the weakest model in the line-up — the one
-      # most likely to drift off format. So hand the judge the tail of the
-      # transcript, clearly labelled as prose: a transcript also carries tool
-      # output and file contents, and a line in a reviewed file can look
-      # exactly like a finding.
-      ESC="$(printf '\033')"
-      {
-        echo "opencode: OUTPUT DID NOT MATCH THE FORMAT — model=$USED exit=$rc"
-        echo "The model answered, but not as 'path:line | SEVERITY | why'. Its last lines"
-        echo "are quoted below as prose, NOT as findings — anything you take from here you"
-        echo "must confirm in the code yourself. Full transcript: $RAW"
-        echo "--- last 80 transcript lines, verbatim ---"
-        tail -n 80 "$RAW" | sed "s/${ESC}\[[0-9;]*[a-zA-Z]//g"
-      } > "$OUT"
-    else
-      echo "NO PARSEABLE OUTPUT — model=$USED exit=$rc — see $RAW" > "$OUT"
-    fi
-  fi
+SECTION="$(answer)"
+printf '%s' "$SECTION" | grep -aiE "$FINDING_RE" > "$OUT"
+
+if [ -s "$OUT" ]; then
+  # Whatever else sits between the markers is still the reviewer talking. A
+  # finding written as prose next to three well-formed ones used to vanish with
+  # no trace at all, so count it and point at the transcript.
+  extra="$(printf '%s' "$SECTION" | grep -aviE "$FINDING_RE" | grep -cv '^[[:space:]]*$')"
+  [ "${extra:-0}" -eq 0 ] || \
+    echo "[multi] $extra more line(s) between the markers were not in finding format — read them in $RAW" >> "$OUT"
+elif printf '%s' "$SECTION" | grep -qai 'No issues found'; then
+  echo "No issues found." > "$OUT"
+elif [ "$rc" -eq 124 ]; then
+  echo "opencode: TIMEOUT after ${MULTI_REVIEW_TIMEOUT}s — model=$USED, no review was produced — see $RAW" > "$OUT"
+elif [ -s "$RAW" ]; then
+  # The model produced something but never marked an answer -- it drifted off
+  # format, or stopped after reading files. Hand the judge the tail of the
+  # transcript, clearly labelled: it is prose at best, and at worst it is other
+  # people's lines, because a transcript carries every file the model opened.
+  {
+    echo "opencode: NO MARKED ANSWER — model=$USED exit=$rc"
+    echo "The model never produced its answer between the markers it was given. What"
+    echo "follows is the tail of its transcript, quoted as prose and NOT as findings:"
+    echo "it also contains files the model read, so confirm anything you take from it."
+    echo "Full transcript: $RAW"
+    echo "--- last 80 transcript lines, each prefixed 'raw|' ---"
+    # The prefix is load-bearing, and it contains a pipe on purpose: a finding
+    # line is "path:line | SEVERITY | why", so anything whose first field is
+    # already "raw" cannot be read as one. A plain "raw> " prefix does not do
+    # it -- "raw> src/x.py:99 | HIGH | ..." still matches the finding shape.
+    tail -n 80 "$RAW" | sed "s/${ESC}\[[0-9;]*[a-zA-Z]//g" | sed 's/^/raw| /' 
+  } > "$OUT"
+else
+  echo "opencode: NO OUTPUT — model=$USED exit=$rc — see $RAW" > "$OUT"
 fi
 [ "$USED" = "$MODEL" ] || echo "[multi] reviewed by fallback model $USED" >> "$OUT"
 exit $rc
