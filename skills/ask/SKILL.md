@@ -30,8 +30,10 @@ Start the external models first — they take 30–90 seconds and OpenCode spend
 most of a minute just waking up. Answer the question yourself while they run.
 
 ```bash
+RUN="${TMPDIR:-/tmp}/multi-${CLAUDE_CODE_SESSION_ID:-shared}"; mkdir -p "$RUN"
+
 $SCRIPTS/ask.sh --question "<the user's question, verbatim>" \
-                --out-prefix /tmp/multi-ask \
+                --out-prefix "$RUN/ask" \
                 --backend "codex,opencode:<model from probe>" \
                 [--fallback <fallback model from probe>] [--effort <low|medium|high|xhigh|max>]
 ```

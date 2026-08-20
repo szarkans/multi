@@ -104,6 +104,14 @@ MULTI_BACKEND_TIMEOUT="${MULTI_BACKEND_TIMEOUT:-300}"
 # a hung CLI, not to pace a slow one.
 MULTI_REVIEW_TIMEOUT="${MULTI_REVIEW_TIMEOUT:-900}"
 
+# Where one run keeps its files. The skills used to name them outright --
+# /tmp/multi-ctx.md, /tmp/multi-codex.txt -- so two Claude Code sessions
+# reviewing at the same time wrote over each other: session B's context file
+# became session A's, and neither noticed. Keyed on the session id, so every
+# session gets its own directory and the path is the same in every command of
+# that session without anything having to be remembered between them.
+MULTI_RUN_DIR="${MULTI_RUN_DIR:-${TMPDIR:-/tmp}/multi-${CLAUDE_CODE_SESSION_ID:-$PPID}}"
+
 # --- availability -------------------------------------------------------
 # Cheap and local: is there a key and a binary at all. Says nothing about
 # whether the key still works — that is what the checks below are for.

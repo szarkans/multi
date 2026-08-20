@@ -6,7 +6,7 @@ a `> build · <model>` header, sometimes tool calls before the answer. Both go
 through here so a branch that produced nothing is reported as nothing instead
 of being quietly dropped or hallucinated back in.
 
-    parse-branch.py /tmp/multi-adhd-f2-codex.txt /tmp/multi-adhd-f3-opencode.txt
+    parse-branch.py "$RUN/adhd-f2-codex.txt" "$RUN/adhd-f3-opencode.txt"
 """
 import json, re, sys
 

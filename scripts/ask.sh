@@ -3,8 +3,8 @@
 # to its own file. No review prompt, no parsing, no judging — whatever the
 # question is, the answers come back raw.
 #
-#   ask.sh --question "is a channel or a mutex better here?" --out-prefix /tmp/multi-ask
-#   ask.sh --question-file /tmp/prompt.md --out-prefix /tmp/multi-done --effort high
+#   ask.sh --question "is a channel or a mutex better here?" --out-prefix "$RUN/ask"
+#   ask.sh --question-file "$RUN/prompt.md" --out-prefix "$RUN/done" --effort high
 #   ask.sh --question "..." --out-prefix /tmp/f2 --backend codex
 #   ask.sh --question "..." --out-prefix /tmp/f4 --backend openrouter:x-ai/grok-4.5
 #   ask.sh --question "..." --out-prefix /tmp/all --backend all
@@ -73,6 +73,9 @@ while [ $# -gt 0 ]; do
   esac
 done
 [ -n "$PREFIX" ] || { echo "--out-prefix is required" >&2; exit 2; }
+# The caller hands us a per-run directory (see MULTI_RUN_DIR in providers.sh);
+# create it here so every entry point gets it, not just the ones that remember.
+mkdir -p "$(dirname "$PREFIX")" 2>/dev/null || true
 if [ -n "$QFILE" ]; then
   [ -z "$QUESTION" ] || { echo "pass --question or --question-file, not both" >&2; exit 2; }
   [ -s "$QFILE" ] || { echo "--question-file is empty or missing: $QFILE" >&2; exit 2; }

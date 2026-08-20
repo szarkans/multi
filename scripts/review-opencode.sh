@@ -36,6 +36,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 [ -n "$OUT" ] || { echo "--out is required" >&2; exit 2; }
+mkdir -p "$(dirname "$OUT")" 2>/dev/null || true
 [ -n "$TARGET" ] || { echo "--target is required" >&2; exit 2; }
 [ -n "$MODEL" ] || { echo "no model: set --model or MULTI_OPENCODE_MODEL" >&2; exit 2; }
 case "$DIFF" in -*) echo "--diff must be a revision, not an option: $DIFF" >&2; exit 2 ;; esac

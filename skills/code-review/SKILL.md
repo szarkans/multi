@@ -96,15 +96,22 @@ once** — OpenCode spends about a minute just warming up — and do everything
 else while they run.
 
 ```bash
-$SCRIPTS/collect-context.sh [--diff <spec>] [--paths "<paths>"] > /tmp/multi-ctx.md
+RUN="${TMPDIR:-/tmp}/multi-${CLAUDE_CODE_SESSION_ID:-shared}"; mkdir -p "$RUN"
+
+$SCRIPTS/collect-context.sh [--diff <spec>] [--paths "<paths>"] > "$RUN/ctx.md"
 
 $SCRIPTS/review-codex.sh    --target "<in words>" [--diff <spec>] [--paths "<paths>"] \
                             --effort <low|medium|high|xhigh|max> [--focus "<user text>"] \
-                            --context /tmp/multi-ctx.md --out /tmp/multi-codex.txt
+                            --context "$RUN/ctx.md" --out "$RUN/codex.txt"
 $SCRIPTS/review-opencode.sh --target "<in words>" [--diff <spec>] [--paths "<paths>"] \
                             --model <from probe> --fallback <from probe> [--focus "<user text>"] \
-                            --context /tmp/multi-ctx.md --out /tmp/multi-opencode.txt
+                            --context "$RUN/ctx.md" --out "$RUN/opencode.txt"
 ```
+
+`$RUN` is this session's own directory — two sessions reviewing at once used to
+share `/tmp/multi-*` and overwrite each other's files. Shell variables do not
+survive between commands, so repeat that first line at the top of every later
+block that needs `$RUN`.
 
 `--diff` is what makes it a *change* review; leave it off and the reviewers read
 the actual code instead, with old code fully in scope. `--paths` narrows hard.
@@ -147,7 +154,7 @@ An explicitly named mode skips all of this. Obey it.
 | `ultra` | those three, plus `execution`, plus an adversarial second Codex pass (`--adversarial`), plus one `verify` per single-source finding | expensive to get wrong, or asked for |
 
 Spawn them **in parallel, in one message**. Give each the target, the paths or
-range, the contents of `/tmp/multi-ctx.md`, and the user's own words if there
+range, the contents of `$RUN/ctx.md`, and the user's own words if there
 were any.
 
 **Model**: the argument if given, else `MULTI_REVIEWER_MODEL` from the probe, else

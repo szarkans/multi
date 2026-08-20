@@ -53,12 +53,19 @@ Start the external models **first** — they take 30–90 seconds and OpenCode
 spends most of a minute waking up. Launch the Claude agents while they run.
 
 ```bash
-$SCRIPTS/ask.sh --question-file /tmp/multi-adhd-f2.md --out-prefix /tmp/multi-adhd-f2 \
+RUN="${TMPDIR:-/tmp}/multi-${CLAUDE_CODE_SESSION_ID:-shared}"; mkdir -p "$RUN"
+
+$SCRIPTS/ask.sh --question-file "$RUN/adhd-f2.md" --out-prefix "$RUN/adhd-f2" \
                 --backend codex --effort medium &
-$SCRIPTS/ask.sh --question-file /tmp/multi-adhd-f3.md --out-prefix /tmp/multi-adhd-f3 \
+$SCRIPTS/ask.sh --question-file "$RUN/adhd-f3.md" --out-prefix "$RUN/adhd-f3" \
                 --backend "opencode:<model from probe>" --fallback <fallback model from probe> &
 wait
 ```
+
+`$RUN` is this session's own directory, so two sessions brainstorming at once
+do not overwrite each other. Shell variables do not survive between commands —
+repeat that first line in every later block that uses `$RUN`, including the
+frame files you write above.
 
 One frame per file, one file per run. `--backend` exists precisely so the two
 CLIs can get **different** questions in parallel instead of the same one.
@@ -100,7 +107,8 @@ escapes, a `> build · <model>` header, sometimes tool calls before the answer.
 Run both through the parser rather than eyeballing them:
 
 ```bash
-python3 $SCRIPTS/parse-branch.py /tmp/multi-adhd-f2-codex.txt /tmp/multi-adhd-f3-opencode.txt
+RUN="${TMPDIR:-/tmp}/multi-${CLAUDE_CODE_SESSION_ID:-shared}"
+python3 $SCRIPTS/parse-branch.py "$RUN/adhd-f2-codex.txt" "$RUN/adhd-f3-opencode.txt"
 ```
 
 It strips the escapes, takes the last valid `[ ... ]` block, and prints

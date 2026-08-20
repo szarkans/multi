@@ -57,16 +57,21 @@ They are free and slow to start, so they go first and run in the background
 while you do the real work below.
 
 ```bash
-cat > /tmp/multi-done-prompt.md <<'EOF'
+RUN="${TMPDIR:-/tmp}/multi-${CLAUDE_CODE_SESSION_ID:-shared}"; mkdir -p "$RUN"
+
+cat > "$RUN/done-prompt.md" <<'EOF'
 <the promise, as a concrete list of what was supposed to end up working>
 
 <what actually changed: paths, or the diff range and how to see it>
 EOF
 
-$SCRIPTS/ask.sh --question-file /tmp/multi-done-prompt.md \
-                --out-prefix /tmp/multi-done \
+$SCRIPTS/ask.sh --question-file "$RUN/done-prompt.md" \
+                --out-prefix "$RUN/done" \
                 --model <from probe> [--fallback <from probe>] --effort high
 ```
+
+`$RUN` is this session's own directory. Shell variables do not survive between
+commands, so repeat that first line in every later block that needs it.
 
 Append this to the prompt file, verbatim in spirit — it is what makes them
 answer the right question:
