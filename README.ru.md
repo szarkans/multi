@@ -29,7 +29,7 @@ npx skills add szarkans/multi
 git clone https://github.com/szarkans/multi ~/.claude/skills/multi
 ```
 
-потом перезапусти claude code и в целом просто попроси его всё настроить и всё. там кодекс логин, опенкод + модель в нём и т.д., клауд разберёстя сам
+потом перезапусти claude code и запусти `/multi:setup`. В С Ё.
 
 ### почему README написан вот так?
 
