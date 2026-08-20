@@ -30,7 +30,7 @@ npx skills add szarkans/multi
 git clone https://github.com/szarkans/multi ~/.claude/skills/multi
 ```
 
-然后重启 claude code，基本上直接让它把一切都配好就行。什么 codex 登录、opencode 加里面的模型之类的，claude 自己会搞定
+然后重启 claude code，`/multi:setup`
 
 ### 为啥 README 写成这样？
 
