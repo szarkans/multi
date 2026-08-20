@@ -22,7 +22,7 @@ SELF_DIR="$(cd -- "$(dirname -- "$0")" && pwd)"
 # --- Codex (required) ---------------------------------------------------
 if command -v codex >/dev/null 2>&1; then
   ver="$(codex --version 2>/dev/null | head -1)"
-  if timeout 10 codex login status 2>&1 | grep -qi 'logged in'; then
+  if multi_timeout 10 codex login status 2>&1 | grep -qi 'logged in'; then
     say "codex: OK — ${ver}"
   else
     say "codex: NOT LOGGED IN — ${ver} (run: codex login)"
@@ -45,7 +45,7 @@ if command -v opencode >/dev/null 2>&1; then
   if [ -n "${MULTI_OPENCODE_MODEL:-}" ]; then
     say "opencode: OK — ${MULTI_OPENCODE_MODEL} (pinned by MULTI_OPENCODE_MODEL)"
   else
-    available="$(timeout 20 opencode models 2>/dev/null)"
+    available="$(multi_timeout 20 opencode models 2>/dev/null)"
     picked=""
     for m in $CANDIDATES; do
       printf '%s\n' "$available" | grep -qxF "$m" && { picked="$m"; break; }
