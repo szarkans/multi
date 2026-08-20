@@ -21,6 +21,10 @@
 # Everything is capped so a huge rules tree cannot blow up the reviewer prompts.
 set -uo pipefail
 
+SELF_DIR="$(cd -- "$(dirname -- "$0")" && pwd)"
+# shellcheck source=providers.sh
+. "$SELF_DIR/providers.sh"   # multi_check_paths
+
 DIFF=""; PATHS=""
 MAX_TOTAL_BYTES="${MULTI_CONTEXT_MAX_BYTES:-24000}"
 MAX_FILE_BYTES="${MULTI_CONTEXT_MAX_FILE_BYTES:-8000}"
@@ -37,6 +41,7 @@ done
 # A revision starting with "-" is an option to git, not a revision: `--diff
 # --output=/etc/passwd` would make `git diff` write to that path. Refuse it.
 case "$DIFF" in -*) echo "--diff must be a revision, not an option: $DIFF" >&2; exit 2 ;; esac
+[ -z "$PATHS" ] || multi_check_paths "$PATHS" || exit 2
 
 ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || { echo "not a git repo" >&2; exit 2; }
 cd "$ROOT" || exit 2

@@ -69,6 +69,29 @@ else
   }
 fi
 
+# --paths ends up pasted into the reviewer prompts as part of a shell command
+# the model is told to run -- `git diff -- <paths>` -- and OpenCode runs with
+# tool calls pre-approved. A path list carrying shell metacharacters is
+# therefore an injected command, not a path list. It matters more than it looks
+# because --paths is built by Claude out of the user's words, and those words
+# can be quoting an issue or a PR description: the same chain the reviewers
+# themselves are warned about. Same guard shape as the `--diff must not start
+# with -` check next to it.
+multi_check_paths() {
+  case "$1" in
+    *';'*|*'|'*|*'&'*|*'$'*|*'`'*|*'<'*|*'>'*|*'('*|*')'*|*'\'*|*"'"*|*'"'*)
+      echo "--paths: refusing shell metacharacters in a path list: $1" >&2; return 1 ;;
+  esac
+  # A literal newline, kept in a variable: $(printf '\n') strips the newline it
+  # just produced, leaving an empty pattern that matches every string.
+  local nl='
+'
+  case "$1" in
+    *"$nl"*) echo "--paths: refusing a newline in a path list" >&2; return 1 ;;
+  esac
+  return 0
+}
+
 MULTI_HOME="${MULTI_HOME:-$HOME/.claude/multi}"
 MULTI_PROVIDERS_ENV="${MULTI_PROVIDERS_ENV:-$MULTI_HOME/providers.env}"
 

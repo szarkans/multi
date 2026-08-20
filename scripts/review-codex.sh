@@ -47,6 +47,7 @@ done
 mkdir -p "$(dirname "$OUT")" 2>/dev/null || true
 [ -n "$TARGET" ] || { echo "--target is required" >&2; exit 2; }
 case "$DIFF" in -*) echo "--diff must be a revision, not an option: $DIFF" >&2; exit 2 ;; esac
+[ -z "$PATHS" ] || multi_check_paths "$PATHS" || exit 2
 
 # --- what to look at -----------------------------------------------------
 if [ -n "$DIFF" ]; then
