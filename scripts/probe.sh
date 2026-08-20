@@ -71,7 +71,7 @@ fi
 # itself. Reported as configured / not configured only — actually checking the
 # key costs a network round trip, which scripts/setup.sh status does and this does not.
 if multi_have_openrouter; then
-  say "openrouter: OK — ${MULTI_OPENROUTER_MODEL} (set MULTI_OPENROUTER_MODEL to change)"
+  say "openrouter: OK — ${MULTI_OPENROUTER_MODEL} first, then falls back through busy free pools (MULTI_OPENROUTER_MODELS to change, or ask.sh --backend openrouter:model for one run)"
 elif [ -n "${OPENROUTER_API_KEY:-}" ]; then
   say "openrouter: KEY SET BUT claude CLI MISSING"
 else

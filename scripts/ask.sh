@@ -6,13 +6,24 @@
 #   ask.sh --question "is a channel or a mutex better here?" --out-prefix /tmp/multi-ask
 #   ask.sh --question-file /tmp/prompt.md --out-prefix /tmp/multi-done --effort high
 #   ask.sh --question "..." --out-prefix /tmp/f2 --backend codex
-#   ask.sh --question "..." --out-prefix /tmp/f4 --backend openrouter --or-model x-ai/grok-4.5
+#   ask.sh --question "..." --out-prefix /tmp/f4 --backend openrouter:x-ai/grok-4.5
 #   ask.sh --question "..." --out-prefix /tmp/all --backend all
+#   ask.sh --question "..." --out-prefix /tmp/two --backend "openrouter:z-ai/glm-5.2:free,openrouter:x-ai/grok-4.5"
 #
 # --backend picks who answers: both (the two CLIs, default), all (everything
-# configured on this machine), or a comma-separated list of codex, opencode,
-# openrouter, gemini. One backend at a time is what lets a caller send a
-# DIFFERENT question to each model in parallel instead of the same one to all.
+# configured on this machine), or a comma-separated list of entries. Each
+# entry is a backend name — codex, opencode, openrouter, gemini — optionally
+# followed by :model. Split on the FIRST colon only, because model names can
+# contain colons themselves (z-ai/glm-5.2:free); no colon means the backend's
+# usual default (openrouter picks a live free model, opencode uses
+# MULTI_OPENCODE_MODEL, ...). The same backend can appear more than once with
+# a different model — comparing two OpenRouter models does not need two runs.
+# One backend at a time is what lets a caller send a DIFFERENT question to
+# each model in parallel instead of the same one to all.
+#
+# The old per-provider flags (--model, --fallback, --codex-model, --or-model,
+# --gemini-model) still work: they set the default model for a bare backend
+# name, same as before name:model existed.
 #
 # openrouter runs Claude Code itself against OpenRouter's Anthropic endpoint —
 # same agent loop, different weights. gemini runs the Google CLI, because
@@ -20,8 +31,10 @@
 # daily quota. Both need a key: see scripts/providers.sh and scripts/setup.sh.
 #
 # Writes:
-#   <prefix>-<backend>.txt  one file per backend that ran, or a line saying
-#                           why it did not
+#   <prefix>-<backend>.txt              one file per backend instance, or a
+#                                        line saying why it did not run
+#   <prefix>-<backend>-2.txt, -3.txt...  second and later instance of the same
+#                                        backend (e.g. two openrouter entries)
 #
 # Both run read-only: they can read the repository to answer, and cannot change
 # it. Anything that needs to actually execute is the caller's job.
@@ -39,6 +52,10 @@ SELF_DIR="$(cd -- "$(dirname -- "$0")" && pwd)"
 . "$SELF_DIR/providers.sh"
 
 QUESTION=""; QFILE=""; PREFIX=""; EFFORT=medium; MODEL="${MULTI_OPENCODE_MODEL:-}"; FALLBACK=""; CODEX_MODEL=""; BACKEND=both
+# Empty on purpose: an unset OpenRouter model lets the runner pick one whose
+# free pool is actually up. Pinning it here sent every run at the same model,
+# and a busy upstream pool then became a silent timeout instead of a fallback.
+OR_MODEL=""
 need() { [ "$1" -ge 2 ] || { echo "missing value for $2" >&2; exit 2; }; }
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -50,7 +67,7 @@ while [ $# -gt 0 ]; do
     --fallback)      need $# "$1"; FALLBACK="$2"; shift 2 ;;
     --codex-model)   need $# "$1"; CODEX_MODEL="$2"; shift 2 ;;
     --backend)       need $# "$1"; BACKEND="$2"; shift 2 ;;
-    --or-model)      need $# "$1"; MULTI_OPENROUTER_MODEL="$2"; shift 2 ;;
+    --or-model)      need $# "$1"; OR_MODEL="$2"; shift 2 ;;
     --gemini-model)  need $# "$1"; MULTI_GEMINI_MODEL="$2"; shift 2 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
@@ -63,74 +80,95 @@ if [ -n "$QFILE" ]; then
 fi
 [ -n "$QUESTION" ] || { echo "--question or --question-file is required" >&2; exit 2; }
 # `both` is the historical default (the two CLIs). `all` is everything this
-# machine is set up for. Anything else is a comma-separated list, so a caller
-# can send a DIFFERENT question to each backend in parallel.
+# machine is set up for. Anything else is a comma-separated list of
+# name[:model] entries, so a caller can send a DIFFERENT question — or a
+# DIFFERENT model on the same backend — to each in parallel.
 case "$BACKEND" in
-  both) SELECTED="codex opencode" ;;
-  all)  SELECTED="codex opencode"
-        multi_have_openrouter && SELECTED="$SELECTED openrouter"
-        multi_have_gemini     && SELECTED="$SELECTED gemini" ;;
-  *)    SELECTED="$(printf '%s' "$BACKEND" | tr ',' ' ')" ;;
+  both) ENTRIES="codex opencode" ;;
+  all)  ENTRIES="codex opencode"
+        multi_have_openrouter && ENTRIES="$ENTRIES openrouter"
+        multi_have_gemini     && ENTRIES="$ENTRIES gemini" ;;
+  *)    ENTRIES="$(printf '%s' "$BACKEND" | tr ',' ' ')" ;;
 esac
-for b in $SELECTED; do
-  case "$b" in
-    codex|opencode|openrouter|gemini) ;;
-    *) echo "--backend: unknown backend '$b' (codex, opencode, openrouter, gemini, both, all)" >&2; exit 2 ;;
+
+# Parse each entry into (backend name, model). Split on the FIRST colon only,
+# and only when the prefix is a known backend — a model name can contain
+# colons itself (z-ai/glm-5.2:free), a bare model name cannot look like one.
+declare -A COUNT
+NAMES=(); MODELS=(); SUFFIXES=()
+for entry in $ENTRIES; do
+  case "$entry" in
+    codex:*|opencode:*|openrouter:*|gemini:*) name="${entry%%:*}"; model="${entry#*:}" ;;
+    *) name="$entry"; model="" ;;
   esac
+  case "$name" in
+    codex|opencode|openrouter|gemini) ;;
+    *) echo "--backend: unknown backend '$name' (codex, opencode, openrouter, gemini, both, all)" >&2; exit 2 ;;
+  esac
+  # A backend repeated with a different model must not collide on one file.
+  COUNT[$name]=$(( ${COUNT[$name]:-0} + 1 ))
+  suffix="$name"; [ "${COUNT[$name]}" -gt 1 ] && suffix="${name}-${COUNT[$name]}"
+  NAMES+=("$name"); MODELS+=("$model"); SUFFIXES+=("$suffix")
 done
 
-CODEX_OUT="${PREFIX}-codex.txt"
-OC_OUT="${PREFIX}-opencode.txt"
-
-run_codex() {
-  command -v codex >/dev/null 2>&1 || { echo "codex: MISSING" > "$CODEX_OUT"; return 0; }
+run_codex_one() {
+  local out="$1" model="$2"
+  command -v codex >/dev/null 2>&1 || { echo "codex: MISSING" > "$out"; return 0; }
   codex exec \
-    ${CODEX_MODEL:+-m "$CODEX_MODEL"} \
+    ${model:+-m "$model"} \
     -s read-only \
     -c model_reasoning_effort="$EFFORT" \
-    -o "$CODEX_OUT" \
+    -o "$out" \
     "$QUESTION" >/dev/null 2>&1
 }
 
-run_opencode() {
-  command -v opencode >/dev/null 2>&1 || { echo "opencode: MISSING" > "$OC_OUT"; return 0; }
-  [ -n "$MODEL" ] || { echo "opencode: NO MODEL (set --model or MULTI_OPENCODE_MODEL)" > "$OC_OUT"; return 0; }
-  local raw="${OC_OUT}.raw" used="$MODEL" rc=0
-  opencode run --pure --auto -m "$MODEL" --dir . "$QUESTION" > "$raw" 2>&1; rc=$?
+run_opencode_one() {
+  local out="$1" model="$2" fallback="$3"
+  command -v opencode >/dev/null 2>&1 || { echo "opencode: MISSING" > "$out"; return 0; }
+  [ -n "$model" ] || { echo "opencode: NO MODEL (set --model or MULTI_OPENCODE_MODEL)" > "$out"; return 0; }
+  local raw="${out}.raw" used="$model" rc=0
+  opencode run --pure --auto -m "$model" --dir . "$QUESTION" > "$raw" 2>&1; rc=$?
   # An empty transcript means the run never happened — exhausted usage, an
   # expired subscription, a model that hangs. Neither CLI can be asked about
   # remaining quota beforehand, so this is where it is discovered.
-  if [ ! -s "$raw" ] && [ -n "$FALLBACK" ] && [ "$FALLBACK" != "$MODEL" ]; then
-    echo "[multi] $MODEL produced nothing (exit $rc) — retrying on $FALLBACK" >&2
-    opencode run --pure --auto -m "$FALLBACK" --dir . "$QUESTION" > "$raw" 2>&1; rc=$?
-    used="$FALLBACK"
+  if [ ! -s "$raw" ] && [ -n "$fallback" ] && [ "$fallback" != "$model" ]; then
+    echo "[multi] $model produced nothing (exit $rc) — retrying on $fallback" >&2
+    opencode run --pure --auto -m "$fallback" --dir . "$QUESTION" > "$raw" 2>&1; rc=$?
+    used="$fallback"
   fi
   if [ -s "$raw" ]; then
-    cp "$raw" "$OC_OUT"
-    [ "$used" = "$MODEL" ] || echo "[multi] answered by fallback model $used" >> "$OC_OUT"
+    cp "$raw" "$out"
+    [ "$used" = "$model" ] || echo "[multi] answered by fallback model $used" >> "$out"
   else
     # Say so explicitly rather than letting an empty file read as an answer.
-    echo "opencode: NO OUTPUT — model=$used exit=$rc" > "$OC_OUT"
+    echo "opencode: NO OUTPUT — model=$used exit=$rc" > "$out"
   fi
 }
 
-run_openrouter() { multi_run_openrouter "$QUESTION" "${PREFIX}-openrouter.txt" "$MULTI_OPENROUTER_MODEL"; }
-run_gemini()     { multi_run_gemini     "$QUESTION" "${PREFIX}-gemini.txt"     "$MULTI_GEMINI_MODEL"; }
+run_openrouter_one() { multi_run_openrouter "$QUESTION" "$1" "$2"; }
+run_gemini_one()     { multi_run_gemini     "$QUESTION" "$1" "$2"; }
 
 # All backends start at once. OpenCode spends most of a minute waking up and
 # every model takes 30-90s, so anything sequential here is pure wall clock.
 pids=""
-for b in $SELECTED; do
-  "run_$b" & pids="$pids $!:$b"
+for i in "${!NAMES[@]}"; do
+  name="${NAMES[$i]}"; model="${MODELS[$i]}"; out="${PREFIX}-${SUFFIXES[$i]}.txt"
+  case "$name" in
+    codex)      run_codex_one      "$out" "${model:-$CODEX_MODEL}"        & ;;
+    opencode)   run_opencode_one   "$out" "${model:-$MODEL}" "$FALLBACK"  & ;;
+    openrouter) run_openrouter_one "$out" "${model:-$OR_MODEL}"           & ;;
+    gemini)     run_gemini_one     "$out" "${model:-$MULTI_GEMINI_MODEL}" & ;;
+  esac
+  pids="$pids $!:${SUFFIXES[$i]}"
 done
 for pb in $pids; do wait "${pb%%:*}"; done
 
 wrote=""; alive=0
-for b in $SELECTED; do
-  f="${PREFIX}-${b}.txt"
+for i in "${!NAMES[@]}"; do
+  name="${NAMES[$i]}"; f="${PREFIX}-${SUFFIXES[$i]}.txt"
   # An empty file must never read as an answer: say who did not run.
-  [ -s "$f" ] || echo "${b}: NO OUTPUT" > "$f"
-  grep -qiE "^${b}: (NO OUTPUT|MISSING|NO KEY|TIMEOUT|NO MODEL)" "$f" || alive=$((alive+1))
+  [ -s "$f" ] || echo "${name}: NO OUTPUT" > "$f"
+  grep -qiE "^${name}: (NO OUTPUT|MISSING|NO KEY|TIMEOUT|NO MODEL)" "$f" || alive=$((alive+1))
   wrote="$wrote${wrote:+ }$f"
 done
 echo "wrote: $wrote"

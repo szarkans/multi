@@ -31,6 +31,18 @@ MULTI_PROVIDERS_ENV="${MULTI_PROVIDERS_ENV:-$MULTI_HOME/providers.env}"
 MULTI_CHILD_HOME="${MULTI_CHILD_HOME:-$MULTI_HOME/child-home}"
 
 MULTI_OPENROUTER_MODEL="${MULTI_OPENROUTER_MODEL:-z-ai/glm-5.2:free}"
+# A `:free` model is not a queue you are in — it is a shared upstream pool, and
+# when it is busy every key gets HTTP 429 regardless of credit. Measured
+# 2026-08-20: the default model was 429 while five other free models answered
+# in the same second. So the model is CHOSEN at run time, not assumed, and one
+# dead pool costs a second instead of the whole backend.
+MULTI_OPENROUTER_FALLBACKS="${MULTI_OPENROUTER_FALLBACKS:-poolside/laguna-s-2.1:free nvidia/nemotron-3-super-120b-a12b:free cohere/north-mini-code:free openai/gpt-oss-20b:free}"
+# The one list callers and this file actually walk, preferred model first.
+# MULTI_OPENROUTER_MODEL and MULTI_OPENROUTER_FALLBACKS above still work as
+# overrides — if providers.env sets either, this list is built from them, same
+# as before this variable existed. Set MULTI_OPENROUTER_MODELS directly to
+# skip that and pin the exact order.
+MULTI_OPENROUTER_MODELS="${MULTI_OPENROUTER_MODELS:-$MULTI_OPENROUTER_MODEL $MULTI_OPENROUTER_FALLBACKS}"
 MULTI_GEMINI_MODEL="${MULTI_GEMINI_MODEL:-}"   # empty = whatever the CLI defaults to
 MULTI_BACKEND_TIMEOUT="${MULTI_BACKEND_TIMEOUT:-300}"
 
@@ -44,15 +56,16 @@ multi_have_gemini()     { [ -n "${GEMINI_API_KEY:-}" ]     && command -v gemini 
 # Both print one word: OK, BAD KEY, or an HTTP code. One second, no tokens
 # spent, no ambiguity. This is the only honest way to answer "is my key good",
 # because both agents treat an auth failure as something to retry.
+# multi_check_openrouter [model] — one word about one model, no tokens spent.
 multi_check_openrouter() {
   [ -n "${OPENROUTER_API_KEY:-}" ] || { echo "NO KEY"; return 1; }
-  local code
+  local m="${1:-$MULTI_OPENROUTER_MODEL}" code
   code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
     https://openrouter.ai/api/v1/messages \
     -H 'content-type: application/json' \
     -H "x-api-key: ${OPENROUTER_API_KEY}" \
     -H 'anthropic-version: 2023-06-01' \
-    -d "{\"model\":\"${MULTI_OPENROUTER_MODEL}\",\"max_tokens\":1,\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}")"
+    -d "{\"model\":\"${m}\",\"max_tokens\":1,\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}")"
   case "$code" in
     200) echo "OK" ;;
     401|403) echo "BAD KEY (HTTP $code)"; return 1 ;;
@@ -75,17 +88,40 @@ multi_check_gemini() {
   esac
 }
 
+# multi_pick_openrouter_model — first model whose pool answers right now.
+# Prints the model name, or nothing if every candidate is down. Costs one
+# 1-token request per candidate (~0.3s each), which is far cheaper than
+# discovering a dead pool through a 300s agent timeout.
+multi_pick_openrouter_model() {
+  local m
+  for m in $MULTI_OPENROUTER_MODELS; do
+    if [ "$(multi_check_openrouter "$m")" = "OK" ]; then printf '%s' "$m"; return 0; fi
+  done
+  return 1
+}
+
 # --- runners ------------------------------------------------------------
 # multi_run_openrouter <prompt> <outfile> [model]
 # One OpenRouter model driven through Claude Code itself. The agent loop, the
 # tools and the prompt handling are identical to a Claude reviewer — only the
 # weights differ, which is the entire point.
 multi_run_openrouter() {
-  local prompt="$1" out="$2" model="${3:-$MULTI_OPENROUTER_MODEL}" rc=0
+  local prompt="$1" out="$2" model="${3:-}" rc=0
+  local log="${out}.log"
   if [ -z "${OPENROUTER_API_KEY:-}" ]; then
     echo "openrouter: NO KEY — run scripts/setup.sh set OPENROUTER_API_KEY <key>" > "$out"; return 0
   fi
+  # No model pinned by the caller: pick one whose pool is actually up.
+  if [ -z "$model" ]; then
+    model="$(multi_pick_openrouter_model)" || {
+      echo "openrouter: ALL POOLS BUSY — tried $MULTI_OPENROUTER_MODELS (HTTP 429 upstream, not your quota). Retry in a minute or set MULTI_OPENROUTER_MODELS." > "$out"
+      return 0
+    }
+  fi
   mkdir -p "$MULTI_CHILD_HOME"
+  # stderr goes to its own file, never into the answer. Claude Code prints an
+  # "unrecognized model" banner for every OpenRouter model name; merged in with
+  # 2>&1 it made a run that said nothing look like a run that answered.
   # ANTHROPIC_SMALL_FAST_MODEL matters: Claude Code fires background calls at a
   # small model, and the default name does not exist on OpenRouter. Left unset,
   # those calls 404 in the middle of an otherwise fine run.
@@ -97,7 +133,7 @@ multi_run_openrouter() {
   ANTHROPIC_DEFAULT_HAIKU_MODEL="$model" \
     timeout "$MULTI_BACKEND_TIMEOUT" claude -p "$prompt" \
       --strict-mcp-config --mcp-config '{"mcpServers":{}}' \
-      > "$out" 2>&1
+      > "$out" 2> "$log"
   rc=$?
   if [ ! -s "$out" ]; then
     # A silent run is the signature of a rejected key: Claude Code retries auth
@@ -106,8 +142,10 @@ multi_run_openrouter() {
     if [ "$rc" -eq 124 ]; then
       echo "openrouter: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s — model=$model. A silent timeout usually means the key was rejected; check with scripts/setup.sh status." > "$out"
     else
-      echo "openrouter: NO OUTPUT — model=$model exit=$rc" > "$out"
+      echo "openrouter: NO OUTPUT — model=$model exit=$rc (stderr in $log)" > "$out"
     fi
+  else
+    echo "[multi] answered by openrouter model $model" >> "$out"
   fi
   return "$rc"
 }

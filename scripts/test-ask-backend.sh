@@ -11,8 +11,15 @@ mkdir -p "$TMP/bin"
 
 cat > "$TMP/bin/codex" <<'STUB'
 #!/usr/bin/env bash
-out=""; while [ $# -gt 0 ]; do [ "$1" = "-o" ] && { out="$2"; shift; }; shift; done
-[ -n "$out" ] && echo "CODEX ANSWER" > "$out"
+out=""; model=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -o) out="$2"; shift 2 ;;
+    -m) model="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+[ -n "$out" ] && { echo "CODEX ANSWER"; [ -n "$model" ] && echo "MODEL=$model"; } > "$out"
 STUB
 cat > "$TMP/bin/opencode" <<'STUB'
 #!/usr/bin/env bash
@@ -48,6 +55,25 @@ check only-oc no yes
 # Both files must carry the answer, not an empty file that reads as one.
 grep -q "CODEX ANSWER" "$TMP/both-codex.txt" || { echo "FAIL codex answer not written"; fail=1; }
 grep -q "OPENCODE ANSWER" "$TMP/both-opencode.txt" || { echo "FAIL opencode answer not written"; fail=1; }
+
+# name:model syntax, split on the FIRST colon only — the model itself carries
+# a colon (free-tier suffix style), which must survive intact.
+"$HERE/ask.sh" --question q --out-prefix "$TMP/colon" --backend "codex:foo/bar:free" >/dev/null
+grep -q "MODEL=foo/bar:free" "$TMP/colon-codex.txt" || { echo "FAIL colon-model not passed through"; fail=1; }
+
+# Two entries for the same backend must not collide: first keeps the plain
+# name, the second gets -2, each carrying its own model.
+"$HERE/ask.sh" --question q --out-prefix "$TMP/dup" --backend "codex:model-a,codex:model-b" >/dev/null
+if [ -f "$TMP/dup-codex.txt" ] && [ -f "$TMP/dup-codex-2.txt" ] \
+  && grep -q "MODEL=model-a" "$TMP/dup-codex.txt" && grep -q "MODEL=model-b" "$TMP/dup-codex-2.txt"; then
+  echo "ok   duplicate backend gets -2 suffix"
+else
+  echo "FAIL duplicate backend did not produce distinct -codex.txt / -codex-2.txt"; fail=1
+fi
+
+# Old --codex-model flag must still set the model for a bare (no-colon) entry.
+"$HERE/ask.sh" --question q --out-prefix "$TMP/oldflag" --backend codex --codex-model old-style-model >/dev/null
+grep -q "MODEL=old-style-model" "$TMP/oldflag-codex.txt" || { echo "FAIL --codex-model alias broken"; fail=1; }
 
 [ $fail -eq 0 ] && echo "ALL PASS" || echo "FAILURES"
 exit $fail

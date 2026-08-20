@@ -26,7 +26,12 @@ cmd_status() {
 
   printf 'openrouter: '
   if [ -n "${OPENROUTER_API_KEY:-}" ]; then
-    printf '%s — ' "$(mask "$OPENROUTER_API_KEY")"; multi_check_openrouter
+    printf '%s — ' "$(mask "$OPENROUTER_API_KEY")"
+    # Report the model that will actually be used, not the one we hoped for:
+    # a free pool returning 429 is normal and the runner moves on to the next.
+    live="$(multi_pick_openrouter_model)" \
+      && echo "OK — will use $live" \
+      || echo "ALL POOLS BUSY (429 upstream, not your quota): $MULTI_OPENROUTER_MODELS"
   else
     echo "not configured"
   fi
@@ -46,7 +51,7 @@ cmd_status() {
 cmd_set() {
   local name="$1" value="${2:-}"
   case "$name" in
-    OPENROUTER_API_KEY|GEMINI_API_KEY|MULTI_OPENROUTER_MODEL|MULTI_GEMINI_MODEL|MULTI_OPENCODE_MODEL) ;;
+    OPENROUTER_API_KEY|GEMINI_API_KEY|MULTI_OPENROUTER_MODEL|MULTI_OPENROUTER_MODELS|MULTI_GEMINI_MODEL|MULTI_OPENCODE_MODEL) ;;
     *) echo "refusing to set unknown variable: $name" >&2; exit 2 ;;
   esac
   [ -n "$value" ] || { echo "empty value for $name" >&2; exit 2; }
