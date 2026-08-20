@@ -95,8 +95,8 @@ cmd_set() {
   # `ls -l` rather than stat: stat's flags differ between GNU and BSD.
   perms="$(ls -l "$MULTI_PROVIDERS_ENV" 2>/dev/null | cut -c1-10)"
   case "$perms" in
-    -rw-------|-rw-rw----|"") ;;
-    *) echo "warning: $MULTI_PROVIDERS_ENV is $perms, not owner-only — this filesystem ignores chmod (Windows/MSYS, exFAT, some NTFS mounts). Anyone who can read this machine's disk can read the key." >&2 ;;
+    -rw-------|"") ;;
+    *) echo "warning: $MULTI_PROVIDERS_ENV is $perms, not owner-only — this filesystem ignores chmod (Windows/MSYS, exFAT, some NTFS mounts). Anyone who can read this machine's disk — or, for a group-readable file, anyone in that group — can read the key." >&2 ;;
   esac
 }
 
