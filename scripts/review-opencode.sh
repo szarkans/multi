@@ -15,6 +15,10 @@
 #   this in the background alongside Codex.
 set -uo pipefail
 
+SELF_DIR="$(cd -- "$(dirname -- "$0")" && pwd)"
+# shellcheck source=providers.sh
+. "$SELF_DIR/providers.sh"   # multi_timeout, MULTI_REVIEW_TIMEOUT
+
 TARGET=""; DIFF=""; OUT=""; CONTEXT=""; MODEL="${MULTI_OPENCODE_MODEL:-}"; AGENT=""; PATHS=""; FOCUS_TEXT=""; FALLBACK=""
 need() { [ "$1" -ge 2 ] || { echo "missing value for $2" >&2; exit 2; }; }
 while [ $# -gt 0 ]; do
@@ -103,8 +107,12 @@ RAW="${OUT}.raw"
 # Findings look like: path/file.py:12 | HIGH | why
 FINDING_RE='^[^|]*:[0-9]+[^|]*\|[[:space:]]*(HIGH|MEDIUM|LOW)[[:space:]]*\|'
 
+# Timed out because the skill promises a kill-and-restart and nothing here
+# delivered one: a hung `opencode run` wrote nothing and the skill waited on a
+# file that was never coming. The retry below already handles "produced
+# nothing", so a killed attempt lands in the same path a dead one does.
 attempt() { # attempt <model> ; leaves the transcript in $RAW
-  opencode run --pure --auto \
+  multi_timeout "$MULTI_REVIEW_TIMEOUT" opencode run --pure --auto \
     -m "$1" \
     ${AGENT:+--agent "$AGENT"} \
     --dir . \
@@ -133,7 +141,11 @@ if [ ! -s "$OUT" ]; then
     echo "No issues found." > "$OUT"
   else
     # Say so explicitly rather than letting an empty file read as "all clear".
-    echo "NO PARSEABLE OUTPUT — model=$USED exit=$rc — see $RAW" > "$OUT"
+    if [ "$rc" -eq 124 ]; then
+      echo "opencode: TIMEOUT after ${MULTI_REVIEW_TIMEOUT}s — model=$USED, no review was produced — see $RAW" > "$OUT"
+    else
+      echo "NO PARSEABLE OUTPUT — model=$USED exit=$rc — see $RAW" > "$OUT"
+    fi
   fi
 fi
 [ "$USED" = "$MODEL" ] || echo "[multi] reviewed by fallback model $USED" >> "$OUT"

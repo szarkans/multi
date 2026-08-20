@@ -23,6 +23,10 @@
 #   Default reasoning effort for a custom prompt is `none`, so we always set it.
 set -uo pipefail
 
+SELF_DIR="$(cd -- "$(dirname -- "$0")" && pwd)"
+# shellcheck source=providers.sh
+. "$SELF_DIR/providers.sh"   # multi_timeout, MULTI_REVIEW_TIMEOUT
+
 TARGET=""; DIFF=""; EFFORT=low; OUT=""; CONTEXT=""; ADVERSARIAL=0; MODEL=""; PATHS=""; FOCUS_TEXT=""
 need() { [ "$1" -ge 2 ] || { echo "missing value for $2" >&2; exit 2; }; }
 while [ $# -gt 0 ]; do
@@ -113,14 +117,19 @@ a valid and often correct answer.${FOCUS}${CTX}"
 #     <explanation>
 # P1/P2/P3 map to high/medium/low. Plain `codex exec` has no fixed format, so
 # the prompt asks for the same shape.
+# Wrapped in a timeout because the skill promises one ("a reviewer dies or goes
+# silent -- one kill-and-restart") and nothing here delivered it: a hung CLI just
+# never wrote $OUT, and the skill waited on a file that was never coming. On a
+# timeout $OUT is empty, and an empty file must never read as "nothing found",
+# so the reason is written into it below.
 if [ -n "$DIFF" ]; then
-  exec codex exec review \
+  multi_timeout "$MULTI_REVIEW_TIMEOUT" codex exec review \
     ${MODEL:+-m "$MODEL"} \
     -c model_reasoning_effort="$EFFORT" \
     -o "$OUT" \
     "$PROMPT"
 else
-  exec codex exec \
+  multi_timeout "$MULTI_REVIEW_TIMEOUT" codex exec \
     ${MODEL:+-m "$MODEL"} \
     -s read-only \
     -c model_reasoning_effort="$EFFORT" \
@@ -134,3 +143,16 @@ Output one block per finding, most severe first, and nothing else:
 
 If there is nothing to report, output exactly: No issues found."
 fi
+rc=$?
+
+# An empty $OUT must never reach the judge as "nothing found" — that is the one
+# failure this whole plugin exists to prevent. Same rule as ask.sh and the
+# openrouter path in providers.sh: say who did not run, and why.
+if [ ! -s "$OUT" ]; then
+  if [ "$rc" -eq 124 ]; then
+    echo "codex: TIMEOUT after ${MULTI_REVIEW_TIMEOUT}s — no review was produced (raise MULTI_REVIEW_TIMEOUT if the target really is this big)" > "$OUT"
+  else
+    echo "codex: NO OUTPUT — exit=$rc" > "$OUT"
+  fi
+fi
+exit "$rc"

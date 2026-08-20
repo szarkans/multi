@@ -249,8 +249,11 @@ changed as `file:line` one-liners. If the cap is hit with findings open, say so.
   narrower one, rather than quietly reviewing four hundred files badly.
 - **Lockfiles, generated code, vendored trees** — say so and skip the external
   reviewers; there is nothing there for them.
-- **A reviewer dies or goes silent for 60s** — one kill-and-restart, then treat
-  it as absent and name it in the report. A reviewer still writing is alive,
-  however long it takes. Never block the whole review on one backend.
+- **A reviewer hangs** — the scripts kill it themselves after
+  `MULTI_REVIEW_TIMEOUT` (15 minutes by default) and write the reason into the
+  output file, so a hang arrives as a line saying TIMEOUT, never as an empty
+  file. Treat that reviewer as absent and name it in the report. A reviewer
+  still writing is alive, however long it takes. Never block the whole review
+  on one backend.
 - **OpenCode falls back to its free model** — its output says so. Repeat it in
   the reviewer line; the user is entitled to know which model actually ran.

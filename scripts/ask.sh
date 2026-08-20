@@ -118,14 +118,19 @@ for entry in $ENTRIES; do
 done
 
 run_codex_one() {
-  local out="$1" model="$2"
+  local out="$1" model="$2" rc=0
   command -v codex >/dev/null 2>&1 || { echo "codex: MISSING" > "$out"; return 0; }
-  codex exec \
+  # A hung CLI used to block the `wait` below forever, and the caller — usually
+  # Claude Code's own bash tool — killed the whole script instead, so every
+  # other backend's answer died with it.
+  multi_timeout "$MULTI_BACKEND_TIMEOUT" codex exec \
     ${model:+-m "$model"} \
     -s read-only \
     -c model_reasoning_effort="$EFFORT" \
     -o "$out" \
     "$QUESTION" >/dev/null 2>&1
+  rc=$?
+  [ -s "$out" ] || [ "$rc" -ne 124 ] || echo "codex: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s" > "$out"
 }
 
 run_opencode_one() {
@@ -133,13 +138,13 @@ run_opencode_one() {
   command -v opencode >/dev/null 2>&1 || { echo "opencode: MISSING" > "$out"; return 0; }
   [ -n "$model" ] || { echo "opencode: NO MODEL (set --model or MULTI_OPENCODE_MODEL)" > "$out"; return 0; }
   local raw="${out}.raw" used="$model" rc=0
-  opencode run --pure --auto -m "$model" --dir . "$QUESTION" > "$raw" 2>&1; rc=$?
+  multi_timeout "$MULTI_BACKEND_TIMEOUT" opencode run --pure --auto -m "$model" --dir . "$QUESTION" > "$raw" 2>&1; rc=$?
   # An empty transcript means the run never happened — exhausted usage, an
   # expired subscription, a model that hangs. Neither CLI can be asked about
   # remaining quota beforehand, so this is where it is discovered.
   if [ ! -s "$raw" ] && [ -n "$fallback" ] && [ "$fallback" != "$model" ]; then
     echo "[multi] $model produced nothing (exit $rc) — retrying on $fallback" >&2
-    opencode run --pure --auto -m "$fallback" --dir . "$QUESTION" > "$raw" 2>&1; rc=$?
+    multi_timeout "$MULTI_BACKEND_TIMEOUT" opencode run --pure --auto -m "$fallback" --dir . "$QUESTION" > "$raw" 2>&1; rc=$?
     used="$fallback"
   fi
   if [ -s "$raw" ]; then
@@ -147,7 +152,11 @@ run_opencode_one() {
     [ "$used" = "$model" ] || echo "[multi] answered by fallback model $used" >> "$out"
   else
     # Say so explicitly rather than letting an empty file read as an answer.
-    echo "opencode: NO OUTPUT — model=$used exit=$rc" > "$out"
+    if [ "$rc" -eq 124 ]; then
+      echo "opencode: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s — model=$used" > "$out"
+    else
+      echo "opencode: NO OUTPUT — model=$used exit=$rc" > "$out"
+    fi
   fi
 }
 

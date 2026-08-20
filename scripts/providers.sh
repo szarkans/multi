@@ -98,6 +98,11 @@ MULTI_OPENROUTER_FALLBACKS="${MULTI_OPENROUTER_FALLBACKS:-poolside/laguna-s-2.1:
 MULTI_OPENROUTER_MODELS="${MULTI_OPENROUTER_MODELS:-$MULTI_OPENROUTER_MODEL $MULTI_OPENROUTER_FALLBACKS}"
 MULTI_GEMINI_MODEL="${MULTI_GEMINI_MODEL:-}"   # empty = whatever the CLI defaults to
 MULTI_BACKEND_TIMEOUT="${MULTI_BACKEND_TIMEOUT:-300}"
+# A review is a different job from a question: it reads a diff, opens files and
+# thinks at whatever --effort was asked for, so the same 300s that is generous
+# for /multi:ask would cut real reviews off mid-thought. This one exists to stop
+# a hung CLI, not to pace a slow one.
+MULTI_REVIEW_TIMEOUT="${MULTI_REVIEW_TIMEOUT:-900}"
 
 # --- availability -------------------------------------------------------
 # Cheap and local: is there a key and a binary at all. Says nothing about
