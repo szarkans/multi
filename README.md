@@ -10,6 +10,7 @@ ask Claude, Codex and OpenCode models to do same thing, get better review/answer
 | `/multi:check-if-done` | is the work actually finished, or only finished-looking - every claim backed by a command that was really run |
 | `/multi:ask` | put one question to all of them and see the three answers side by side |
 | `/multi:adhd` | brainstorm wide - 5 cognitive frames, each one handed to a different model, then scored and grouped into a shortlist |
+| `/multi:setup` | walks you through connecting the other models, step by step, no jargon |
 
 ## Human-written README
 
@@ -25,6 +26,7 @@ soo basically its what the name implies - several models instead of one. four co
    "10-year-old with no idea what software is" - they push the model past the first three boring answers), but here every
    frame goes to a *different* model, so the ideas spread out by frame and by model at the same time. at the end it scores
    them, groups them and hands u a shortlist, so u dont get 30 unsorted ideas dumped on ur head
+5. `/multi:setup` - if u don't know what codex login or an api key even is, run this, it holds ur hand through connecting everything
 
 install
 ```bash

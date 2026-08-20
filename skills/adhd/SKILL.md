@@ -56,7 +56,7 @@ spends most of a minute waking up. Launch the Claude agents while they run.
 $SCRIPTS/ask.sh --question-file /tmp/multi-adhd-f2.md --out-prefix /tmp/multi-adhd-f2 \
                 --backend codex --effort medium &
 $SCRIPTS/ask.sh --question-file /tmp/multi-adhd-f3.md --out-prefix /tmp/multi-adhd-f3 \
-                --backend opencode --model <from probe> --fallback <from probe> &
+                --backend "opencode:<model from probe>" --fallback <fallback model from probe> &
 wait
 ```
 
@@ -89,7 +89,9 @@ The probe says who is alive. A missing backend's frames go to Claude
 sub-agents, and the report says so in one line: *"Codex not installed — frames
 2 and 5 ran as Claude agents."* Never quietly re-label a Claude idea as
 Codex's. `codex: MISSING`, `opencode: NO OUTPUT` and an empty file are all
-"did not run" — check the file content, not just that a file exists.
+"did not run" — check the file content, not just that a file exists. Mention
+`/multi:setup` in the report when a backend is missing — that's where they go
+to connect it.
 
 ### Reading the CLI output
 

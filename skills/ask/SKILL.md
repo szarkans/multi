@@ -32,7 +32,8 @@ most of a minute just waking up. Answer the question yourself while they run.
 ```bash
 $SCRIPTS/ask.sh --question "<the user's question, verbatim>" \
                 --out-prefix /tmp/multi-ask \
-                --model <from probe> [--fallback <from probe>] [--effort <low|medium|high|xhigh|max>]
+                --backend "codex,opencode:<model from probe>" \
+                [--fallback <fallback model from probe>] [--effort <low|medium|high|xhigh|max>]
 ```
 
 Pass the question **as the user asked it**. Do not rewrite it into a better
@@ -45,7 +46,7 @@ Effort defaults to `high`. Raise it for a hard design question, drop it to
 
 If neither external model is available, say so and just answer normally. This
 skill has nothing to add without them, and pretending otherwise is worse than
-a plain answer.
+a plain answer. Point them at `/multi:setup` to connect one.
 
 ## Report
 

@@ -42,6 +42,9 @@ Anything else missing is a note, not a stop: no OpenCode, no ponytail, not a
 git repo (fine — then the target is files, not a diff). Name what was missing
 in the report and carry on.
 
+Whatever is missing, point them at `/multi:setup` to connect it — it walks
+through this step by step and does not need them to know any of the above.
+
 ## Decide what you are reviewing
 
 **Whatever the user named.** A diff, a branch, two files, one function, a line
