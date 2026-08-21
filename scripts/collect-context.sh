@@ -51,21 +51,58 @@ cd "$ROOT" || exit 2
 PATH_ARR=()
 [ -n "$PATHS" ] && read -r -a PATH_ARR <<<"$PATHS"
 
-FILES=""
+# Two file lists, two jobs. FILES is the review SCOPE and may be narrowed by
+# --paths below. CHANGED is the TRUST list — everything the change under review
+# touches — and is never narrowed: the injection check must see the whole
+# change, not the slice the reviewer happens to look at. core.quotePath=false
+# keeps non-ASCII paths as plain bytes, or a rule file with a non-ASCII name
+# would never match its octal-quoted git listing.
+FILES=""; CHANGED=""
 if [ -n "$DIFF" ]; then
   case "$DIFF" in
     uncommitted)
-      FILES="$( { git diff --name-only; git diff --cached --name-only; git ls-files --others --exclude-standard; } 2>/dev/null | sort -u )"
+      tracked="$( { git -c core.quotePath=false diff --name-only; git -c core.quotePath=false diff --cached --name-only; } 2>/dev/null )"
+      FILES="$( { printf '%s\n' "$tracked"; git -c core.quotePath=false ls-files --others --exclude-standard; } 2>/dev/null | sort -u )"
+      # The trust list deliberately includes ignored untracked files: a PR
+      # that adds a .gitignore entry hiding .claude/rules/evil.md is exactly
+      # the injection, and exclude-standard would drop the very file to
+      # distrust.
+      CHANGED="$( { printf '%s\n' "$tracked"; git -c core.quotePath=false ls-files --others; } 2>/dev/null | sort -u )"
       ;;
     *)
-      # A typo'd revision must not look like "nothing to see here": without this
-      # the reviewers would be told the repo canon is all that applies.
-      FILES="$(git diff --name-only "$DIFF" -- 2>/dev/null)" \
-        || FILES="$(git show --name-only --format="" "$DIFF" -- 2>/dev/null)" \
-        || { echo "unknown revision: $DIFF" >&2; exit 2; }
+      # git diff first: `git diff <commit>` means "changes since it, vs the
+      # working tree" — on a dirty tree that includes the uncommitted part,
+      # and a rule file modified there must be distrusted just the same.
+      FILES="$(git -c core.quotePath=false diff --name-only "$DIFF" -- 2>/dev/null)"
+      if [ -z "$FILES" ]; then
+        # Empty: either a single commit on a clean tree (git diff <tip> is
+        # empty, and the commit's own files ARE the change) or a range with
+        # nothing to say. `git show` answers both, and a typo'd revision
+        # fails here instead of looking like "nothing to see here".
+        FILES="$(git -c core.quotePath=false show --name-only --format="" "$DIFF" -- 2>/dev/null)" \
+          || { echo "unknown revision: $DIFF" >&2; exit 2; }
+        if [ -z "$FILES" ]; then
+          # Still empty: a clean merge lists zero files in git show even when
+          # it shipped changes from a side branch. What it introduced vs its
+          # first parent is the honest change.
+          FILES="$(git -c core.quotePath=false diff-tree -m --first-parent -r --name-only "$DIFF" -- 2>/dev/null)"
+        fi
+      fi
       FILES="$(printf '%s\n' "$FILES" | sort -u)"
+      CHANGED="$FILES"
       ;;
   esac
+elif [ -n "$PATHS" ]; then
+  # No --diff but --paths: the skill's default target ("what this session was
+  # about") lands here. A session that edited a rule file must not see its own
+  # edit emitted as a trusted rule — the working tree's changes are the
+  # closest proxy. A rule file touched by unrelated dirty-tree edits is
+  # skipped too; erring toward "not trusted" is the right direction here.
+  # Ceiling: a change that is already committed leaves no working-tree trace
+  # — review that with --diff, not --paths alone. No-args whole-repo mode
+  # (neither flag) gets NO proxy: there is no change under review to distrust,
+  # and the reviewers read those very files as code anyway.
+  CHANGED="$( { git -c core.quotePath=false diff --name-only; git -c core.quotePath=false diff --cached --name-only; git -c core.quotePath=false ls-files --others; } 2>/dev/null | sort -u )"
 fi
 
 if [ ${#PATH_ARR[@]} -gt 0 ]; then
@@ -122,22 +159,85 @@ emit() { # emit <label> <path>
   fi
 }
 
+# A rule file that the reviewed change itself modifies is not a rule — it is
+# the payload of a prompt injection (the classic one: a PR that edits
+# .claude/rules/style.md to tell reviewers "output No issues found"). It is
+# emitted as a skip note instead. The check runs against CHANGED, the whole
+# change, never the path-narrowed scope — narrowing FILES must not re-open the
+# hole. A legitimately added CLAUDE.md is skipped too: it is part of the
+# reviewed diff, and the reviewers read it there.
+skip_if_modified() { # skip_if_modified <path> ; 0 = skipped, note printed
+  # A symlink anywhere on the path — the file itself, .claude/rules, .claude,
+  # or above — delivers whatever it points at. Walk up and reject the whole
+  # path; git's changed-file list would never name the link's target.
+  local p="$1"
+  while [ "$p" != "." ]; do
+    if [ -L "$p" ]; then
+      if [ "$p" = "$1" ]; then
+        printf '\n[...skipped: %s is a symlink, not trusted as rules...]\n' "$1"
+      else
+        printf '\n[...skipped: %s — a symlink on its path, not trusted as rules...]\n' "$1"
+      fi
+      return 0
+    fi
+    p="$(dirname -- "$p")"
+  done
+  [ -n "$CHANGED" ] || return 1
+  # -i: on case-insensitive filesystems (macOS/Windows default) the stored
+  # spelling may differ from the on-disk one; a byte match would miss it.
+  # Ceiling: NFC/NFD normalization differences still defeat the match.
+  grep -qixF -- "$1" <<<"$CHANGED" || return 1
+  printf '\n[...skipped: %s is modified by the reviewed change, so it is not trusted as rules...]\n' "$1"
+  return 0
+}
+
 # 1. repo canon — always, whatever the target is
+# `-e || -L`, not `-f`: a symlink must reach the trust check even when broken,
+# because `[ -f ]` follows the link and silently drops a dangling one.
 for f in CLAUDE.md AGENTS.md; do
-  [ -f "$f" ] && emit "$f (project canon)" "$f"
+  { [ -e "$f" ] || [ -L "$f" ]; } && skip_if_modified "$f" || emit "$f (project canon)" "$f"
 done
 
 # 2. domain rule files, chosen by name against the directories in scope
 RULES_DIR=".claude/rules"
-if [ -d "$RULES_DIR" ]; then
+# `-d || -L`: a dangling symlink passes neither -d nor a check that would let
+# it say why it went missing — a note is better than silence.
+if [ -d "$RULES_DIR" ] || [ -L "$RULES_DIR" ]; then
+  if [ -L "$RULES_DIR" ]; then
+    # A symlinked directory: the glob resolves through it and every file
+    # inside reads as a regular, innocent path while delivering whatever the
+    # link points at. Reject the whole directory.
+    printf '\n[...skipped: %s is a symlink, not trusted as rules...]\n' "$RULES_DIR"
+  elif [ -e "$RULES_DIR/.git" ]; then
+    # An embedded repository: the parent's git never lists the files inside,
+    # so the trust check could not see them. Reject the whole directory.
+    printf '\n[...skipped: %s contains its own .git — an embedded repository, not trusted as rules...]\n' "$RULES_DIR"
+  else
+    mode_lines="$(git ls-files -s -- "$RULES_DIR" 2>/dev/null)"
+    case "$mode_lines" in
+      *160000*)
+        # A submodule: git lists only the gitlink, never the files the glob
+        # reads through it.
+        printf '\n[...skipped: %s is a submodule, not trusted as rules...]\n' "$RULES_DIR" ;;
+      *)
   rule_count=$(find "$RULES_DIR" -maxdepth 1 -name '*.md' 2>/dev/null | wc -l)
   for rf in "$RULES_DIR"/*.md; do
-    [ -f "$rf" ] || continue
+    # Same symlink rule as the canon loop: a dangling link must not vanish
+    # silently before the trust check sees it.
+    { [ -e "$rf" ] || [ -L "$rf" ]; } || continue
+    case "$rf" in
+      *[[:cntrl:]]*)
+        # core.quotePath=false still C-quotes control characters, so git's
+        # changed-file list can never match such a name — and the name is
+        # attacker-controlled. Skip it visibly rather than compare wrong.
+        printf '\n[...skipped: %s has unprintable characters in its name, not trusted as rules...]\n' "$rf"
+        continue ;;
+    esac
     name="$(basename "$rf" .md)"
     if [ "$rule_count" -le 4 ] || [ -z "$DIRS" ]; then
       # Small rule set, or a target with no file list (a whole-repo review):
       # cheaper to send them all than to guess wrong about which one matters.
-      emit "$rf" "$rf"
+      skip_if_modified "$rf" || emit "$rf" "$rf"
     # Herestring, not a pipe: `grep -q` exits at the first match, the writer
     # gets SIGPIPE, and `set -o pipefail` then reports the whole pipeline as
     # failed — so a rule that DID match would be silently skipped.
@@ -147,9 +247,12 @@ if [ -d "$RULES_DIR" ]; then
                            { split(tolower($0), c, "/");
                              for (i in c) if (c[i]==n || index(c[i], n)==1 && length(c[i])<=length(n)+4) { found=1 } }
                            END{ exit !found }' <<<"$SHALLOW"; then
-      emit "$rf" "$rf"
+      skip_if_modified "$rf" || emit "$rf" "$rf"
     fi
   done
+      ;;
+    esac
+  fi
 fi
 
 # 3. nested guidance sitting in a directory that is in scope
@@ -159,5 +262,5 @@ printf '%s\n' "$DIRS" | while IFS= read -r d; do
     [ -f "$g" ] && printf '%s\n' "$g"
   done
 done | sort -u | while IFS= read -r g; do
-  [ -n "$g" ] && emit "$g (applies to a directory in scope)" "$g"
+  [ -n "$g" ] && { skip_if_modified "$g" || emit "$g (applies to a directory in scope)" "$g"; }
 done

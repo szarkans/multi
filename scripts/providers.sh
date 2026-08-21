@@ -335,14 +335,18 @@ multi_have_openrouter() { [ -n "${OPENROUTER_API_KEY:-}" ] && command -v claude 
 multi_have_gemini()     { [ -n "${GEMINI_API_KEY:-}" ]     && command -v gemini >/dev/null 2>&1; }
 
 # --- key checks ---------------------------------------------------------
-# Both print one word: OK, BAD KEY, or an HTTP code. One second, no tokens
-# spent, no ambiguity. This is the only honest way to answer "is my key good",
-# because both agents treat an auth failure as something to retry.
-# multi_check_openrouter [model] — one word about one model, no tokens spent.
+# Both print one word: OK, BAD KEY, or an HTTP code. This is the only honest
+# way to answer "is my key good", because both agents treat an auth failure as
+# something to retry. Gemini checks with a free models-list GET. OpenRouter
+# pings one 1-token message instead: it proves the key AND that the model's
+# pool is actually up in one request. --max-time 10: a candidate list of five
+# must not become 100 silent seconds, but a slow healthy pool must not read as
+# dead either.
+# multi_check_openrouter [model] — one word about one model.
 multi_check_openrouter() {
   [ -n "${OPENROUTER_API_KEY:-}" ] || { echo "NO KEY"; return 1; }
   local m="${1:-$MULTI_OPENROUTER_MODEL}" code
-  code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
+  code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
     https://openrouter.ai/api/v1/messages \
     -H 'content-type: application/json' \
     -H "x-api-key: ${OPENROUTER_API_KEY}" \
@@ -383,6 +387,12 @@ multi_pick_openrouter_model() {
 }
 
 # --- runners ------------------------------------------------------------
+# A backend that failed writes the reason into its answer file AND marks it
+# dead with a sidecar. Consumers test the marker, never the content: a model
+# whose answer starts with "codex: NO OUTPUT ..." is a live backend, and
+# grepping model text for status markers used to read it as dead.
+multi_fail_backend() { local out="$1"; shift; printf '%s\n' "$*" > "$out"; touch "${out}.dead"; }
+
 # multi_run_openrouter <prompt> <outfile> [model]
 # One OpenRouter model driven through Claude Code itself. The agent loop, the
 # tools and the prompt handling are identical to a Claude reviewer — only the
@@ -390,13 +400,16 @@ multi_pick_openrouter_model() {
 multi_run_openrouter() {
   local prompt="$1" out="$2" model="${3:-}" rc=0
   local log="${out}.log"
+  # A stale marker from a previous run with the same prefix must not condemn
+  # this run: the sidecar describes one invocation, not the file forever.
+  rm -f "${out}.dead"
   if [ -z "${OPENROUTER_API_KEY:-}" ]; then
-    echo "openrouter: NO KEY — ask the user to run scripts/setup.sh set OPENROUTER_API_KEY in their own terminal (it prompts for the key)" > "$out"; return 0
+    multi_fail_backend "$out" "openrouter: NO KEY — ask the user to run scripts/setup.sh set OPENROUTER_API_KEY in their own terminal (it prompts for the key)"; return 0
   fi
   # No model pinned by the caller: pick one whose pool is actually up.
   if [ -z "$model" ]; then
     model="$(multi_pick_openrouter_model)" || {
-      echo "openrouter: ALL POOLS BUSY — tried $MULTI_OPENROUTER_MODELS (HTTP 429 upstream, not your quota). Retry in a minute or set MULTI_OPENROUTER_MODELS." > "$out"
+      multi_fail_backend "$out" "openrouter: ALL POOLS BUSY — tried $MULTI_OPENROUTER_MODELS. A 429 means either the pool is busy or this account's own quota is gone — check both; an HTTP 000 means the check itself timed out, the pool is slow, not necessarily dead. Retry in a minute or set MULTI_OPENROUTER_MODELS."
       return 0
     }
   fi
@@ -417,15 +430,14 @@ multi_run_openrouter() {
       --strict-mcp-config --mcp-config '{"mcpServers":{}}' \
       > "$out" 2> "$log"
   rc=$?
-  if [ ! -s "$out" ]; then
-    # A silent run is the signature of a rejected key: Claude Code retries auth
-    # failures instead of reporting them, so it dies on the timeout with an
-    # empty file. Never let that read as an empty answer.
-    if [ "$rc" -eq 124 ]; then
-      echo "openrouter: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s — model=$model. A silent timeout usually means the key was rejected; check with scripts/setup.sh status." > "$out"
-    else
-      echo "openrouter: NO OUTPUT — model=$model exit=$rc (stderr in $log)" > "$out"
-    fi
+  if [ "$rc" -eq 124 ]; then
+    # A timed-out run never reads as an answer, even if partial output landed
+    # in the file before the kill. A silent timeout is the signature of a
+    # rejected key: Claude Code retries auth failures instead of reporting
+    # them, so it dies on the timeout with an empty file.
+    multi_fail_backend "$out" "openrouter: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s — model=$model. A silent timeout usually means the key was rejected; check with scripts/setup.sh status."
+  elif [ ! -s "$out" ]; then
+    multi_fail_backend "$out" "openrouter: NO OUTPUT — model=$model exit=$rc (stderr in $log)"
   else
     echo "[multi] answered by openrouter model $model" >> "$out"
   fi
@@ -438,21 +450,21 @@ multi_run_openrouter() {
 # on the key instead of paying a router for the same model.
 multi_run_gemini() {
   local prompt="$1" out="$2" model="${3:-$MULTI_GEMINI_MODEL}" rc=0
+  rm -f "${out}.dead"
   if [ -z "${GEMINI_API_KEY:-}" ]; then
-    echo "gemini: NO KEY — ask the user to run scripts/setup.sh set GEMINI_API_KEY in their own terminal (it prompts for the key)" > "$out"; return 0
+    multi_fail_backend "$out" "gemini: NO KEY — ask the user to run scripts/setup.sh set GEMINI_API_KEY in their own terminal (it prompts for the key)"; return 0
   fi
-  command -v gemini >/dev/null 2>&1 || { echo "gemini: MISSING (npm i -g @google/gemini-cli)" > "$out"; return 0; }
+  command -v gemini >/dev/null 2>&1 || { multi_fail_backend "$out" "gemini: MISSING (npm i -g @google/gemini-cli)"; return 0; }
   GEMINI_API_KEY="$GEMINI_API_KEY" \
     multi_timeout "$MULTI_BACKEND_TIMEOUT" gemini -p "$prompt" \
       ${model:+-m "$model"} --approval-mode plan \
       > "$out" 2>&1
   rc=$?
-  if [ ! -s "$out" ]; then
-    if [ "$rc" -eq 124 ]; then
-      echo "gemini: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s${model:+ — model=$model}" > "$out"
-    else
-      echo "gemini: NO OUTPUT${model:+ — model=$model} exit=$rc" > "$out"
-    fi
+  if [ "$rc" -eq 124 ]; then
+    # A timed-out run never reads as an answer, even with partial output.
+    multi_fail_backend "$out" "gemini: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s${model:+ — model=$model}"
+  elif [ ! -s "$out" ]; then
+    multi_fail_backend "$out" "gemini: NO OUTPUT${model:+ — model=$model} exit=$rc"
   fi
   return "$rc"
 }

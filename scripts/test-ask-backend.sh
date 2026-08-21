@@ -75,5 +75,68 @@ fi
 "$HERE/ask.sh" --question q --out-prefix "$TMP/oldflag" --backend codex --codex-model old-style-model >/dev/null
 grep -q "MODEL=old-style-model" "$TMP/oldflag-codex.txt" || { echo "FAIL --codex-model alias broken"; fail=1; }
 
+# A model whose answer starts with the backend's own failure words is alive:
+# ask.sh used to grep the answer text for "codex: NO OUTPUT" and read a real
+# answer as a dead backend. Alive = file with content and no .dead sidecar.
+cat > "$TMP/bin/codex" <<'STUB'
+#!/usr/bin/env bash
+out=""; model=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -o) out="$2"; shift 2 ;;
+    -m) model="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+[ -n "$out" ] && { echo "codex: NO OUTPUT was observed in the legacy module"; [ -n "$model" ] && echo "MODEL=$model"; } > "$out"
+STUB
+chmod +x "$TMP/bin/codex"
+"$HERE/ask.sh" --question q --out-prefix "$TMP/alive" --model m --backend codex >/dev/null
+if grep -q "codex: NO OUTPUT was observed" "$TMP/alive-codex.txt" && [ ! -e "$TMP/alive-codex.txt.dead" ]; then
+  echo "ok   answer starting with failure words counts as alive"
+else
+  echo "FAIL a live answer was misread as a dead backend"; fail=1
+fi
+
+# The RAW CAPTURE path (an opencode that does not speak --format json) is a
+# live backend: the answer is unstructured, not absent — no .dead marker, and
+# ask.sh must not report "no backend alive".
+"$HERE/ask.sh" --question q --out-prefix "$TMP/rawcap" --model m --backend opencode >/dev/null
+rc=$?
+if [ $rc -eq 0 ] && grep -q "RAW CAPTURE ONLY" "$TMP/rawcap-opencode.txt" && [ ! -e "$TMP/rawcap-opencode.txt.dead" ]; then
+  echo "ok   raw capture counts as alive"
+else
+  echo "FAIL raw capture read as dead (exit $rc)"; fail=1
+fi
+
+# A stale .dead sidecar from a failed run must not condemn the next run with
+# the same out-prefix: the marker describes one invocation, not the file.
+cat > "$TMP/bin/codex" <<'STUB'
+#!/usr/bin/env bash
+exit 0   # writes nothing: a silent failure
+STUB
+chmod +x "$TMP/bin/codex"
+"$HERE/ask.sh" --question q --out-prefix "$TMP/stale" --model m --backend codex >/dev/null
+[ -e "$TMP/stale-codex.txt.dead" ] || { echo "FAIL failed run did not leave a marker"; fail=1; }
+cat > "$TMP/bin/codex" <<'STUB'
+#!/usr/bin/env bash
+out=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -o) out="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+[ -n "$out" ] && echo "SECOND RUN ANSWER" > "$out"
+STUB
+chmod +x "$TMP/bin/codex"
+"$HERE/ask.sh" --question q --out-prefix "$TMP/stale" --model m --backend codex >/dev/null
+rc=$?
+if [ $rc -eq 0 ] && grep -q "SECOND RUN ANSWER" "$TMP/stale-codex.txt" && [ ! -e "$TMP/stale-codex.txt.dead" ]; then
+  echo "ok   stale marker does not condemn the next run"
+else
+  echo "FAIL stale marker condemned a live run (exit $rc)"; fail=1
+fi
+
 [ $fail -eq 0 ] && echo "ALL PASS" || echo "FAILURES"
 exit $fail

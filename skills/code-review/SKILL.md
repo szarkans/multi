@@ -33,10 +33,13 @@ observations".
 
 From the probe lines above — they are already there, do not re-run it.
 
-**No Codex, or not logged in → stop.** This is multi-model review; without a
-second model there is nothing here that a single-model review does not already
-do. Say so and point at `codex login`. Do not quietly deliver a one-model
-review wearing a three-model label.
+**No second reviewer family → stop.** This is multi-model review; the review
+pipeline can run two non-Claude families, Codex and OpenCode — without at
+least one of them there is nothing here that a single-model review does not
+already do. OpenRouter and Gemini are real second families, but this pipeline
+cannot run them as reviewers yet: they serve `/multi:ask`, not this skill.
+Say which is missing and point at `/multi:setup`. Do not quietly deliver a
+one-model review wearing a three-model label.
 
 Anything else missing is a note, not a stop: no OpenCode, no ponytail, not a
 git repo (fine — then the target is files, not a diff). Name what was missing
@@ -154,6 +157,9 @@ An explicitly named mode skips all of this. Obey it.
 | `lite` | `correctness` only | small, low-risk, external reviewers agree and found little |
 | `normal` *(default)* | `correctness` · `security` · `design` | anything heading for a PR |
 | `ultra` | those three, plus `execution`, plus an adversarial second Codex pass (`--adversarial`), plus one `verify` per single-source finding | expensive to get wrong, or asked for |
+
+The adversarial pass needs Codex specifically; without it, `ultra` runs without
+that pass — the rest of the mode is unchanged.
 
 Spawn them **in parallel, in one message**. Give each the target, the paths or
 range, the contents of `$RUN/ctx.md`, and the user's own words if there

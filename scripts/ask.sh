@@ -129,7 +129,10 @@ render_opencode() { # render_opencode <raw> <out> <model>
 
 run_codex_one() {
   local out="$1" model="$2" rc=0
-  command -v codex >/dev/null 2>&1 || { echo "codex: MISSING" > "$out"; return 0; }
+  # A stale marker from a previous run with the same prefix must not condemn
+  # this run: the sidecar describes one invocation, not the file forever.
+  rm -f "${out}.dead"
+  command -v codex >/dev/null 2>&1 || { multi_fail_backend "$out" "codex: MISSING"; return 0; }
   # A hung CLI used to block the `wait` below forever, and the caller — usually
   # Claude Code's own bash tool — killed the whole script instead, so every
   # other backend's answer died with it.
@@ -142,14 +145,19 @@ run_codex_one() {
   rc=$?
   # stderr used to go to /dev/null, so a codex that failed left "NO OUTPUT" and
   # nothing to go on. The openrouter path keeps a .log for exactly this reason.
-  [ -s "$out" ] || [ "$rc" -ne 124 ] || echo "codex: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s" > "$out"
-  [ -s "$out" ] || [ ! -s "${out}.log" ] || echo "codex: NO OUTPUT — exit=$rc (stderr in ${out}.log)" > "$out"
+  if [ "$rc" -eq 124 ]; then
+    # A timed-out run never reads as an answer, even if partial output landed
+    # in the file before the kill.
+    multi_fail_backend "$out" "codex: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s"
+  fi
+  [ -s "$out" ] || [ ! -s "${out}.log" ] || multi_fail_backend "$out" "codex: NO OUTPUT — exit=$rc (stderr in ${out}.log)"
 }
 
 run_opencode_one() {
   local out="$1" model="$2" fallback="$3"
-  command -v opencode >/dev/null 2>&1 || { echo "opencode: MISSING" > "$out"; return 0; }
-  [ -n "$model" ] || { echo "opencode: NO MODEL (set --model or MULTI_OPENCODE_MODEL)" > "$out"; return 0; }
+  rm -f "${out}.dead"
+  command -v opencode >/dev/null 2>&1 || { multi_fail_backend "$out" "opencode: MISSING"; return 0; }
+  [ -n "$model" ] || { multi_fail_backend "$out" "opencode: NO MODEL (set --model or MULTI_OPENCODE_MODEL)"; return 0; }
   # --format json rather than the terminal transcript: the transcript mixes the
   # model's answer with every file it opened, and the reader downstream cannot
   # tell those apart. The JSON events can. opencode-report.py turns them into
@@ -173,16 +181,19 @@ run_opencode_one() {
   if [ "$rc" -eq 124 ]; then
     # Checked before the output is accepted: opencode prints its first event
     # within a second, so a run that hangs afterwards still leaves a file.
-    echo "opencode: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s — model=$used (partial capture in $raw)" > "$out"
+    multi_fail_backend "$out" "opencode: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s — model=$used (partial capture in $raw)"
   elif [ "$rrc" = 3 ]; then
-    echo "opencode: NO ANSWER — model=$used exit=$rc — it ran but said nothing; what it did is in ${out}.calls" > "$out"
+    multi_fail_backend "$out" "opencode: NO ANSWER — model=$used exit=$rc — it ran but said nothing; what it did is in ${out}.calls"
   elif [ "$rrc" = 2 ] || [ "$rrc" = 4 ]; then
     local why="an opencode without --format json"; [ "$rrc" = 4 ] && why="no python3 on this machine"
+    # Not a dead backend: the model answered, the answer is just unstructured
+    # text the caller must read raw. No marker — one here would read a real
+    # answer as "no backend alive".
     { echo "opencode: RAW CAPTURE ONLY — model=$used exit=$rc ($why)"
       cat "$raw" 2>/dev/null
     } > "$out"
   elif [ ! -s "$out" ]; then
-    echo "opencode: NO OUTPUT — model=$used exit=$rc" > "$out"
+    multi_fail_backend "$out" "opencode: NO OUTPUT — model=$used exit=$rc"
   fi
   [ "$used" = "$model" ] || echo "[multi] answered by fallback model $used" >> "$out"
 }
@@ -208,9 +219,15 @@ for pb in $pids; do wait "${pb%%:*}"; done
 wrote=""; alive=0
 for i in "${!NAMES[@]}"; do
   name="${NAMES[$i]}"; f="${PREFIX}-${SUFFIXES[$i]}.txt"
-  # An empty file must never read as an answer: say who did not run.
-  [ -s "$f" ] || echo "${name}: NO OUTPUT" > "$f"
-  grep -qiE "^${name}: (NO OUTPUT|MISSING|NO KEY|TIMEOUT|NO MODEL)" "$f" || alive=$((alive+1))
+  # Whether a backend is alive is decided by the runners' sidecar marker, never
+  # by grepping the model's own text: an answer that starts with "codex: NO
+  # OUTPUT ..." is a live backend, and parsing model text as status used to
+  # read it as dead. An empty file still must never read as an answer.
+  if [ -s "$f" ] && [ ! -e "${f}.dead" ]; then
+    alive=$((alive+1))
+  else
+    [ -s "$f" ] || multi_fail_backend "$f" "${name}: NO OUTPUT"
+  fi
   wrote="$wrote${wrote:+ }$f"
 done
 echo "wrote: $wrote"
