@@ -11,6 +11,8 @@ description: >-
   "canonical".
 allowed-tools: Bash, Read, Grep, Glob, Agent
 argument-hint: "[the problem to think wide about]"
+metadata:
+  based-on: "ADHD by UditAkhourii — https://github.com/UditAkhourii/adhd (MIT)"
 ---
 
 # Wide ideas, several models
