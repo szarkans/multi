@@ -2,18 +2,19 @@
 
 ## 2.2.0 — 2026-08-22
 
-Починены два способа, которыми упавший ревьюер мог соврать о своём статусе,
-и записан контракт ядра.
+Two ways a failed reviewer could lie about its status are fixed, and the
+core contract is now written down.
 
-- Обрезка контекста больше не режет UTF-8 посреди символа — строгий ревьюер
-  умирал на битом промпте, и это выглядело как «бэкенд недоступен» (#6,
-  спасибо @jojoprison). Плюс регрессионный тест `test-context-utf8.sh`.
-- Упавший бэкенд теперь объясняет почему: `.dead`-маркер несёт одну строку
-  причины (`codex: TIMEOUT after 900s`), сырой хвост диагностики — в
-  `.dead.log`, отдельно и помеченный как недоверенный. Раньше причина терялась,
-  а ревьюер отчитывался как отсутствующий (#7).
-- Инъекция через канал статуса закрыта тестами: текст из stderr бэкенда не
-  может попасть в доверенный маркер (`test-injection.sh`,
+- Context truncation no longer cuts UTF-8 mid-character — a strict reviewer
+  died on the broken prompt and the failure read as "backend unavailable"
+  (#6, thanks @jojoprison). Regression test: `test-context-utf8.sh`.
+- A failed backend now explains itself: the `.dead` marker carries a one-line
+  reason (`codex: TIMEOUT after 900s`); the raw diagnostics tail goes to
+  `.dead.log`, kept separate and treated as untrusted. Previously the reason
+  was lost and the reviewer was reported as absent (#7).
+- Injection through the status channel is closed and covered by tests:
+  backend stderr can never reach the trusted marker (`test-injection.sh`,
   `test-reviewer-failures.sh`).
-- README: контракт «одно ядро» — единственный транспорт `ask.sh`, скилл владеет
-  только промптом и форматом отчёта; шаблон нового скилла на 15 строк.
+- README: the single-core contract — `ask.sh` is the only transport, a skill
+  owns nothing but its prompt and report format — plus a 15-line new-skill
+  template.
