@@ -142,6 +142,30 @@ fi
 # the rule that actually applies gets a chance.
 SHALLOW="$(printf '%s\n' "$DIRS" | awk -F/ 'NF<=3')"
 
+# `head -c` cuts on a BYTE boundary. In a non-ASCII canon — Cyrillic, Thai, CJK, or just an
+# emoji — the cut lands mid-codepoint and ctx.md ends with a partial UTF-8 sequence. That is
+# not cosmetic: `codex exec review` refuses the whole prompt with
+#   error: invalid UTF-8 was detected in one or more arguments
+# which reads as a bug in the prompt and sends you looking in the wrong place, while whatever
+# the reviewer would have said is simply lost. OpenCode swallows the bad byte instead, so the
+# corrupted canon reaches that reviewer silently.
+#
+# Measured on a Russian CLAUDE.md (two independent sessions, byte-identical result):
+#   head -c 8000            → 8000 bytes, invalid continuation byte at offset 7999
+#   head -c 8000 | iconv -c → 7999 bytes, valid  (one byte lost)
+#   head -c 8000 | sed '$d' → 6980 bytes, valid  (the whole trailing line lost)
+#
+# iconv is preferred because it keeps everything but the partial character; dropping the last
+# line is the fallback for systems without iconv, and it is safe for the same reason — a line
+# break is always a character boundary.
+truncate_utf8() { # truncate_utf8 <path> <bytes>
+  if command -v iconv >/dev/null 2>&1; then
+    head -c "$2" "$1" | iconv -f utf-8 -t utf-8 -c 2>/dev/null
+  else
+    head -c "$2" "$1" | sed '$d'
+  fi
+}
+
 total=0
 emit() { # emit <label> <path>
   label="$1"; path="$2"
@@ -150,7 +174,7 @@ emit() { # emit <label> <path>
   [ "$total" -lt "$MAX_TOTAL_BYTES" ] || return 0
   printf '\n### %s\n\n' "$label"
   if [ "$size" -gt "$MAX_FILE_BYTES" ]; then
-    head -c "$MAX_FILE_BYTES" "$path"
+    truncate_utf8 "$path" "$MAX_FILE_BYTES"
     printf '\n[...truncated, %s bytes total...]\n' "$size"
     total=$(( total + MAX_FILE_BYTES ))
   else
