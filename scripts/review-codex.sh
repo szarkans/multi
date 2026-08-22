@@ -127,12 +127,16 @@ a valid and often correct answer."
 # never wrote $OUT, and the skill waited on a file that was never coming. On a
 # timeout $OUT is empty, and an empty file must never read as "nothing found",
 # so the reason is written into it below.
+log="${OUT}.log"
+rm -f "${OUT}.dead"
+: > "$OUT"
+: > "$log"
 if [ -n "$DIFF" ]; then
   multi_timeout "$MULTI_REVIEW_TIMEOUT" codex exec review \
     ${MODEL:+-m "$MODEL"} \
     -c model_reasoning_effort="$EFFORT" \
     -o "$OUT" \
-    "$PROMPT"
+    "$PROMPT" 2>"$log"
 else
   multi_timeout "$MULTI_REVIEW_TIMEOUT" codex exec \
     ${MODEL:+-m "$MODEL"} \
@@ -146,7 +150,7 @@ Output one block per finding, most severe first, and nothing else:
 - [P1|P2|P3] <one sentence: what is wrong> — <path>:<line>
   <the concrete case where it bites>
 
-If there is nothing to report, output exactly: No issues found."
+If there is nothing to report, output exactly: No issues found." 2>"$log"
 fi
 rc=$?
 
@@ -155,9 +159,10 @@ rc=$?
 # openrouter path in providers.sh: say who did not run, and why.
 if [ ! -s "$OUT" ]; then
   if [ "$rc" -eq 124 ]; then
-    echo "codex: TIMEOUT after ${MULTI_REVIEW_TIMEOUT}s — no review was produced (raise MULTI_REVIEW_TIMEOUT if the target really is this big)" > "$OUT"
+    reason="codex: TIMEOUT after ${MULTI_REVIEW_TIMEOUT}s — no review was produced (raise MULTI_REVIEW_TIMEOUT if the target really is this big)"
   else
-    echo "codex: NO OUTPUT — exit=$rc" > "$OUT"
+    reason="codex: NO OUTPUT — exit=$rc"
   fi
+  multi_fail_backend "$OUT" "$reason" "$log"
 fi
 exit "$rc"

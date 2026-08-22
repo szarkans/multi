@@ -191,8 +191,8 @@ question: did this reviewer actually look at the code it is talking about? A
 finding about a file that never appears in the call list was invented, and it
 goes in `Dropped`. `(none — this reviewer answered without opening anything)`
 means the whole report is guesswork. `NO ANSWER` means it ran and said
-nothing: that reviewer was absent, say so rather than reading silence as
-agreement.
+nothing: that reviewer was absent, say so as `Codex/Opencode FAILED: <reason>`
+from the one-line text in `*.dead` rather than reading silence as agreement.
 
 Bucket by *the underlying problem*, not by wording — the same bug gets three
 different descriptions:
@@ -275,10 +275,11 @@ changed as `file:line` one-liners. If the cap is hit with findings open, say so.
 - **Lockfiles, generated code, vendored trees** — say so and skip the external
   reviewers; there is nothing there for them.
 - **A reviewer hangs** — the scripts kill it themselves after
-  `MULTI_REVIEW_TIMEOUT` (15 minutes by default) and write the reason into the
-  output file, so a hang arrives as a line saying TIMEOUT, never as an empty
-  file. Treat that reviewer as absent and name it in the report. A reviewer
-  still writing is alive, however long it takes. Never block the whole review
-  on one backend.
+  `MULTI_REVIEW_TIMEOUT` (15 minutes by default) and write the reason as the
+  one-line `.dead` text, so a hang arrives as `... FAILED: ...`, never as an
+  empty file.
+  Treat that reviewer as absent and name it in the report. A reviewer still
+  writing is alive, however long it takes. Never block the whole review on one
+  backend.
 - **OpenCode falls back to its free model** — its output says so. Repeat it in
   the reviewer line; the user is entitled to know which model actually ran.

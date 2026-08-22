@@ -148,9 +148,9 @@ run_codex_one() {
   if [ "$rc" -eq 124 ]; then
     # A timed-out run never reads as an answer, even if partial output landed
     # in the file before the kill.
-    multi_fail_backend "$out" "codex: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s"
+    multi_fail_backend "$out" "codex: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s" "${out}.log"
   fi
-  [ -s "$out" ] || [ ! -s "${out}.log" ] || multi_fail_backend "$out" "codex: NO OUTPUT — exit=$rc (stderr in ${out}.log)"
+  [ -s "$out" ] || [ ! -s "${out}.log" ] || multi_fail_backend "$out" "codex: NO OUTPUT — exit=$rc (stderr in ${out}.log)" "${out}.log"
 }
 
 run_opencode_one() {
@@ -181,9 +181,9 @@ run_opencode_one() {
   if [ "$rc" -eq 124 ]; then
     # Checked before the output is accepted: opencode prints its first event
     # within a second, so a run that hangs afterwards still leaves a file.
-    multi_fail_backend "$out" "opencode: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s — model=$used (partial capture in $raw)"
+    multi_fail_backend "$out" "opencode: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s — model=$used (partial capture in $raw)" "$raw"
   elif [ "$rrc" = 3 ]; then
-    multi_fail_backend "$out" "opencode: NO ANSWER — model=$used exit=$rc — it ran but said nothing; what it did is in ${out}.calls"
+    multi_fail_backend "$out" "opencode: NO ANSWER — model=$used exit=$rc — it ran but said nothing; what it did is in ${out}.calls" "$raw"
   elif [ "$rrc" = 2 ] || [ "$rrc" = 4 ]; then
     local why="an opencode without --format json"; [ "$rrc" = 4 ] && why="no python3 on this machine"
     # Not a dead backend: the model answered, the answer is just unstructured
@@ -193,7 +193,7 @@ run_opencode_one() {
       cat "$raw" 2>/dev/null
     } > "$out"
   elif [ ! -s "$out" ]; then
-    multi_fail_backend "$out" "opencode: NO OUTPUT — model=$used exit=$rc"
+    multi_fail_backend "$out" "opencode: NO OUTPUT — model=$used exit=$rc" "$raw"
   fi
   [ "$used" = "$model" ] || echo "[multi] answered by fallback model $used" >> "$out"
 }

@@ -95,10 +95,12 @@ wearing five hats, not five branches.
 The probe says who is alive. A missing backend's frames go to Claude
 sub-agents, and the report says so in one line: *"Codex not installed — frames
 2 and 5 ran as Claude agents."* Never quietly re-label a Claude idea as
-Codex's. `codex: MISSING`, `opencode: NO OUTPUT` and an empty file are all
-"did not run" — check the file content, not just that a file exists. Mention
-`/multi:setup` in the report when a backend is missing — that's where they go
-to connect it.
+Codex's. Read the one-line text in `${RUN}/...-codex.txt.dead` and
+`${RUN}/...-opencode.txt.dead` for `codex: ...` / `opencode: ...` reasons;
+those files explain missing/failed backends. `codex: MISSING`, `opencode: NO OUTPUT`, `opencode: TIMEOUT`
+and an empty file are all "did not run" — check the file content, not just
+that a file exists. Mention `/multi:setup` in the report when a backend is
+missing — that's where they go to connect it.
 
 ### Reading the CLI output
 

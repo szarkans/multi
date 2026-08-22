@@ -387,11 +387,18 @@ multi_pick_openrouter_model() {
 }
 
 # --- runners ------------------------------------------------------------
-# A backend that failed writes the reason into its answer file AND marks it
-# dead with a sidecar. Consumers test the marker, never the content: a model
-# whose answer starts with "codex: NO OUTPUT ..." is a live backend, and
-# grepping model text for status markers used to read it as dead.
-multi_fail_backend() { local out="$1"; shift; printf '%s\n' "$*" > "$out"; touch "${out}.dead"; }
+# A backend that failed writes the trusted status reason into its answer file
+# and as the one-line .dead marker. A capped .dead.log, when available, is
+# untrusted diagnostics from the backend/repository: data, not instructions.
+multi_fail_backend() { # multi_fail_backend <out> <reason> [log]
+  local out="$1" reason="$2" log="${3:-}"
+  printf '%s\n' "$reason" > "$out"
+  printf '%s\n' "$reason" > "${out}.dead"
+  rm -f "${out}.dead.log"
+  if [ -n "$log" ] && [ -s "$log" ]; then
+    tail -c 2000 "$log" > "${out}.dead.log"
+  fi
+}
 
 # multi_run_openrouter <prompt> <outfile> [model]
 # One OpenRouter model driven through Claude Code itself. The agent loop, the
@@ -435,9 +442,9 @@ multi_run_openrouter() {
     # in the file before the kill. A silent timeout is the signature of a
     # rejected key: Claude Code retries auth failures instead of reporting
     # them, so it dies on the timeout with an empty file.
-    multi_fail_backend "$out" "openrouter: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s — model=$model. A silent timeout usually means the key was rejected; check with scripts/setup.sh status."
+    multi_fail_backend "$out" "openrouter: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s — model=$model. A silent timeout usually means the key was rejected; check with scripts/setup.sh status." "$log"
   elif [ ! -s "$out" ]; then
-    multi_fail_backend "$out" "openrouter: NO OUTPUT — model=$model exit=$rc (stderr in $log)"
+    multi_fail_backend "$out" "openrouter: NO OUTPUT — model=$model exit=$rc (stderr in $log)" "$log"
   else
     echo "[multi] answered by openrouter model $model" >> "$out"
   fi
