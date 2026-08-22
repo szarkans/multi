@@ -123,7 +123,7 @@ migrations, deploys, calls to third-party services with side effects.
 ```
 # ✅ Check-if-done — <what was promised> 
 Checked by: Claude · execution · Codex · OpenCode <model>
-<one line if a reviewer was missing or a check could not be run — point at `/multi:setup` to connect it>
+<one line if a reviewer failed or was missing — `Codex FAILED: <reason>` / `OpenCode FAILED: <reason>` from the one-line text in the corresponding `.dead` marker; point at `/multi:setup` to connect anything missing>
 
 ## Verdict
 DONE: yes | partially | no — <one sentence>

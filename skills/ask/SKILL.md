@@ -60,9 +60,9 @@ it before you read theirs — otherwise it is not an independent answer.
 
 **Claude** — <your answer>
 
-**Codex** — <its answer>
+**Codex** — <its answer>   ← or one line: `Codex FAILED: <reason>` from `<run>/*-codex.txt.dead` (the one-line marker text)
 
-**OpenCode (<model>)** — <its answer>   ← or one line saying it did not run
+**OpenCode (<model>)** — <its answer>   ← or one line saying it did not run, e.g. `OpenCode FAILED: <reason>` from the one-line text in `<run>/*-opencode.txt.dead`
 
 ### Where they differ
 <the real disagreements, one line each — not a summary of all three>

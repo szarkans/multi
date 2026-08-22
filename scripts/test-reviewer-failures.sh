@@ -34,6 +34,7 @@ echo "   codex says:    $(head -1 "$TMP/a-codex.txt" 2>/dev/null)"
 echo "   opencode says: $(head -1 "$TMP/a-opencode.txt" 2>/dev/null)"
 say "codex marked TIMEOUT" "$(grep -qi 'TIMEOUT' "$TMP/a-codex.txt" && echo yes || echo no)" "yes"
 say "opencode marked TIMEOUT" "$(grep -qi 'TIMEOUT' "$TMP/a-opencode.txt" && echo yes || echo no)" "yes"
+say "dead markers have one-line reasons" "$([ -s "$TMP/a-codex.txt.dead" ] && [ "$(wc -l < "$TMP/a-codex.txt.dead")" -eq 1 ] && [ -s "$TMP/a-opencode.txt.dead" ] && [ "$(wc -l < "$TMP/a-opencode.txt.dead")" -eq 1 ] && echo yes || echo no)" "yes"
 
 echo "== review-codex.sh with codex hung =="
 s=$SECONDS
@@ -43,6 +44,18 @@ say "returns fast" "$([ $d -le 10 ] && echo yes || echo "no(${d}s)")" "yes"
 echo "   says: $(head -1 "$TMP/rc.txt" 2>/dev/null)"
 say "not empty" "$([ -s "$TMP/rc.txt" ] && echo yes || echo no)" "yes"
 say "says TIMEOUT" "$(grep -qi 'TIMEOUT' "$TMP/rc.txt" && echo yes || echo no)" "yes"
+say "dead marker has one-line reason" "$([ -s "$TMP/rc.txt.dead" ] && [ "$(wc -l < "$TMP/rc.txt.dead")" -eq 1 ] && echo yes || echo no)" "yes"
+
+echo "== backend stderr stays out of the trusted dead marker =="
+cat > "$TMP/bin/codex" <<'STUB'
+#!/usr/bin/env bash
+echo "INJECTION MARKER XYZZY" >&2
+exit 7
+STUB
+chmod +x "$TMP/bin/codex"
+bash "$TREE/scripts/review-codex.sh" --target t --out "$TMP/ri.txt" >/dev/null 2>&1
+say "dead marker has no backend log" "$(grep -q 'XYZZY' "$TMP/ri.txt.dead" && echo no || echo yes)" "yes"
+say "dead log preserves diagnostics" "$(grep -q 'XYZZY' "$TMP/ri.txt.dead.log" && echo yes || echo no)" "yes"
 
 echo "== review-opencode.sh with opencode hung =="
 s=$SECONDS
@@ -52,6 +65,7 @@ say "returns fast" "$([ $d -le 15 ] && echo yes || echo "no(${d}s)")" "yes"
 echo "   says: $(head -1 "$TMP/ro.txt" 2>/dev/null)"
 say "not empty" "$([ -s "$TMP/ro.txt" ] && echo yes || echo no)" "yes"
 say "says TIMEOUT" "$(grep -qi 'TIMEOUT' "$TMP/ro.txt" && echo yes || echo no)" "yes"
+say "dead marker has one-line reason" "$([ -s "$TMP/ro.txt.dead" ] && [ "$(wc -l < "$TMP/ro.txt.dead")" -eq 1 ] && echo yes || echo no)" "yes"
 
 echo "== an opencode too old for --format json still reaches the judge =="
 cat > "$TMP/bin/opencode" <<'STUB'

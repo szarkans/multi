@@ -41,6 +41,7 @@ mkdir -p "$(dirname "$OUT")" 2>/dev/null || true
 [ -n "$MODEL" ] || { echo "no model: set --model or MULTI_OPENCODE_MODEL" >&2; exit 2; }
 case "$DIFF" in -*) echo "--diff must be a revision, not an option: $DIFF" >&2; exit 2 ;; esac
 [ -z "$PATHS" ] || multi_check_paths "$PATHS" || exit 2
+rm -f "${OUT}.dead"
 
 PS=""
 [ -n "$PATHS" ] && PS=" -- $PATHS"
@@ -147,6 +148,7 @@ fi
 if [ "$rc" -eq 124 ]; then
   # A timeout can still leave a partial report; keep it, but never let it read
   # as a completed review.
+  # The partial capture deliberately overwrites $OUT; the reason lives in .dead.
   # `cat` last inside the group would decide the group's exit status, and an
   # absent partial report would then skip the mv and leave $OUT empty -- the
   # one state that reads as "no issues found".
@@ -156,9 +158,12 @@ if [ "$rc" -eq 124 ]; then
       cat "$OUT"
     fi
   } > "${OUT}.tmp"
+  reason="opencode: TIMEOUT after ${MULTI_REVIEW_TIMEOUT}s — model=$USED, the review was cut off"
+  multi_fail_backend "$OUT" "$reason" "$RAW"
   mv "${OUT}.tmp" "$OUT"
 elif [ "$rrc" = 3 ]; then
-  echo "opencode: NO ANSWER — model=$USED exit=$rc — it ran but never wrote a review; what it did is in ${OUT}.calls" > "$OUT"
+  reason="opencode: NO ANSWER — model=$USED exit=$rc — it ran but never wrote a review; what it did is in ${OUT}.calls"
+  multi_fail_backend "$OUT" "$reason" "$RAW"
 elif [ "$rrc" = 2 ] || [ "$rrc" = 4 ]; then
   # Either this opencode predates --format json, or there is no python3 here.
   # Fall back to what was captured, prefixed so that a line the model merely
@@ -172,7 +177,8 @@ elif [ "$rrc" = 2 ] || [ "$rrc" = 4 ]; then
     tail -n 80 "$RAW" 2>/dev/null | sed "s/$(printf '\033')\[[0-9;]*[a-zA-Z]//g" | sed 's/^/raw| /'
   } > "$OUT"
 elif [ ! -s "$OUT" ]; then
-  echo "opencode: NO OUTPUT — model=$USED exit=$rc — see $RAW" > "$OUT"
+  reason="opencode: NO OUTPUT — model=$USED exit=$rc — see $RAW"
+  multi_fail_backend "$OUT" "$reason" "$RAW"
 fi
 
 [ "$USED" = "$MODEL" ] || echo "[multi] reviewed by fallback model $USED" >> "$OUT"
