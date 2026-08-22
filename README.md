@@ -38,6 +38,43 @@ then restart claude code and `/multi:setup`
 im tired of ai-slop-saas-b2b-skill readme's. plain user-readable text is better, no garbage noise, only what you actually need.  
 like... is there something i missed? i can guide you throuugh every script but do you **really** want it?
 
+## How It Works: One Core
+
+there's exactly one transport in this plugin: `scripts/ask.sh`. it takes a question (`--question` or `--question-file`), a `--backend` list, and `--out-prefix`, runs every backend in parallel, and writes one file per backend: `<prefix>-<backend>.txt`.
+
+a backend that failed gets a `<prefix>-<backend>.dead` sidecar next to its `.txt` — the reason for the failure is written inside the `.txt`, `.dead` just marks it as dead. an empty `.txt` with no `.dead` is never "clean": ask.sh itself catches that case and turns it into a failure.
+
+every skill does the same three things: build the prompt, call `ask.sh`, read the files back and judge/merge in the SKILL.md prose. judging and report formatting never go into scripts — scripts only produce files, they don't have opinions.
+
+rule: **new skill = new prompt + new report format.** we don't add a second runner script. if `ask.sh` can't do something you need, teach `ask.sh` — don't write one next to it.
+
+## New Skill in ~15 Lines
+
+a minimal skeleton, copied from `skills/ask/SKILL.md`'s real structure:
+
+```markdown
+---
+name: my-skill
+description: One line — when should this fire.
+allowed-tools: Bash, Read, Grep, Glob
+---
+
+!`sh -c 'for p in "$CLAUDE_PLUGIN_ROOT/scripts" "$HOME/.claude/skills/multi/scripts" "./.claude/skills/multi/scripts"; do [ -x "$p/probe.sh" ] && { "$p/probe.sh"; echo "scripts-dir: $p"; exit 0; }; done; echo "probe: NOT FOUND — locate scripts/probe.sh in this plugin and run it yourself"'`
+
+RUN="$($SCRIPTS/run-dir.sh --slug my-skill-job)"
+
+$SCRIPTS/ask.sh --question-file "$RUN/prompt.md" \
+                --out-prefix "$RUN/ask" \
+                --backend "codex,opencode:<model from probe>"
+
+Read `$RUN/ask-<backend>.txt`. `.dead` next to one = that backend failed,
+reason is inside the `.txt`. Empty `.txt`, no `.dead` — that's a bug, not a
+clean run.
+
+## Report
+<your own format — this is the only part that's yours>
+```
+
 ## Evals
 
 I mean... It works for me? Code-reviews got so much better and check-if-done is OP. i like it.

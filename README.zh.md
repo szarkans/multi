@@ -39,6 +39,43 @@ git clone https://github.com/szarkans/multi ~/.claude/skills/multi
 
 ---
 
+## 一个核心是怎么运作的
+
+这插件只有一条通信线：`scripts/ask.sh`。它接收一个问题（`--question` 或 `--question-file`）、一个 `--backend` 列表和 `--out-prefix`，并行跑完所有后端，然后给每个后端写一个文件：`<prefix>-<backend>.txt`。
+
+跑失败的后端会多出一个 `<prefix>-<backend>.dead` 标记文件——失败原因写在 `.txt` 里面，`.dead` 只是个"这个死了"的标记。`.txt` 是空的但没有 `.dead`，那不算"干净"：ask.sh 自己会把这种情况当成失败处理。
+
+每个 skill 干的事都一样：拼提示词、调 `ask.sh`、把文件读回来，在 SKILL.md 的文字里判断/合并结果。判断逻辑和报告格式从来不写进脚本——脚本只管产出文件，不管怎么解读结果。
+
+规矩：**新 skill = 新提示词 + 新报告格式。** 不要再加第二个跑任务的脚本。`ask.sh` 干不了的事，就去教会 `ask.sh`，别在它旁边另写一个。
+
+## 大概 15 行写一个新 skill
+
+骨架照抄 `skills/ask/SKILL.md` 的真实结构：
+
+```markdown
+---
+name: my-skill
+description: One line — when should this fire.
+allowed-tools: Bash, Read, Grep, Glob
+---
+
+!`sh -c 'for p in "$CLAUDE_PLUGIN_ROOT/scripts" "$HOME/.claude/skills/multi/scripts" "./.claude/skills/multi/scripts"; do [ -x "$p/probe.sh" ] && { "$p/probe.sh"; echo "scripts-dir: $p"; exit 0; }; done; echo "probe: NOT FOUND — locate scripts/probe.sh in this plugin and run it yourself"'`
+
+RUN="$($SCRIPTS/run-dir.sh --slug my-skill-job)"
+
+$SCRIPTS/ask.sh --question-file "$RUN/prompt.md" \
+                --out-prefix "$RUN/ask" \
+                --backend "codex,opencode:<model from probe>"
+
+Read `$RUN/ask-<backend>.txt`. `.dead` next to one = that backend failed,
+reason is inside the `.txt`. Empty `.txt`, no `.dead` — that's a bug, not a
+clean run.
+
+## Report
+<your own format — this is the only part that's yours>
+```
+
 ## 评测
 
 呃……反正我用着挺好？代码评审明显变强了，check-if-done 简直离谱地好用。我喜欢。
