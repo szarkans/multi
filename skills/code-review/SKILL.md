@@ -103,12 +103,11 @@ RUN="$($SCRIPTS/run-dir.sh --slug <two-to-four words: the project and the job, e
 
 $SCRIPTS/collect-context.sh [--diff <spec>] [--paths "<paths>"] > "$RUN/ctx.md"
 
-$SCRIPTS/review-codex.sh    --target "<in words>" [--diff <spec>] [--paths "<paths>"] \
-                            --effort <low|medium|high|xhigh|max> [--focus "<user text>"] \
-                            --context "$RUN/ctx.md" --out "$RUN/codex.txt"
-$SCRIPTS/review-opencode.sh --target "<in words>" [--diff <spec>] [--paths "<paths>"] \
-                            --model <from probe> --fallback <from probe> [--focus "<user text>"] \
-                            --context "$RUN/ctx.md" --out "$RUN/opencode.txt"
+$SCRIPTS/review-prompt.sh --target "<in words>" [--diff <spec>] [--paths "<paths>"] \
+                          [--focus "<user text>"] --context "$RUN/ctx.md" > "$RUN/review.prompt.md"
+$SCRIPTS/ask.sh --question-file "$RUN/review.prompt.md" --out-prefix "$RUN/review" \
+                --backend "codex,opencode:<model from probe>" --fallback <from probe> \
+                --effort <low|medium|high|xhigh|max> --timeout "${MULTI_REVIEW_TIMEOUT:-900}"
 ```
 
 `run-dir.sh` prints this session's own directory, `/tmp/multi/<session>--<slug>`,
@@ -178,11 +177,11 @@ what you actually know about the job. Without any of that, `ultra` degrades to
 
 ## Judge
 
-Normalize everything to `{file, line, severity, claim}`. Codex reports
-`- [P1] <title> — <abs path>:<line>-<line>` with the explanation indented
-(P1/P2/P3 → high/medium/low) and absolute paths; make them repo-relative.
-OpenCode's file has two parts: `## <model>` listing every tool call it made,
-then `## Answer` with what it wrote, as `FILE:LINE | SEVERITY | reason`.
+Normalize everything to `{file, line, severity, claim}`. Codex and OpenCode
+both answer the unified review prompt as
+`FILE:LINE | HIGH|MEDIUM|LOW | reason`, with repo-relative paths. OpenCode's
+file has two parts: `## <model>` listing every tool call it made, then
+`## Answer` with what it wrote in that unified format.
 Sub-agents report `FILE:LINE | SEVERITY | confidence NN` with two lines under
 it.
 
@@ -274,10 +273,10 @@ changed as `file:line` one-liners. If the cap is hit with findings open, say so.
   narrower one, rather than quietly reviewing four hundred files badly.
 - **Lockfiles, generated code, vendored trees** — say so and skip the external
   reviewers; there is nothing there for them.
-- **A reviewer hangs** — the scripts kill it themselves after
-  `MULTI_REVIEW_TIMEOUT` (15 minutes by default) and write the reason as the
-  one-line `.dead` text, so a hang arrives as `... FAILED: ...`, never as an
-  empty file.
+- **A reviewer hangs** — the caller passes
+  `--timeout "${MULTI_REVIEW_TIMEOUT:-900}"` to `ask.sh`; that value bounds each
+  backend, and a failed run writes the reason as the one-line `.dead` text, so
+  a hang arrives as `... FAILED: ...`, never as an empty file.
   Treat that reviewer as absent and name it in the report. A reviewer still
   writing is alive, however long it takes. Never block the whole review on one
   backend.

@@ -28,7 +28,8 @@ while [ $# -gt 0 ]; do
   esac
 done
 [ -n "$REPO" ] && [ -n "$OUT" ] || { echo "usage: run.sh --repo <path> --out <dir> [--case id]" >&2; exit 2; }
-mkdir -p "$OUT"
+mkdir -p "$OUT" || exit 2
+OUT="$(cd "$OUT" && pwd)" || exit 2
 
 WT_ROOT="$OUT/worktrees"; mkdir -p "$WT_ROOT"
 
@@ -70,15 +71,13 @@ while IFS=$'\t' read -r -u 3 id sha paths truth; do
 
   echo "[$id] reviewing ($(wc -l < "$OUT/$id.diff.txt") diff lines)"
 
-  ( cd "$wt" && bash "$SCRIPTS/review-codex.sh" --target "the uncommitted changes" --diff uncommitted --effort "$EFFORT" \
-      "${ctx_arg[@]}" --out "$OUT/$id.codex.txt" ) > "$OUT/$id.codex.log" 2>&1 &
-  cx=$!
-  ( cd "$wt" && bash "$SCRIPTS/review-opencode.sh" --target "the uncommitted changes" --diff uncommitted --model "$OC_MODEL" \
-      "${ctx_arg[@]}" --out "$OUT/$id.opencode.txt" ) > "$OUT/$id.opencode.log" 2>&1 &
-  oc=$!
-  wait $cx; echo "[$id] codex done"
-  wait $oc; echo "[$id] opencode done"
+  ( cd "$wt" && bash "$SCRIPTS/review-prompt.sh" --target "the uncommitted changes" --diff uncommitted \
+      ${ctx_arg[@]+"${ctx_arg[@]}"} ) > "$OUT/$id.prompt.md"
+  ( cd "$wt" && bash "$SCRIPTS/ask.sh" --question-file "$OUT/$id.prompt.md" --out-prefix "$OUT/$id" \
+      --backend "codex,opencode:$OC_MODEL" --effort "$EFFORT" --timeout "${MULTI_REVIEW_TIMEOUT:-900}" \
+  ) > "$OUT/$id.ask.log" 2>&1
+  echo "[$id] codex and opencode done"
 done 3< "$HERE/cases.tsv"
 
 echo
-echo "results in $OUT — compare each <id>.codex.txt / <id>.opencode.txt against <id>.truth.txt"
+echo "results in $OUT — compare each <id>-codex.txt / <id>-opencode.txt against <id>.truth.txt"

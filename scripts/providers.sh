@@ -131,9 +131,9 @@ multi_check_paths() {
 #
 # Read this first, because the comment used to promise more than the code can
 # do: this is prompt hygiene, NOT isolation. The reviewers run inside the real
-# working tree with their tool calls pre-approved (review-opencode.sh runs
-# `opencode run --pure --auto --dir .`, and `codex exec review` gets no sandbox
-# flag at all), so any of them CAN read a secret it decides to open. What this
+# working tree with their tool calls pre-approved (ask.sh runs
+# `opencode run --pure --auto --dir .` and plain `codex exec -s read-only`), so
+# any of them CAN read a secret it decides to open. What this
 # code prevents is the orchestrator handing one over: the prompt used to say
 # "run git status --untracked-files=all and read what you find", which is an
 # invitation to open exactly the files that were never meant to travel. Real

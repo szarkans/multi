@@ -2,5 +2,6 @@
 *.log
 evals/results/
 evals/worktrees/
+evals/out*/
 __pycache__/
 docs/

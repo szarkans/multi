@@ -5,6 +5,7 @@
 #
 #   ask.sh --question "is a channel or a mutex better here?" --out-prefix "$RUN/ask"
 #   ask.sh --question-file "$RUN/prompt.md" --out-prefix "$RUN/done" --effort high
+#   ask.sh --question-file "$RUN/review.md" --out-prefix "$RUN/review" --timeout 900
 #   ask.sh --question "..." --out-prefix /tmp/f2 --backend codex
 #   ask.sh --question "..." --out-prefix /tmp/f4 --backend openrouter:x-ai/grok-4.5
 #   ask.sh --question "..." --out-prefix /tmp/all --backend all
@@ -65,6 +66,9 @@ while [ $# -gt 0 ]; do
     --effort)        need $# "$1"; EFFORT="$2"; shift 2 ;;
     --model)         need $# "$1"; MODEL="$2"; shift 2 ;;
     --fallback)      need $# "$1"; FALLBACK="$2"; shift 2 ;;
+    --timeout)       need $# "$1"
+                     case "$2" in ''|*[!0-9]*|0) echo "--timeout must be a positive integer: $2" >&2; exit 2 ;; esac
+                     MULTI_BACKEND_TIMEOUT="$2"; shift 2 ;;
     --codex-model)   need $# "$1"; CODEX_MODEL="$2"; shift 2 ;;
     --backend)       need $# "$1"; BACKEND="$2"; shift 2 ;;
     --or-model)      need $# "$1"; OR_MODEL="$2"; shift 2 ;;
@@ -145,9 +149,7 @@ run_codex_one() {
   rc=$?
   # stderr used to go to /dev/null, so a codex that failed left "NO OUTPUT" and
   # nothing to go on. The openrouter path keeps a .log for exactly this reason.
-  if [ "$rc" -eq 124 ]; then
-    # A timed-out run never reads as an answer, even if partial output landed
-    # in the file before the kill.
+  if [ "$rc" -eq 124 ] && [ ! -s "$out" ]; then
     multi_fail_backend "$out" "codex: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s" "${out}.log"
   fi
   [ -s "$out" ] || [ ! -s "${out}.log" ] || multi_fail_backend "$out" "codex: NO OUTPUT — exit=$rc (stderr in ${out}.log)" "${out}.log"
@@ -155,14 +157,15 @@ run_codex_one() {
 
 run_opencode_one() {
   local out="$1" model="$2" fallback="$3"
-  rm -f "${out}.dead"
+  local raw="${out}.jsonl"
+  rm -f "${out}.dead" "${raw}.first"
   command -v opencode >/dev/null 2>&1 || { multi_fail_backend "$out" "opencode: MISSING"; return 0; }
   [ -n "$model" ] || { multi_fail_backend "$out" "opencode: NO MODEL (set --model or MULTI_OPENCODE_MODEL)"; return 0; }
   # --format json rather than the terminal transcript: the transcript mixes the
   # model's answer with every file it opened, and the reader downstream cannot
   # tell those apart. The JSON events can. opencode-report.py turns them into
   # what it did, then what it said.
-  local raw="${out}.jsonl" used="$model" rc=0 rrc=0
+  local used="$model" rc=0 rrc=0
   multi_timeout "$MULTI_BACKEND_TIMEOUT" opencode run --pure --auto --format json \
     -m "$model" --dir . "$QUESTION" > "$raw" 2>&1; rc=$?
   render_opencode "$raw" "$out" "$used"; rrc=$?
@@ -172,6 +175,7 @@ run_opencode_one() {
   # quota beforehand, so this is where it is discovered.
   if [ "$rrc" = 3 ] && [ "$rc" -ne 124 ] && [ -n "$fallback" ] && [ "$fallback" != "$model" ]; then
     echo "[multi] $model produced no answer (exit $rc) — retrying on $fallback" >&2
+    cp "$raw" "${raw}.first" 2>/dev/null
     used="$fallback"
     multi_timeout "$MULTI_BACKEND_TIMEOUT" opencode run --pure --auto --format json \
       -m "$fallback" --dir . "$QUESTION" > "$raw" 2>&1; rc=$?
@@ -179,9 +183,14 @@ run_opencode_one() {
   fi
 
   if [ "$rc" -eq 124 ]; then
-    # Checked before the output is accepted: opencode prints its first event
-    # within a second, so a run that hangs afterwards still leaves a file.
-    multi_fail_backend "$out" "opencode: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s — model=$used (partial capture in $raw)" "$raw"
+    if [ "$rrc" = 0 ] && [ -s "$out" ]; then
+      { echo "opencode: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s — model=$used (partial; run was cut off)"
+        cat "$out"
+      } > "${out}.tmp"
+      mv "${out}.tmp" "$out"
+    else
+      multi_fail_backend "$out" "opencode: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s — model=$used (partial capture in $raw)" "$raw"
+    fi
   elif [ "$rrc" = 3 ]; then
     multi_fail_backend "$out" "opencode: NO ANSWER — model=$used exit=$rc — it ran but said nothing; what it did is in ${out}.calls" "$raw"
   elif [ "$rrc" = 2 ] || [ "$rrc" = 4 ]; then
@@ -190,7 +199,7 @@ run_opencode_one() {
     # text the caller must read raw. No marker — one here would read a real
     # answer as "no backend alive".
     { echo "opencode: RAW CAPTURE ONLY — model=$used exit=$rc ($why)"
-      cat "$raw" 2>/dev/null
+      tail -n 80 "$raw" 2>/dev/null | sed "s/$(printf '\033')\[[0-9;]*[a-zA-Z]//g" | sed 's/^/raw| /'
     } > "$out"
   elif [ ! -s "$out" ]; then
     multi_fail_backend "$out" "opencode: NO OUTPUT — model=$used exit=$rc" "$raw"

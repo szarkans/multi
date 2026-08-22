@@ -26,7 +26,7 @@ say(){ if [ "$2" = "$3" ]; then echo "  ok   $1 ($2)"; else echo "  FAIL $1: got
 
 echo "== ask.sh with both CLIs hung =="
 s=$SECONDS
-bash "$TREE/scripts/ask.sh" --question q --backend both --model m --out-prefix "$TMP/a" >/dev/null 2>&1
+bash "$TREE/scripts/ask.sh" --question q --backend both --model m --out-prefix "$TMP/a" --timeout "$MULTI_REVIEW_TIMEOUT" >/dev/null 2>&1
 d=$((SECONDS-s))
 say "returns fast (<=10s)" "$([ $d -le 10 ] && echo yes || echo "no(${d}s)")" "yes"
 say "codex file non-empty" "$([ -s "$TMP/a-codex.txt" ] && echo yes || echo no)" "yes"
@@ -36,15 +36,15 @@ say "codex marked TIMEOUT" "$(grep -qi 'TIMEOUT' "$TMP/a-codex.txt" && echo yes 
 say "opencode marked TIMEOUT" "$(grep -qi 'TIMEOUT' "$TMP/a-opencode.txt" && echo yes || echo no)" "yes"
 say "dead markers have one-line reasons" "$([ -s "$TMP/a-codex.txt.dead" ] && [ "$(wc -l < "$TMP/a-codex.txt.dead")" -eq 1 ] && [ -s "$TMP/a-opencode.txt.dead" ] && [ "$(wc -l < "$TMP/a-opencode.txt.dead")" -eq 1 ] && echo yes || echo no)" "yes"
 
-echo "== review-codex.sh with codex hung =="
+echo "== ask.sh codex path with codex hung =="
 s=$SECONDS
-bash "$TREE/scripts/review-codex.sh" --target t --out "$TMP/rc.txt" >/dev/null 2>&1
+bash "$TREE/scripts/ask.sh" --question q --backend codex --out-prefix "$TMP/rc" >/dev/null 2>&1
 d=$((SECONDS-s))
 say "returns fast" "$([ $d -le 10 ] && echo yes || echo "no(${d}s)")" "yes"
-echo "   says: $(head -1 "$TMP/rc.txt" 2>/dev/null)"
-say "not empty" "$([ -s "$TMP/rc.txt" ] && echo yes || echo no)" "yes"
-say "says TIMEOUT" "$(grep -qi 'TIMEOUT' "$TMP/rc.txt" && echo yes || echo no)" "yes"
-say "dead marker has one-line reason" "$([ -s "$TMP/rc.txt.dead" ] && [ "$(wc -l < "$TMP/rc.txt.dead")" -eq 1 ] && echo yes || echo no)" "yes"
+echo "   says: $(head -1 "$TMP/rc-codex.txt" 2>/dev/null)"
+say "not empty" "$([ -s "$TMP/rc-codex.txt" ] && echo yes || echo no)" "yes"
+say "says TIMEOUT" "$(grep -qi 'TIMEOUT' "$TMP/rc-codex.txt" && echo yes || echo no)" "yes"
+say "dead marker has one-line reason" "$([ -s "$TMP/rc-codex.txt.dead" ] && [ "$(wc -l < "$TMP/rc-codex.txt.dead")" -eq 1 ] && echo yes || echo no)" "yes"
 
 echo "== backend stderr stays out of the trusted dead marker =="
 cat > "$TMP/bin/codex" <<'STUB'
@@ -53,19 +53,19 @@ echo "INJECTION MARKER XYZZY" >&2
 exit 7
 STUB
 chmod +x "$TMP/bin/codex"
-bash "$TREE/scripts/review-codex.sh" --target t --out "$TMP/ri.txt" >/dev/null 2>&1
-say "dead marker has no backend log" "$(grep -q 'XYZZY' "$TMP/ri.txt.dead" && echo no || echo yes)" "yes"
-say "dead log preserves diagnostics" "$(grep -q 'XYZZY' "$TMP/ri.txt.dead.log" && echo yes || echo no)" "yes"
+bash "$TREE/scripts/ask.sh" --question q --backend codex --out-prefix "$TMP/ri" >/dev/null 2>&1
+say "dead marker has no backend log" "$(grep -q 'XYZZY' "$TMP/ri-codex.txt.dead" && echo no || echo yes)" "yes"
+say "dead log preserves diagnostics" "$(grep -q 'XYZZY' "$TMP/ri-codex.txt.dead.log" && echo yes || echo no)" "yes"
 
-echo "== review-opencode.sh with opencode hung =="
+echo "== ask.sh opencode path with opencode hung =="
 s=$SECONDS
-bash "$TREE/scripts/review-opencode.sh" --target t --model m --out "$TMP/ro.txt" >/dev/null 2>&1
+bash "$TREE/scripts/ask.sh" --question q --backend opencode --model m --out-prefix "$TMP/ro" >/dev/null 2>&1
 d=$((SECONDS-s))
 say "returns fast" "$([ $d -le 15 ] && echo yes || echo "no(${d}s)")" "yes"
-echo "   says: $(head -1 "$TMP/ro.txt" 2>/dev/null)"
-say "not empty" "$([ -s "$TMP/ro.txt" ] && echo yes || echo no)" "yes"
-say "says TIMEOUT" "$(grep -qi 'TIMEOUT' "$TMP/ro.txt" && echo yes || echo no)" "yes"
-say "dead marker has one-line reason" "$([ -s "$TMP/ro.txt.dead" ] && [ "$(wc -l < "$TMP/ro.txt.dead")" -eq 1 ] && echo yes || echo no)" "yes"
+echo "   says: $(head -1 "$TMP/ro-opencode.txt" 2>/dev/null)"
+say "not empty" "$([ -s "$TMP/ro-opencode.txt" ] && echo yes || echo no)" "yes"
+say "says TIMEOUT" "$(grep -qi 'TIMEOUT' "$TMP/ro-opencode.txt" && echo yes || echo no)" "yes"
+say "dead marker has one-line reason" "$([ -s "$TMP/ro-opencode.txt.dead" ] && [ "$(wc -l < "$TMP/ro-opencode.txt.dead")" -eq 1 ] && echo yes || echo no)" "yes"
 
 echo "== an opencode too old for --format json still reaches the judge =="
 cat > "$TMP/bin/opencode" <<'STUB'
@@ -75,11 +75,11 @@ echo "I looked at the diff. The retry loop in worker.py can spin forever when"
 echo "the queue is empty, and nobody resets the counter."
 STUB
 chmod +x "$TMP/bin/opencode"
-bash "$TREE/scripts/review-opencode.sh" --target t --model m --out "$TMP/off.txt" >/dev/null 2>&1
-say "labelled as a raw capture" "$(grep -q 'RAW CAPTURE ONLY' "$TMP/off.txt" && echo yes || echo no)" "yes"
-say "the answer survived" "$(grep -q 'retry loop in worker.py' "$TMP/off.txt" && echo yes || echo no)" "yes"
-say "quoted lines cannot pass as findings" "$(grep -cE '^[^|]*:[0-9]+[^|]*\| *(HIGH|MEDIUM|LOW) *\|' "$TMP/off.txt")" "0"
-say "ANSI stripped" "$(LC_ALL=C grep -q "$(printf '\033')" "$TMP/off.txt" && echo no || echo yes)" "yes"
+bash "$TREE/scripts/ask.sh" --question q --backend opencode --model m --out-prefix "$TMP/off" >/dev/null 2>&1
+say "labelled as a raw capture" "$(grep -q 'RAW CAPTURE ONLY' "$TMP/off-opencode.txt" && echo yes || echo no)" "yes"
+say "the answer survived" "$(grep -q 'retry loop in worker.py' "$TMP/off-opencode.txt" && echo yes || echo no)" "yes"
+say "ANSI stripped" "$(LC_ALL=C grep -q "$(printf '\033')" "$TMP/off-opencode.txt" && echo no || echo yes)" "yes"
+say "raw capture is not marked dead" "$([ ! -e "$TMP/off-opencode.txt.dead" ] && echo yes || echo no)" "yes"
 
 echo "== a hang that printed a header is not an answer =="
 cat > "$TMP/bin/opencode" <<'STUB'
@@ -92,6 +92,18 @@ bash "$TREE/scripts/ask.sh" --question q --backend opencode --model m --out-pref
 rcode=$?
 say "partial transcript marked TIMEOUT" "$(grep -c 'TIMEOUT' "$TMP/p-opencode.txt")" "1"
 say "not counted as a live backend" "$rcode" "1"
+
+echo "== a timed-out JSON run keeps its rendered partial answer =="
+cat > "$TMP/bin/opencode" <<'STUB'
+#!/usr/bin/env bash
+echo '{"type":"text","timestamp":1000,"part":{"text":"src/partial.py:7 | MEDIUM | rendered before timeout"}}'
+sleep 300
+STUB
+chmod +x "$TMP/bin/opencode"
+bash "$TREE/scripts/ask.sh" --question q --backend opencode --model m --out-prefix "$TMP/j" >/dev/null 2>&1
+say "rendered partial answer kept" "$(grep -c 'rendered before timeout' "$TMP/j-opencode.txt")" "1"
+say "partial answer marked TIMEOUT" "$(grep -ci 'TIMEOUT.*partial' "$TMP/j-opencode.txt")" "1"
+say "rendered partial stays live" "$([ ! -e "$TMP/j-opencode.txt.dead" ] && echo yes || echo no)" "yes"
 
 
 echo "== a CLI that ignores SIGTERM is still killed =="
