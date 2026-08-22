@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.3.1 — 2026-08-22
+
+- `collect-context.sh` no longer exits 1 on success: the trailing `[ -f ]`
+  in the nested-guidance loop leaked its status as the script's. Regression
+  assert added to `test-injection.sh`.
+- `evals/cases.tsv`: the media-publish ground truth now names the real
+  planted bug — the lost `TelegramBadRequest` fallback for preview cards in
+  `_send_card` — instead of a publish-status failure that isn't in the diff.
+
 ## 2.3.0 — 2026-08-22
 
 The second transport core is gone. `review-codex.sh` and `review-opencode.sh`

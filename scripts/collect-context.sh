@@ -288,3 +288,6 @@ printf '%s\n' "$DIRS" | while IFS= read -r d; do
 done | sort -u | while IFS= read -r g; do
   [ -n "$g" ] && { skip_if_modified "$g" || emit "$g (applies to a directory in scope)" "$g"; }
 done
+
+# The tail of the loop above must not leak a failed [ -f ] as the script status.
+exit 0
