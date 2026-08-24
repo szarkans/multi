@@ -111,6 +111,11 @@ Rules that keep this honest:
   `PASSED` and exits non-zero did not pass.
 - **A check that cannot fail is not a check.** If it passes with the feature
   ripped out, it never tested the feature.
+- **Tests changed, code untouched?** A diff that only edits test files — new
+  assertions, loosened expectations, a deleted case — while the code under test
+  stands still is a red flag: the tests may have been bent to fit a bug instead
+  of the code fixed to pass. Read what the assertions claim now, not that they
+  are green.
 - **Never edit code to make a check pass** while running this skill. That is
   the one move that turns a completion check into a lie.
 

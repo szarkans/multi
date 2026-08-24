@@ -1,5 +1,26 @@
 # Changelog
 
+## 2.4.0 — 2026-08-24
+
+- The OpenCode reviewer no longer runs with `--auto`. `opencode run --pure
+  --auto` pre-approved every tool call, so the reviewer had full write+exec in
+  the live working tree — the comment that called it "read-only" was false
+  (measured: a run created a file and ran a shell command). It now runs `--pure
+  --agent plan`, which withholds write/edit/bash. A regression guard in
+  `test-ask-backend.sh` fails if `--auto` ever comes back or `--agent plan` goes
+  missing — the flag whose safety a comment used to assert is now pinned by a
+  test that can fail.
+  - Known limit, said plainly in the code and tracked as a follow-up: `--agent
+    plan` is not a sandbox against a HOSTILE repo. `--pure` skips plugins, not
+    the reviewed repo's own `opencode.json` / `.opencode/agent/plan.md`, which
+    opencode loads and lets override the plan agent back to write+bash
+    (independently verified). The real fix is isolation (issue #12) — reviewing
+    a scratch copy with the repo's opencode config stripped. Until then `--agent
+    plan` is a strict improvement over `--auto`, not a full fix.
+- `check-if-done`: new honesty rule — a diff that only edits tests while the code
+  under test stands still is flagged as possibly bending the tests to fit a bug
+  instead of fixing the code. Catches "green but faked" completions.
+
 ## 2.3.1 — 2026-08-22
 
 - `collect-context.sh` no longer exits 1 on success: the trailing `[ -f ]`

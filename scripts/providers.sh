@@ -130,15 +130,22 @@ multi_check_paths() {
 # that reads content to decide whether content may be read has already lost.
 #
 # Read this first, because the comment used to promise more than the code can
-# do: this is prompt hygiene, NOT isolation. The reviewers run inside the real
-# working tree with their tool calls pre-approved (ask.sh runs
-# `opencode run --pure --auto --dir .` and plain `codex exec -s read-only`), so
-# any of them CAN read a secret it decides to open. What this
-# code prevents is the orchestrator handing one over: the prompt used to say
-# "run git status --untracked-files=all and read what you find", which is an
-# invitation to open exactly the files that were never meant to travel. Real
-# isolation would mean copying the allowed files into a scratch tree and
-# pointing --dir at that instead, and that is a different piece of work.
+# do: this is prompt hygiene, NOT isolation. `codex exec -s read-only` is
+# OS-sandboxed and cannot write. `opencode run --pure --agent plan` withholds
+# write/edit/bash -- but only on a repo that does not fight back: --pure skips
+# plugins, not the repo's own opencode.json / .opencode/agent/plan.md, which
+# opencode loads and lets OVERRIDE the plan agent back to write+bash (verified
+# 2026-08-24; tracked as the opencode-reviewer-isolation follow-up, issue #12).
+# So against a
+# hostile repo opencode is not even read-only, and even codex, read-only, can
+# still OPEN and READ a secret it decides to look at. What this code prevents is
+# narrower and separate: the orchestrator HANDING a secret over -- the prompt
+# used to say "run git status --untracked-files=all and read what you find",
+# which is an invitation to open exactly the files that were never meant to
+# travel. Real isolation -- a reviewer that cannot read a secret or honour a
+# hostile config because it never sees the real tree -- means copying the allowed
+# files into a scratch tree and pointing --dir at that instead, and that is the
+# different piece of work the follow-up covers.
 #
 # Untracked files belong in a review: a brand-new file IS the change, and a
 # reviewer that never hears about it reports on half the work.

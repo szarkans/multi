@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Turn `opencode run --format json` events into something a human can read.
 
-    opencode run --pure --auto --format json ... > raw.jsonl
+    opencode run --pure --agent plan --format json ... > raw.jsonl
     opencode-report.py raw.jsonl --out review.txt --calls review.txt.calls
 
 Why this exists: the default output of `opencode run` is a terminal

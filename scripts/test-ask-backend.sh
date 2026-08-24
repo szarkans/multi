@@ -138,5 +138,20 @@ else
   echo "FAIL stale marker condemned a live run (exit $rc)"; fail=1
 fi
 
+# The opencode reviewer must stay read-only. Every real `opencode run` in ask.sh
+# must carry --agent plan and must NEVER carry --auto: --auto pre-approves write
+# and bash, which is the P4 hole (full read+write+exec in the live tree). The
+# stubs above ignore flags, so only this source guard catches a silent revert --
+# a regression test for exactly the flag whose measurement lives in a comment.
+# Herestrings, not pipes: `grep -q` in a pipe dies of SIGPIPE under pipefail.
+oc_cmds="$(grep -nE 'multi_timeout .*opencode run' "$HERE/ask.sh")"
+n_cmds="$(grep -c 'opencode run' <<<"$oc_cmds")"
+n_plan="$(grep -c -- '--agent plan' <<<"$oc_cmds")"
+if [ "$n_cmds" -ge 1 ] && ! grep -q -- '--auto' <<<"$oc_cmds" && [ "$n_plan" -eq "$n_cmds" ]; then
+  echo "ok   opencode stays read-only (--agent plan, no --auto) on all $n_cmds invocation(s)"
+else
+  echo "FAIL opencode not read-only: every 'opencode run' in ask.sh needs --agent plan and no --auto (found $n_cmds cmd(s), $n_plan with plan)"; fail=1
+fi
+
 [ $fail -eq 0 ] && echo "ALL PASS" || echo "FAILURES"
 exit $fail
