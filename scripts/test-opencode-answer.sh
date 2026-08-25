@@ -70,7 +70,7 @@ say "no-answer is not counted alive" "$rc" "1"
 echo "== a no-answer retries once on the fallback model =="
 MODE=fallback bash "$TREE/scripts/ask.sh" --question q --backend opencode --model primary --fallback backup --out-prefix "$TMP/f" >/dev/null 2>&1
 say "fallback answer kept"       "$(grep -c 'fallback finding' "$TMP/f-opencode.txt")" "1"
-say "fallback model recorded"    "$(grep -c 'fallback model backup' "$TMP/f-opencode.txt")" "1"
+say "full swap banner pinned to line 1" "$(sed -n 1p "$TMP/f-opencode.txt" | grep -c 'primary produced no answer — fell back to backup')" "1"
 say "first raw capture kept"     "$([ -s "$TMP/f-opencode.txt.jsonl.first" ] && echo yes || echo no)" "yes"
 say "first capture has no answer" "$(grep -c 'tool_use' "$TMP/f-opencode.txt.jsonl.first")" "1"
 

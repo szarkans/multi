@@ -210,8 +210,7 @@ run_opencode_one() {
     if [ "$rrc" = 0 ] && [ -s "$out" ]; then
       { echo "opencode: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s — model=$used (partial; run was cut off)"
         cat "$out"
-      } > "${out}.tmp"
-      mv "${out}.tmp" "$out"
+      } > "${out}.tmp" && mv "${out}.tmp" "$out"
     else
       multi_fail_backend "$out" "opencode: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s — model=$used (partial capture in $raw)" "$raw"
     fi
@@ -228,7 +227,15 @@ run_opencode_one() {
   elif [ ! -s "$out" ]; then
     multi_fail_backend "$out" "opencode: NO OUTPUT — model=$used exit=$rc" "$raw"
   fi
-  [ "$used" = "$model" ] || echo "[multi] answered by fallback model $used" >> "$out"
+  # A silent model swap is exactly the failure the user fears: the report header
+  # now carries the fallback's name, but nothing says the model they ASKED for
+  # died. Announce it loud, at the TOP where the reader lands — not a line
+  # appended to the very bottom that the eye skates past.
+  if [ "$used" != "$model" ] && [ -s "$out" ]; then
+    { echo "opencode: $model produced no answer — fell back to $used"; echo
+      cat "$out"
+    } > "${out}.tmp" && mv "${out}.tmp" "$out"
+  fi
 }
 
 run_openrouter_one() { multi_run_openrouter "$QUESTION" "$1" "$2"; }

@@ -1,6 +1,20 @@
 # Changelog
 
-## 2.4.0 — 2026-08-24
+## 2.4.1 — 2026-08-25
+
+- When the OpenCode reviewer's chosen model dies mid-run, the reviewer retries
+  on a fallback model — but the swap used to be silent: the fallback's name sat
+  in the report header, and the only trace of the switch was a weak line
+  appended to the very bottom, where the eye skates past it. You could read a
+  review believing you got the model you asked for. The switch is now announced
+  loud, on the first line: `opencode: <asked> produced no answer — fell back to
+  <actual>`. If a model quietly degraded to a weaker one, you see it first
+  thing, not in a footnote.
+- The banner rewrite (and the pre-existing timeout-partial rewrite next to it)
+  no longer risk clobbering a valid answer: the `mv` that swaps the rewritten
+  file into place now only runs if the write actually succeeded, so a disk error
+  mid-rewrite leaves the real answer intact instead of replacing it with a
+  truncated file.
 
 - The OpenCode reviewer no longer runs with `--auto`. `opencode run --pure
   --auto` pre-approved every tool call, so the reviewer had full write+exec in
