@@ -19,6 +19,19 @@ SELF_DIR="$(cd -- "$(dirname -- "$0")" && pwd)"
 # shellcheck source=providers.sh
 . "$SELF_DIR/providers.sh"
 
+# The review target, not the process cwd. The skill runs this probe in its own
+# bash block, where cwd is the session checkout; the real target may be another
+# worktree. Anchor here so the "repo:" line below names what is actually being
+# reviewed and a mismatch is visible. Default: cwd.
+REPO=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --repo) [ $# -ge 2 ] || { echo "--repo needs a value" >&2; exit 2; }; REPO="$2"; shift 2 ;;
+    *) echo "unknown arg: $1" >&2; exit 2 ;;
+  esac
+done
+[ -z "$REPO" ] || cd "$REPO" 2>/dev/null || { echo "--repo is not a directory: $REPO" >&2; exit 2; }
+
 # --- Codex (required) ---------------------------------------------------
 if command -v codex >/dev/null 2>&1; then
   ver="$(codex --version 2>/dev/null | head -1)"

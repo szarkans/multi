@@ -8,7 +8,7 @@ SELF_DIR="$(cd -- "$(dirname -- "$0")" && pwd)"
 # shellcheck source=providers.sh
 . "$SELF_DIR/providers.sh"   # multi_check_paths, multi_untracked_note
 
-TARGET=""; DIFF=""; CONTEXT=""; PATHS=""; FOCUS_TEXT=""; ADVERSARIAL=0
+TARGET=""; DIFF=""; CONTEXT=""; PATHS=""; FOCUS_TEXT=""; ADVERSARIAL=0; REPO=""
 need() { [ "$1" -ge 2 ] || { echo "missing value for $2" >&2; exit 2; }; }
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -17,6 +17,10 @@ while [ $# -gt 0 ]; do
     --context) need $# "$1"; CONTEXT="$2"; shift 2 ;;
     --paths) need $# "$1"; PATHS="$2"; shift 2 ;;
     --focus) need $# "$1"; FOCUS_TEXT="$2"; shift 2 ;;
+    # The review target's directory. Every backend and sub-agent starts in the
+    # session checkout, not necessarily the target worktree, so the git command
+    # below must say where to run — otherwise a reviewer reads the wrong tree.
+    --repo) need $# "$1"; REPO="$2"; shift 2 ;;
     --adversarial) ADVERSARIAL=1; shift ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
@@ -28,16 +32,25 @@ case "$DIFF" in -*) echo "--diff must be a revision, not an option: $DIFF" >&2; 
 PS=""
 [ -n "$PATHS" ] && PS=" -- $PATHS"
 
+# Prefix the git commands with a cd so a reviewer standing in the session
+# checkout still inspects the target worktree. Empty when no --repo was given.
+# %q shell-escapes the path: a repo dir may legally contain a space, a quote, or
+# even $() / backticks, and this string is a command the reviewer re-runs — a
+# raw path would break it or, worse, be expanded by the reviewer's shell.
+CD=""
+[ -n "$REPO" ] && CD="cd $(printf '%q' "$REPO") && "
+
 if [ -n "$DIFF" ]; then
   case "$DIFF" in
-    uncommitted) HOW="Run this to see it: git diff${PS} && git diff --cached${PS}   (do NOT list the working tree yourself -- new files reach you only through the line below)$(multi_untracked_note "$PATHS")" ;;
-    *)           HOW="Run this to see it: git diff ${DIFF}${PS}   (if that is a single commit, use git show ${DIFF}${PS} instead)" ;;
+    uncommitted) HOW="Run this to see it: ${CD}git diff${PS} && git diff --cached${PS}   (do NOT list the working tree yourself -- new files reach you only through the line below)$(multi_untracked_note "$PATHS")" ;;
+    *)           HOW="Run this to see it: ${CD}git diff ${DIFF}${PS}   (if that is a single commit, use ${CD}git show ${DIFF}${PS} instead)" ;;
   esac
   TARGET_LINE="Review this change: ${TARGET}
 ${HOW}"
   SCOPE_RULE="Report what the change introduces. A problem on a line the change did not touch is out of scope here."
 else
-  TARGET_LINE="Review this: ${TARGET}${PATHS:+
+  TARGET_LINE="Review this: ${TARGET}${REPO:+
+The code lives in: $REPO   (work there, not in your current directory)}${PATHS:+
 The relevant paths are: $PATHS}
 This is not a diff. Read the actual files first — all of them — and follow the
 calls outward far enough to know what the code really does before judging it."

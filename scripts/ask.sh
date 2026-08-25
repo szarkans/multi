@@ -76,7 +76,7 @@ SELF_DIR="$(cd -- "$(dirname -- "$0")" && pwd)"
 # shellcheck source=providers.sh
 . "$SELF_DIR/providers.sh"
 
-QUESTION=""; QFILE=""; PREFIX=""; EFFORT=medium; MODEL="${MULTI_OPENCODE_MODEL:-}"; FALLBACK=""; CODEX_MODEL=""; BACKEND=both
+QUESTION=""; QFILE=""; PREFIX=""; EFFORT=medium; MODEL="${MULTI_OPENCODE_MODEL:-}"; FALLBACK=""; CODEX_MODEL=""; BACKEND=both; REPO=""
 # Empty on purpose: an unset OpenRouter model lets the runner pick one whose
 # free pool is actually up. Pinning it here sent every run at the same model,
 # and a busy upstream pool then became a silent timeout instead of a fallback.
@@ -97,10 +97,19 @@ while [ $# -gt 0 ]; do
     --backend)       need $# "$1"; BACKEND="$2"; shift 2 ;;
     --or-model)      need $# "$1"; OR_MODEL="$2"; shift 2 ;;
     --gemini-model)  need $# "$1"; MULTI_GEMINI_MODEL="$2"; shift 2 ;;
+    # Where the CLI reviewers run git and read files: the review target, not the
+    # process cwd. Default cwd, so /ask and /adhd (no repo) are unaffected.
+    --repo)          need $# "$1"; REPO="$2"; shift 2 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
+REPO_DIR="${REPO:-.}"
+[ -d "$REPO_DIR" ] || { echo "--repo is not a directory: $REPO_DIR" >&2; exit 2; }
 [ -n "$PREFIX" ] || { echo "--out-prefix is required" >&2; exit 2; }
+# Make the output prefix absolute BEFORE any backend cd's into --repo: the codex
+# path runs inside "$REPO_DIR", and a relative -o/-log would then land in the
+# reviewed tree while the parent checks it back here and sees "no output".
+case "$PREFIX" in /*) ;; *) PREFIX="$PWD/$PREFIX" ;; esac
 # The caller hands us a per-run directory (scripts/run-dir.sh); create it here
 # so every entry point gets it, not just the ones that remember.
 mkdir -p "$(dirname "$PREFIX")" 2>/dev/null || true
@@ -164,12 +173,14 @@ run_codex_one() {
   # A hung CLI used to block the `wait` below forever, and the caller — usually
   # Claude Code's own bash tool — killed the whole script instead, so every
   # other backend's answer died with it.
-  multi_timeout "$MULTI_BACKEND_TIMEOUT" codex exec \
+  # codex has no --dir, so run it inside the target. -o/-log paths are absolute
+  # (the run dir), so the cd does not disturb where the capture lands.
+  ( cd "$REPO_DIR" && multi_timeout "$MULTI_BACKEND_TIMEOUT" codex exec \
     ${model:+-m "$model"} \
     -s read-only \
     -c model_reasoning_effort="$EFFORT" \
     -o "$out" \
-    "$QUESTION" >/dev/null 2>"${out}.log"
+    "$QUESTION" >/dev/null 2>"${out}.log" )
   rc=$?
   # stderr used to go to /dev/null, so a codex that failed left "NO OUTPUT" and
   # nothing to go on. The openrouter path keeps a .log for exactly this reason.
@@ -191,7 +202,7 @@ run_opencode_one() {
   # what it did, then what it said.
   local used="$model" rc=0 rrc=0
   multi_timeout "$MULTI_BACKEND_TIMEOUT" opencode run --pure --agent plan --format json \
-    -m "$model" --dir . "$QUESTION" > "$raw" 2>&1; rc=$?
+    -m "$model" --dir "$REPO_DIR" "$QUESTION" > "$raw" 2>&1; rc=$?
   render_opencode "$raw" "$out" "$used"; rrc=$?
 
   # No answer means the run did not happen: exhausted usage, an expired
@@ -202,7 +213,7 @@ run_opencode_one() {
     cp "$raw" "${raw}.first" 2>/dev/null
     used="$fallback"
     multi_timeout "$MULTI_BACKEND_TIMEOUT" opencode run --pure --agent plan --format json \
-      -m "$fallback" --dir . "$QUESTION" > "$raw" 2>&1; rc=$?
+      -m "$fallback" --dir "$REPO_DIR" "$QUESTION" > "$raw" 2>&1; rc=$?
     render_opencode "$raw" "$out" "$used"; rrc=$?
   fi
 

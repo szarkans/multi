@@ -83,6 +83,7 @@ for permission, and you do not wait for an answer:
 
 ```
 Reviewing: <target, and where it came from — "what we just did", "branch vs main", "you asked for src/auth.py">
+           <when $REPO is not the session's own checkout, show the resolved path so a wrong-tree review is caught before it runs>
 Running now: Codex <effort> · OpenCode <model> · ponytail          <— or why one is missing
 Then: <what decides the Claude spend>
 ```
@@ -101,11 +102,18 @@ else while they run.
 ```bash
 RUN="$($SCRIPTS/run-dir.sh --slug <two-to-four words: the project and the job, e.g. skills-fixing-multi>)"
 
-$SCRIPTS/collect-context.sh [--diff <spec>] [--paths "<paths>"] > "$RUN/ctx.md"
+# The tree under review. Usually the session's own repo; set REVIEW_DIR to a
+# path or a different worktree when THAT is the target. Resolve it once and hand
+# it to every backend: cwd resets between these blocks, so without an explicit
+# --repo the reviewers silently read the session checkout and can "agree" on an
+# empty diff.
+REPO="$(git -C "${REVIEW_DIR:-.}" rev-parse --show-toplevel)"
 
-$SCRIPTS/review-prompt.sh --target "<in words>" [--diff <spec>] [--paths "<paths>"] \
+$SCRIPTS/collect-context.sh --repo "$REPO" [--diff <spec>] [--paths "<paths>"] > "$RUN/ctx.md"
+
+$SCRIPTS/review-prompt.sh --repo "$REPO" --target "<in words>" [--diff <spec>] [--paths "<paths>"] \
                           [--focus "<user text>"] --context "$RUN/ctx.md" > "$RUN/review.prompt.md"
-$SCRIPTS/ask.sh --question-file "$RUN/review.prompt.md" --out-prefix "$RUN/review" \
+$SCRIPTS/ask.sh --repo "$REPO" --question-file "$RUN/review.prompt.md" --out-prefix "$RUN/review" \
                 --backend "codex,opencode:<model from probe>" --fallback <from probe> \
                 --effort <low|medium|high|xhigh|max> --timeout "${MULTI_REVIEW_TIMEOUT:-900}"
 ```
@@ -113,14 +121,23 @@ $SCRIPTS/ask.sh --question-file "$RUN/review.prompt.md" --out-prefix "$RUN/revie
 `run-dir.sh` prints this session's own directory, `/tmp/multi/<session>--<slug>`,
 and creates it. Two sessions reviewing at once used to share fixed `/tmp` names
 and overwrite each other's files. Shell variables do not survive between
-commands, so repeat that first line in every later block that needs `$RUN` —
-`--slug` only labels the directory the first time, so a different wording later
-still lands in the same place. Runs older than a week are swept.
+commands, so repeat that first line — and the `REPO=` line — in every later
+block that needs them; `--slug` only labels the directory the first time, so a
+different wording later still lands in the same place. Runs older than a week
+are swept.
 
 `--diff` is what makes it a *change* review; leave it off and the reviewers read
 the actual code instead, with old code fully in scope. `--paths` narrows hard.
 `--target` is always required — it is the human sentence, and it is what keeps
-the reviewers pointed at the same thing.
+the reviewers pointed at the same thing. `--repo` is the *directory* they work
+in; it defaults to cwd, so you only think about it when the target is a
+different worktree, but passing `$REPO` always is free and removes the guesswork.
+
+The probe at the top of this file ran with no `--repo`, so its `repo:`, branch,
+dirty-file and ahead-of-main numbers describe the **session checkout**. When
+`$REPO` is a different worktree, those numbers are for the wrong tree — re-run
+`$SCRIPTS/probe.sh --repo "$REPO"` to orient on the real target before you trust
+them.
 
 `collect-context.sh` gathers the repo's `CLAUDE.md`/`AGENTS.md` and the
 `.claude/rules/*.md` matching the target, and every reviewer gets it. This is
@@ -162,7 +179,10 @@ that pass — the rest of the mode is unchanged.
 
 Spawn them **in parallel, in one message**. Give each the target, the paths or
 range, the contents of `$RUN/ctx.md`, and the user's own words if there
-were any.
+were any. Give them `$REPO` too and say it plainly — *run git and read files in
+`$REPO`, not your current directory* — because a sub-agent starts in the session
+checkout, and if the target is another worktree it would otherwise review the
+wrong tree, exactly as the CLI backends would without `--repo`.
 
 **Model**: the argument if given, else `MULTI_REVIEWER_MODEL` from the probe, else
 the agent files' default (Sonnet). **No mode raises it on its own** — `ultra`

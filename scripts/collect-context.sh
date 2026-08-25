@@ -25,7 +25,7 @@ SELF_DIR="$(cd -- "$(dirname -- "$0")" && pwd)"
 # shellcheck source=providers.sh
 . "$SELF_DIR/providers.sh"   # multi_check_paths
 
-DIFF=""; PATHS=""
+DIFF=""; PATHS=""; REPO=""
 MAX_TOTAL_BYTES="${MULTI_CONTEXT_MAX_BYTES:-24000}"
 MAX_FILE_BYTES="${MULTI_CONTEXT_MAX_FILE_BYTES:-8000}"
 
@@ -34,9 +34,14 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --diff) need $# "$1"; DIFF="$2"; shift 2 ;;
     --paths) need $# "$1"; PATHS="$2"; shift 2 ;;
+    # The review target, not the process cwd: the skill runs this in a fresh
+    # bash block where cwd is the session checkout, so the target worktree must
+    # be named explicitly or the diff comes out empty/wrong. Default: cwd.
+    --repo) need $# "$1"; REPO="$2"; shift 2 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
+[ -z "$REPO" ] || cd "$REPO" 2>/dev/null || { echo "--repo is not a directory: $REPO" >&2; exit 2; }
 
 # A revision starting with "-" is an option to git, not a revision: `--diff
 # --output=/etc/passwd` would make `git diff` write to that path. Refuse it.
@@ -85,7 +90,9 @@ if [ -n "$DIFF" ]; then
           # Still empty: a clean merge lists zero files in git show even when
           # it shipped changes from a side branch. What it introduced vs its
           # first parent is the honest change.
-          FILES="$(git -c core.quotePath=false diff-tree -m --first-parent -r --name-only "$DIFF" -- 2>/dev/null)"
+          # --no-commit-id: without it diff-tree prints the SHA as the first
+          # line, which would land in FILES as a phantom 40-hex "path".
+          FILES="$(git -c core.quotePath=false diff-tree --no-commit-id -m --first-parent -r --name-only "$DIFF" -- 2>/dev/null)"
         fi
       fi
       FILES="$(printf '%s\n' "$FILES" | sort -u)"

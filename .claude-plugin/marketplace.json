@@ -1,7 +1,7 @@
 {
   "name": "szkills",
   "owner": {
-    "name": "szarkan",
+    "name": "szarkans",
     "url": "https://github.com/szarkans"
   },
   "description": "my awesome skills",
@@ -12,7 +12,7 @@
       "description": "Several models on the same question at once — Claude sub-agents, OpenAI Codex and a cheap third via OpenCode. Review code, check whether the work is actually finished, brainstorm wide with a different model per cognitive frame, or just ask all of them something.",
       "version": "2.4.1",
       "author": {
-        "name": "szarkan",
+        "name": "szarkans",
         "url": "https://github.com/szarkans"
       },
       "homepage": "https://github.com/szarkans/multi",
