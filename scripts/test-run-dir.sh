@@ -39,4 +39,16 @@ say "current runs untouched" "$([ -d "$a" ] && echo yes || echo no)" "yes"
 
 CLAUDE_CODE_SESSION_ID=eeee-5555 MULTI_RUN_KEEP_DAYS=0 bash "$TREE/scripts/run-dir.sh" --slug x >/dev/null
 say "sweep can be turned off" "0" "0"
+
+echo "== no session id: MULTI_RUN_ID gives each run its own identity =="
+# Outside Claude Code there is no session id, and every non-CC run would key on
+# the same 'shared', so two of them collide in one directory. MULTI_RUN_ID is
+# the escape hatch: give concurrent non-CC runs distinct ids and they stay apart.
+j1="$(env -u CLAUDE_CODE_SESSION_ID MULTI_RUN_ID=job-one bash "$TREE/scripts/run-dir.sh" --slug alpha)"
+j2="$(env -u CLAUDE_CODE_SESSION_ID MULTI_RUN_ID=job-two bash "$TREE/scripts/run-dir.sh" --slug beta)"
+say "different MULTI_RUN_ID -> different directory" "$([ "$j1" != "$j2" ] && echo yes || echo no)" "yes"
+# And it still behaves like the session id: same id, later block, same directory.
+j1b="$(env -u CLAUDE_CODE_SESSION_ID MULTI_RUN_ID=job-one bash "$TREE/scripts/run-dir.sh" --slug gamma)"
+say "same MULTI_RUN_ID -> same directory across blocks" "$j1b" "$j1"
+
 [ $fail -eq 0 ] && echo "ALL PASS" || echo "FAILURES"; exit $fail

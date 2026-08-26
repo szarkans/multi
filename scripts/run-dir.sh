@@ -29,7 +29,10 @@ while [ $# -gt 0 ]; do
 done
 
 BASE="${MULTI_RUN_BASE:-${TMPDIR:-/tmp}/multi}"
-ID="${CLAUDE_CODE_SESSION_ID:-shared}"
+# Inside Claude Code the session id is the identity. Outside it there is none,
+# and a bare 'shared' would make every concurrent non-CC run collide in one
+# directory; MULTI_RUN_ID lets such a caller hand in its own stable id instead.
+ID="${CLAUDE_CODE_SESSION_ID:-${MULTI_RUN_ID:-shared}}"
 mkdir -p "$BASE" 2>/dev/null || { echo "cannot create $BASE" >&2; exit 2; }
 
 # Runs older than this are gone; a transcript nobody opened in a week is not

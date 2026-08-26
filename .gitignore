@@ -5,3 +5,4 @@ evals/worktrees/
 evals/out*/
 __pycache__/
 docs/
+/CLAUDE.md
