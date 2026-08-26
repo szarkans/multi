@@ -2,39 +2,14 @@
 
 ## 2.5.0 — 2026-08-26
 
-- Reviewers now work in an explicit review target, not wherever the shell
-  happened to be. When the code under review lived in a git worktree other than
-  the session's checkout, every backend ran `git` in the wrong directory and saw
-  an empty or wrong diff — and the run still produced output, so "two models
-  agreed" could mean "two models read nothing." A new `--repo` is threaded
-  through probe, collect-context, review-prompt, ask and the code-review skill:
-  the target is resolved once and handed to every backend and sub-agent, and the
-  resolved path is shown so a wrong-tree review is caught before it runs. The
-  path is shell-escaped and output prefixes are forced absolute, so a target
-  directory with spaces or shell metacharacters is safe and a backend's `cd`
-  cannot drop output inside the reviewed tree. Reviewing the current repo is
-  unchanged; this only matters — and now works — when the target is a different
-  worktree.
-- The five review sub-agents (correctness, security, design, execution, verify)
-  are pinned read-only: each now carries an explicit rule never to run a
-  tree-mutating git command. Nothing previously stopped a Bash-capable reviewer
-  from reverting the user's uncommitted edits while inspecting the tree. This is
-  a guard, not a sandbox — real isolation of the reviewer from a hostile tree is
-  still tracked as follow-up.
-- The context collector no longer leaks a merge commit's SHA into the file list.
-  In the clean-merge fallback, `git diff-tree` printed the commit id as its first
-  line, which landed in the changed-files list as a phantom 40-character "path";
-  `--no-commit-id` drops it.
-- `bash scripts/test-injection.sh` is now green on a machine with no global git
-  identity (CI, fresh containers). One case merged a branch without passing an
-  identity, so the merge died, the harness never assembled, and the empty result
-  was reported as an injection leak that had not actually happened. If your CI
-  went red here on a clean tree, this is why.
-- `run-dir.sh` no longer forces every run outside Claude Code to share one
-  `shared` directory: set `MULTI_RUN_ID` to give such a run its own stable id, so
-  two concurrent non-Claude-Code runs stop colliding in one place. Inside Claude
-  Code nothing changes — the session id is still the identity.
-- Marketplace owner name corrected (`szarkan` → `szarkans`).
+- `--repo`: reviewers read the right worktree instead of an empty diff when the
+  target isn't the session checkout (#13).
+- Review sub-agents are read-only — they can't revert your uncommitted work (#14).
+- Merge fallback no longer leaks the commit SHA into the changed-files list (#9c).
+- `test-injection.sh` passes with no global git identity, so CI stops going red
+  on a clean tree (#9a).
+- `MULTI_RUN_ID` keeps concurrent non-Claude-Code runs out of one shared dir (#9e-4).
+- Marketplace owner name fixed (`szarkan` → `szarkans`).
 
 ## 2.4.1 — 2026-08-25
 
