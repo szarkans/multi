@@ -34,11 +34,11 @@ MULTI_PROBE_CACHE_MIN=0 bash "$TREE/scripts/probe.sh" >/dev/null 2>&1
 say "cache can be turned off" "$(grep -c CALLED "$MARKER")" "1"
 
 echo "== a configured model list overrides auto-detection =="
-printf '%s\n' 'opencode: opencode-go/glm-5.3-flash opencode-go/deepseek-v4-flash' > "$MULTI_MODELS_CONFIG"
+printf '%s\n' 'opencode: opencode-go/glm-5.3-flash, opencode-go/deepseek-v4-flash' > "$MULTI_MODELS_CONFIG"
 rm -f "$MULTI_HOME/opencode-models.cache"
 : > "$MARKER"
 configured="$(bash "$TREE/scripts/probe.sh" 2>/dev/null | grep '^opencode:')"
-say "configured primary and fallback are used" "$configured" "opencode: OK — opencode-go/glm-5.3-flash (fallback: opencode-go/deepseek-v4-flash) (from config)"
+say "comma-separated primary and fallback are used" "$configured" "opencode: OK — opencode-go/glm-5.3-flash (fallback: opencode-go/deepseek-v4-flash) (from config)"
 say "config bypasses model catalogue" "$(grep -c CALLED "$MARKER")" "0"
 
 rm -f "$MULTI_MODELS_CONFIG"

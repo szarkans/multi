@@ -59,7 +59,7 @@ if command -v opencode >/dev/null 2>&1; then
   if [ -n "${MULTI_OPENCODE_MODEL:-}" ]; then
     say "opencode: OK — ${MULTI_OPENCODE_MODEL} (pinned by MULTI_OPENCODE_MODEL)"
   else
-    # Hand-edited `key: space-separated values` file; # starts a comment.
+    # Hand-edited `key: comma-or-space-separated values` file; # starts a comment.
     # Only opencode is recognized for now. Unknown keys are ignored.
     models_config="${MULTI_MODELS_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/multi/models}"
     configured_models=""
@@ -73,6 +73,7 @@ if command -v opencode >/dev/null 2>&1; then
             config_value="${config_line#*:}"
             config_key="$(printf '%s' "$config_key" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
             config_value="$(printf '%s' "$config_value" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+            config_value="$(printf '%s' "$config_value" | tr ',' ' ')"
             case "$config_key" in
               opencode) [ -z "$config_value" ] || { configured_models="$config_value"; break; } ;;
             esac

@@ -487,6 +487,8 @@ multi_run_gemini() {
     multi_fail_backend "$out" "gemini: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s${model:+ — model=$model}" "$log"
   elif [ ! -s "$out" ]; then
     multi_fail_backend "$out" "gemini: NO OUTPUT${model:+ — model=$model} exit=$rc (stderr in $log)" "$log"
+  elif [ "$rc" -ne 0 ]; then
+    multi_fail_backend "$out" "gemini: FAILED${model:+ — model=$model} exit=$rc (stderr in $log)" "$log"
   fi
   return "$rc"
 }

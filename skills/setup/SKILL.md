@@ -72,10 +72,19 @@ OpenCode model-choice check below always runs, even when OpenCode is `OK`:
    `key: value1 value2 ...` lines with `#` comments. Today the only key is
    `opencode:`; its first model is primary and the rest are fallbacks.
 
-   If there is an `opencode:` line, say which models are pinned, in order,
-   and move on. If there is no such line, the reviewer is using the free
-   channel by default (`opencode/*`; the Go subscription is `opencode-go/*`).
-   Say this **loudly and plainly**:
+   Determine the effective primary model in this exact order: use
+   `MULTI_OPENCODE_MODEL` when it is set; otherwise use the first model on the
+   config's `opencode:` line when present; otherwise use the auto-detected
+   primary reported by the probe above. If the config has an `opencode:` line,
+   still say which models are pinned, in order, but do not use the line's mere
+   presence or absence to decide whether the active channel is free.
+
+   Decide the warning from the effective primary model's provider prefix:
+   `opencode/*` is the free channel and `opencode-go/*` is the paid Go
+   subscription channel. Warn **only** when the effective primary is an
+   `opencode/*` free model. Thus an environment override takes precedence over
+   a configured model, and a configured free primary still gets the warning.
+   For a free effective primary, say this **loudly and plainly**:
 
    > **Important: you're using free models. They are weaker and less stable. A
    > review may come back thin or even empty, so reviewing on free is a real

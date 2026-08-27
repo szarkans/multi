@@ -154,6 +154,27 @@ else
   echo "FAIL gemini failure lost stderr diagnostics"; fail=1
 fi
 
+# Partial stdout from a failed Gemini process is not a trustworthy answer. It
+# must be replaced by a dead reason, with stderr retained for diagnosis, and
+# the single-backend run must report that no backend answered.
+cat > "$TMP/bin/gemini" <<'STUB'
+#!/usr/bin/env bash
+echo "PARTIAL GEMINI ANSWER"
+echo "GEMINI PARTIAL FAILURE XYZZY" >&2
+exit 7
+STUB
+chmod +x "$TMP/bin/gemini"
+GEMINI_API_KEY=test "$HERE/ask.sh" --question q --out-prefix "$TMP/gemini-partial" --backend gemini >/dev/null 2>&1
+gemini_partial_rc=$?
+if [ "$gemini_partial_rc" -ne 0 ] \
+  && [ -s "$TMP/gemini-partial-gemini.txt.dead" ] \
+  && grep -q 'GEMINI PARTIAL FAILURE XYZZY' "$TMP/gemini-partial-gemini.txt.dead.log" \
+  && ! grep -q 'PARTIAL GEMINI ANSWER' "$TMP/gemini-partial-gemini.txt"; then
+  echo "ok   failed gemini partial output is dead, logged, and not counted alive"
+else
+  echo "FAIL failed gemini partial output counted alive or lost diagnostics (exit $gemini_partial_rc)"; fail=1
+fi
+
 # Observe the timeout at the process boundary. GNU timeout receives
 # `-k GRACE SECONDS COMMAND ...`; the stub records the resolved value and then
 # runs the fast fake backend normally.

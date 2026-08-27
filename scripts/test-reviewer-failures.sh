@@ -80,6 +80,9 @@ done
 case "$model" in
   primary|backup1) echo '{"type":"step_start","timestamp":1000,"part":{}}' ;;
   timeout) sleep 300 ;;
+  partialsmall) echo '{"type":"text","timestamp":1100,"part":{"text":"small timeout partial"}}'; exit 124 ;;
+  partialbest) echo '{"type":"text","timestamp":1100,"part":{"text":"best timeout partial with more useful detail"}}'; exit 124 ;;
+  timeoutpartial) echo '{"type":"text","timestamp":1100,"part":{"text":"primary timeout partial"}}'; exit 124 ;;
   backup2) echo '{"type":"text","timestamp":1200,"part":{"text":"later fallback answer"}}' ;;
   *) echo '{"type":"step_start","timestamp":1000,"part":{}}' ;;
 esac
@@ -92,6 +95,15 @@ say "loud fallback banner present" "$(sed -n 1p "$TMP/fl-opencode.txt" | grep -c
 bash "$TREE/scripts/ask.sh" --question q --backend opencode --model timeout --fallback backup2 --timeout 1 --out-prefix "$TMP/ft" >/dev/null 2>&1
 say "timeout advances to fallback" "$(grep -c 'later fallback answer' "$TMP/ft-opencode.txt")" "1"
 say "timeout fallback stays live" "$([ ! -e "$TMP/ft-opencode.txt.dead" ] && echo yes || echo no)" "yes"
+
+bash "$TREE/scripts/ask.sh" --question q --backend opencode --model primary --fallback partialsmall,partialbest,backup1 --out-prefix "$TMP/fp" >/dev/null 2>&1
+say "best intermediate timeout partial kept" "$(grep -c 'best timeout partial with more useful detail' "$TMP/fp-opencode.txt")" "1"
+say "smaller timeout partial discarded" "$(grep -c 'small timeout partial' "$TMP/fp-opencode.txt")" "0"
+say "intermediate partial marked TIMEOUT" "$(grep -c '^opencode: TIMEOUT after .* (partial; run was cut off)' "$TMP/fp-opencode.txt")" "1"
+say "intermediate partial stays live" "$([ ! -e "$TMP/fp-opencode.txt.dead" ] && echo yes || echo no)" "yes"
+
+bash "$TREE/scripts/ask.sh" --question q --backend opencode --model timeoutpartial --fallback backup2 --out-prefix "$TMP/fb" >/dev/null 2>&1
+say "timeout fallback banner names timeout" "$(sed -n 1p "$TMP/fb-opencode.txt")" "opencode: timeoutpartial timed out after ${MULTI_BACKEND_TIMEOUT}s — fell back to backup2"
 
 echo "== an opencode too old for --format json still reaches the judge =="
 cat > "$TMP/bin/opencode" <<'STUB'

@@ -162,7 +162,8 @@ done
 # JSON (an opencode older than --format json), 4 = no python3 to read it with.
 render_opencode() { # render_opencode <raw> <out> <model>
   local py; py="$(multi_python)" || return 4
-  "$py" "$SELF_DIR/opencode-report.py" "$1" --out "$2" --calls "${2}.calls" --model "$3" 2>/dev/null
+  rm -f "${2}.calls" "${2}.error"
+  "$py" "$SELF_DIR/opencode-report.py" "$1" --out "$2" --calls "${2}.calls" --model "$3" 2>"${2}.error"
 }
 
 run_codex_one() {
@@ -197,15 +198,16 @@ run_codex_one() {
 run_opencode_one() {
   local out="$1" model="$2" fallback="$3"
   local raw="${out}.jsonl"
-  rm -f "${out}.dead" "${raw}.first"
+  rm -f "${out}.dead" "${raw}.first" "${out}.partial" "${out}.partial.calls"
   command -v opencode >/dev/null 2>&1 || { multi_fail_backend "$out" "opencode: MISSING"; return 0; }
   [ -n "$model" ] || { multi_fail_backend "$out" "opencode: NO MODEL (set --model or MULTI_OPENCODE_MODEL)"; return 0; }
   # --format json rather than the terminal transcript: the transcript mixes the
   # model's answer with every file it opened, and the reader downstream cannot
   # tell those apart. The JSON events can. opencode-report.py turns them into
   # what it did, then what it said.
-  local used="$model" rc=0 rrc=0 answered=0
-  local candidate chain="$model" fallback_models="" attempted="" retry_note=""
+  local used="$model" rc=0 rrc=0 answered=0 attempted_count=0
+  local candidate chain="$model" fallback_models="" attempted="" retry_note="" last_error="" failure_error=""
+  local primary_failure="" partial_model="" partial_size=0 best_partial_size=0
   if [ -n "$fallback" ]; then
     fallback_models="$(printf '%s' "$fallback" | tr ',' ' ')"
     [ -z "$fallback_models" ] || chain="$chain $fallback_models"
@@ -219,12 +221,33 @@ run_opencode_one() {
     [ -z "$retry_note" ] || echo "$retry_note — retrying on $candidate" >&2
     used="$candidate"
     attempted="${attempted}${attempted:+,}${used}"
+    attempted_count=$((attempted_count+1))
     multi_timeout "$MULTI_BACKEND_TIMEOUT" opencode run --pure --agent plan --format json \
       -m "$used" --dir "$REPO_DIR" "$QUESTION" > "$raw" 2>&1; rc=$?
     render_opencode "$raw" "$out" "$used"; rrc=$?
+    last_error=""
+    [ ! -s "${out}.error" ] || last_error="$(sed -n '1p' "${out}.error")"
+    [ -z "$last_error" ] || failure_error="$last_error"
     if [ "$rc" -ne 124 ] && [ "$rrc" -ne 3 ]; then
       answered=1
       break
+    fi
+    if [ "$attempted_count" -eq 1 ]; then
+      if [ "$rc" -eq 124 ]; then
+        primary_failure="timed out after ${MULTI_BACKEND_TIMEOUT}s"
+      else
+        primary_failure="produced no answer"
+      fi
+    fi
+    if [ "$rc" -eq 124 ] && [ "$rrc" -eq 0 ] && [ -s "$out" ]; then
+      partial_size="$(wc -c < "$out")"
+      if [ "$partial_size" -gt "$best_partial_size" ]; then
+        cp "$out" "${out}.partial"
+        rm -f "${out}.partial.calls"
+        [ ! -e "${out}.calls" ] || cp "${out}.calls" "${out}.partial.calls"
+        partial_model="$used"
+        best_partial_size="$partial_size"
+      fi
     fi
     [ -e "${raw}.first" ] || cp "$raw" "${raw}.first" 2>/dev/null
     if [ "$rc" -eq 124 ]; then
@@ -234,8 +257,16 @@ run_opencode_one() {
     fi
   done
 
-  if [ "$answered" -eq 0 ] && ! { [ "$rc" -eq 124 ] && [ "$rrc" -eq 0 ] && [ -s "$out" ]; }; then
-    multi_fail_backend "$out" "opencode: FALLBACK CHAIN EXHAUSTED — tried $attempted; every model ended in TIMEOUT or NO ANSWER (last model=$used exit=$rc)" "$raw"
+  if [ "$answered" -eq 0 ] && [ "$best_partial_size" -gt 0 ]; then
+    used="$partial_model"
+    cp "${out}.partial" "$out"
+    rm -f "${out}.calls"
+    [ ! -e "${out}.partial.calls" ] || cp "${out}.partial.calls" "${out}.calls"
+    { echo "opencode: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s — model=$used (partial; run was cut off)"
+      cat "$out"
+    } > "${out}.tmp" && mv "${out}.tmp" "$out"
+  elif [ "$answered" -eq 0 ] && [ "$attempted_count" -gt 1 ]; then
+    multi_fail_backend "$out" "opencode: FALLBACK CHAIN EXHAUSTED — tried $attempted; every model ended in TIMEOUT or NO ANSWER (last model=$used exit=$rc${failure_error:+; reason=$failure_error}); what it did is in ${out}.calls" "$raw"
   elif [ "$rc" -eq 124 ]; then
     if [ "$rrc" = 0 ] && [ -s "$out" ]; then
       { echo "opencode: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s — model=$used (partial; run was cut off)"
@@ -245,7 +276,11 @@ run_opencode_one() {
       multi_fail_backend "$out" "opencode: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s — model=$used (partial capture in $raw)" "$raw"
     fi
   elif [ "$rrc" = 3 ]; then
-    multi_fail_backend "$out" "opencode: NO ANSWER — model=$used exit=$rc — it ran but said nothing; what it did is in ${out}.calls" "$raw"
+    if [ -n "$last_error" ]; then
+      multi_fail_backend "$out" "opencode: NO ANSWER — model=$used exit=$rc — $last_error; what it did is in ${out}.calls" "$raw"
+    else
+      multi_fail_backend "$out" "opencode: NO ANSWER — model=$used exit=$rc — it ran but said nothing; what it did is in ${out}.calls" "$raw"
+    fi
   elif [ "$rrc" = 2 ] || [ "$rrc" = 4 ]; then
     local why="an opencode without --format json"; [ "$rrc" = 4 ] && why="no python3 on this machine"
     # Not a dead backend: the model answered, the answer is just unstructured
@@ -262,10 +297,11 @@ run_opencode_one() {
   # died. Announce it loud, at the TOP where the reader lands — not a line
   # appended to the very bottom that the eye skates past.
   if [ "$used" != "$model" ] && [ -s "$out" ] && [ ! -e "${out}.dead" ]; then
-    { echo "opencode: $model produced no answer — fell back to $used"; echo
+    { echo "opencode: $model ${primary_failure:-produced no answer} — fell back to $used"; echo
       cat "$out"
     } > "${out}.tmp" && mv "${out}.tmp" "$out"
   fi
+  rm -f "${out}.partial" "${out}.partial.calls"
 }
 
 run_openrouter_one() { multi_run_openrouter "$QUESTION" "$1" "$2"; }
