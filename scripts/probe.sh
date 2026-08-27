@@ -74,6 +74,7 @@ if command -v opencode >/dev/null 2>&1; then
             config_key="$(printf '%s' "$config_key" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
             config_value="$(printf '%s' "$config_value" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
             config_value="$(printf '%s' "$config_value" | tr ',' ' ')"
+            config_value="$(printf '%s' "$config_value" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
             case "$config_key" in
               opencode) [ -z "$config_value" ] || { configured_models="$config_value"; break; } ;;
             esac

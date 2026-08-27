@@ -266,7 +266,9 @@ run_opencode_one() {
       cat "$out"
     } > "${out}.tmp" && mv "${out}.tmp" "$out"
   elif [ "$answered" -eq 0 ] && [ "$attempted_count" -gt 1 ]; then
-    multi_fail_backend "$out" "opencode: FALLBACK CHAIN EXHAUSTED — tried $attempted; every model ended in TIMEOUT or NO ANSWER (last model=$used exit=$rc${failure_error:+; reason=$failure_error}); what it did is in ${out}.calls" "$raw"
+    local calls_note=""
+    [ ! -e "${out}.calls" ] || calls_note="; what it did is in ${out}.calls"
+    multi_fail_backend "$out" "opencode: FALLBACK CHAIN EXHAUSTED — tried $attempted; every model ended in TIMEOUT or NO ANSWER (last exit=$rc${failure_error:+; one model reported: $failure_error})${calls_note}" "$raw"
   elif [ "$rc" -eq 124 ]; then
     if [ "$rrc" = 0 ] && [ -s "$out" ]; then
       { echo "opencode: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s — model=$used (partial; run was cut off)"

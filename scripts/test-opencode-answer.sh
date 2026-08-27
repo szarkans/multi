@@ -74,6 +74,9 @@ say "specific error replaces generic silence" "$(grep -c 'it ran but said nothin
 
 MODE=error_fallback bash "$TREE/scripts/ask.sh" --question q --backend opencode --model primary --fallback backup --out-prefix "$TMP/error-chain" >/dev/null 2>&1
 say "earlier provider error survives exhausted chain" "$(grep -c 'invalid primary model' "$TMP/error-chain-opencode.txt.dead")" "1"
+say "earlier error is not attributed to last model" "$(grep -c 'last model=.*invalid primary model' "$TMP/error-chain-opencode.txt.dead")" "0"
+say "zero-call chain does not claim calls file" "$(grep -c '\.calls' "$TMP/error-chain-opencode.txt.dead")" "0"
+say "zero-call chain has no calls file" "$([ ! -e "$TMP/error-chain-opencode.txt.calls" ] && echo yes || echo no)" "yes"
 
 echo "== the answer is the answer; the files it read are not =="
 bash "$TREE/scripts/ask.sh" --question q --backend opencode --model m --out-prefix "$TMP/a" >/dev/null 2>&1
