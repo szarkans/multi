@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.6.0 — 2026-08-28
+
+- OpenCode fallback is now a chain through every free model, not one spare, and
+  it advances on a timeout too — not only on an empty answer. A dead free model
+  no longer sinks the whole review.
+- `~/.config/multi/models` — pin your own OpenCode models by hand (`opencode:
+  <primary> <fallbacks…>`), no agent needed. Overrides auto-detection; absent
+  file keeps the free default.
+- `/multi:setup` now warns loudly when you're on free models and offers to
+  research current models, prices and usage for you, then writes your pick.
+- Codex gets its own timeout (`MULTI_CODEX_TIMEOUT`, default 600s): high-effort
+  runs stop dying at the shared 300s; review runs keep their longer budget.
+- OpenCode `error` events are no longer swallowed — a failed run says why it was
+  empty instead of "it ran but said nothing".
+- Gemini stderr now lands in `.dead.log` on failure instead of vanishing.
+
 ## 2.5.0 — 2026-08-26
 
 - `--repo`: reviewers read the right worktree instead of an empty diff when the

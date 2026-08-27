@@ -47,7 +47,8 @@ with the most valuable one that's missing. Codex comes first if it's missing:
 `/multi:code-review` refuses to run at all without it, the others just get
 weaker.
 
-Order to work through, skipping anything already `OK`:
+Order to work through, skipping each install or login fix already `OK`. The
+OpenCode model-choice check below always runs, even when OpenCode is `OK`:
 
 1. **Codex missing or not logged in**
    ```
@@ -56,12 +57,51 @@ Order to work through, skipping anything already `OK`:
    Needs a ChatGPT account. This opens a browser to sign in — nothing to type
    here.
 
-2. **OpenCode missing**
+2. **OpenCode**
+   If it is missing:
    ```
    curl -fsSL https://opencode.ai/install | bash
    ```
    (or `npm install -g opencode-ai` if they'd rather use npm). Nothing to pay
    for or sign up to — it works with free models right out of the box.
+
+   Once OpenCode is checked — whether it was already `OK` or was just
+   installed — check its model choice. The config is
+   `${XDG_CONFIG_HOME:-$HOME/.config}/multi/models`, unless
+   `MULTI_MODELS_CONFIG` overrides it. It is a hand-edited file of
+   `key: value1 value2 ...` lines with `#` comments. Today the only key is
+   `opencode:`; its first model is primary and the rest are fallbacks.
+
+   If there is an `opencode:` line, say which models are pinned, in order,
+   and move on. If there is no such line, the reviewer is using the free
+   channel by default (`opencode/*`; the Go subscription is `opencode-go/*`).
+   Say this **loudly and plainly**:
+
+   > **Important: you're using free models. They are weaker and less stable. A
+   > review may come back thin or even empty, so reviewing on free is a real
+   > quality compromise.**
+
+   Then ask an explicit yes/no question:
+
+   > Want me to look up the current models, their prices, and how much usage
+   > you'd get (how much you'd pay) — and help you pick a good one + fallbacks?
+
+   If **no**, acknowledge that keeping free is a deliberate choice and move
+   on. If **yes**:
+
+   - Run both `opencode --pure models` and
+     `opencode --pure models --verbose`; `--pure` is required so plugin noise
+     does not pollute the output, and the verbose listing includes costs.
+   - Use web search for unfamiliar model names: your own model knowledge is
+     stale and newer models will not be in it. Check what they actually are,
+     their quality and benchmarks, and current pricing.
+   - Propose one primary model and an ordered fallback chain.
+   - After the user chooses, create the config directory if needed and write
+     `opencode: <primary> <fallback1> <fallback2> ...`, preserving every other
+     line already in the file.
+
+   Remind them that this is deliberately hand-editable: they can change that
+   one `opencode:` line themselves at any time, with no agent needed.
 
 3. **OpenRouter not configured**
    Key comes from [openrouter.ai](https://openrouter.ai) — sign up, create a

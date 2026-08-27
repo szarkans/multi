@@ -138,6 +138,65 @@ else
   echo "FAIL stale marker condemned a live run (exit $rc)"; fail=1
 fi
 
+# Gemini stderr is diagnostics, not an answer. A failed CLI must keep it in the
+# durable dead log after the trusted reason replaces the empty answer file.
+cat > "$TMP/bin/gemini" <<'STUB'
+#!/usr/bin/env bash
+echo "GEMINI DIAGNOSTIC XYZZY" >&2
+exit 7
+STUB
+chmod +x "$TMP/bin/gemini"
+GEMINI_API_KEY=test "$HERE/ask.sh" --question q --out-prefix "$TMP/gemini-fail" --backend gemini >/dev/null 2>&1
+if [ -s "$TMP/gemini-fail-gemini.txt.dead" ] \
+  && grep -q 'GEMINI DIAGNOSTIC XYZZY' "$TMP/gemini-fail-gemini.txt.dead.log"; then
+  echo "ok   gemini failure keeps stderr in dead log"
+else
+  echo "FAIL gemini failure lost stderr diagnostics"; fail=1
+fi
+
+# Observe the timeout at the process boundary. GNU timeout receives
+# `-k GRACE SECONDS COMMAND ...`; the stub records the resolved value and then
+# runs the fast fake backend normally.
+cat > "$TMP/bin/timeout" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\t%s\n' "$3" "$4" >> "$MULTI_TIMEOUT_TRACE"
+shift 3
+"$@"
+STUB
+chmod +x "$TMP/bin/timeout"
+: > "$TMP/timeouts"
+MULTI_TIMEOUT_TRACE="$TMP/timeouts" MULTI_CODEX_TIMEOUT=17 MULTI_BACKEND_TIMEOUT=9 \
+  "$HERE/ask.sh" --question q --out-prefix "$TMP/timeouts-explicit" --backend codex,opencode --model m >/dev/null
+codex_timeout_count="$(grep -c $'^17\tcodex$' "$TMP/timeouts")"
+opencode_timeout_count="$(grep -c $'^9\topencode$' "$TMP/timeouts")"
+if [ "$codex_timeout_count" -eq 1 ] && [ "$opencode_timeout_count" -eq 1 ]; then
+  echo "ok   codex timeout knob overrides only codex (codex=17 opencode=9)"
+else
+  echo "FAIL timeout split not applied (codex=$codex_timeout_count opencode=$opencode_timeout_count)"; fail=1
+fi
+
+: > "$TMP/default-timeout"
+( unset MULTI_CODEX_TIMEOUT
+  MULTI_TIMEOUT_TRACE="$TMP/default-timeout" MULTI_BACKEND_TIMEOUT=9 \
+    "$HERE/ask.sh" --question q --out-prefix "$TMP/timeouts-default" --backend codex >/dev/null
+)
+if [ "$(grep -c $'^600\tcodex$' "$TMP/default-timeout")" -eq 1 ]; then
+  echo "ok   codex keeps its 600s default above a shorter shared timeout"
+else
+  echo "FAIL shorter shared timeout replaced codex 600s default"; fail=1
+fi
+
+: > "$TMP/review-timeout"
+( unset MULTI_CODEX_TIMEOUT MULTI_BACKEND_TIMEOUT
+  MULTI_TIMEOUT_TRACE="$TMP/review-timeout" "$HERE/ask.sh" --question q \
+    --out-prefix "$TMP/timeouts-review" --backend codex --timeout 901 >/dev/null
+)
+if [ "$(grep -c $'^901\tcodex$' "$TMP/review-timeout")" -eq 1 ]; then
+  echo "ok   shared review timeout raises default codex timeout"
+else
+  echo "FAIL review --timeout did not govern default codex timeout"; fail=1
+fi
+
 # The opencode reviewer must stay read-only. Every real `opencode run` in ask.sh
 # must carry --agent plan and must NEVER carry --auto: --auto pre-approves write
 # and bash, which is the P4 hole (full read+write+exec in the live tree). The

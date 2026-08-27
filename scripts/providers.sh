@@ -327,6 +327,13 @@ MULTI_OPENROUTER_FALLBACKS="${MULTI_OPENROUTER_FALLBACKS:-poolside/laguna-s-2.1:
 # skip that and pin the exact order.
 MULTI_OPENROUTER_MODELS="${MULTI_OPENROUTER_MODELS:-$MULTI_OPENROUTER_MODEL $MULTI_OPENROUTER_FALLBACKS}"
 MULTI_GEMINI_MODEL="${MULTI_GEMINI_MODEL:-}"   # empty = whatever the CLI defaults to
+# MULTI_CODEX_TIMEOUT gives slower Codex runs 600s unless explicitly overridden.
+if [ -n "${MULTI_CODEX_TIMEOUT:-}" ]; then
+  MULTI_CODEX_TIMEOUT_EXPLICIT=1
+else
+  MULTI_CODEX_TIMEOUT_EXPLICIT=0
+  MULTI_CODEX_TIMEOUT=600
+fi
 MULTI_BACKEND_TIMEOUT="${MULTI_BACKEND_TIMEOUT:-300}"
 # A review is a different job from a question: it reads a diff, opens files and
 # thinks at whatever --effort was asked for, so the same 300s that is generous
@@ -464,6 +471,7 @@ multi_run_openrouter() {
 # on the key instead of paying a router for the same model.
 multi_run_gemini() {
   local prompt="$1" out="$2" model="${3:-$MULTI_GEMINI_MODEL}" rc=0
+  local log="${out}.log"
   rm -f "${out}.dead"
   if [ -z "${GEMINI_API_KEY:-}" ]; then
     multi_fail_backend "$out" "gemini: NO KEY — ask the user to run scripts/setup.sh set GEMINI_API_KEY in their own terminal (it prompts for the key)"; return 0
@@ -472,13 +480,13 @@ multi_run_gemini() {
   GEMINI_API_KEY="$GEMINI_API_KEY" \
     multi_timeout "$MULTI_BACKEND_TIMEOUT" gemini -p "$prompt" \
       ${model:+-m "$model"} --approval-mode plan \
-      > "$out" 2>&1
+      > "$out" 2> "$log"
   rc=$?
   if [ "$rc" -eq 124 ]; then
     # A timed-out run never reads as an answer, even with partial output.
-    multi_fail_backend "$out" "gemini: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s${model:+ — model=$model}"
+    multi_fail_backend "$out" "gemini: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s${model:+ — model=$model}" "$log"
   elif [ ! -s "$out" ]; then
-    multi_fail_backend "$out" "gemini: NO OUTPUT${model:+ — model=$model} exit=$rc"
+    multi_fail_backend "$out" "gemini: NO OUTPUT${model:+ — model=$model} exit=$rc (stderr in $log)" "$log"
   fi
   return "$rc"
 }

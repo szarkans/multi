@@ -79,7 +79,7 @@ def main():
         else:
             print(f"unknown arg: {args[i]}", file=sys.stderr); return 2
 
-    calls, texts, stamps, seen_json = [], [], [], False
+    calls, texts, errors, stamps, seen_json = [], [], [], [], False
     with open(src, "r", encoding="utf-8", errors="replace") as fh:
         for line in fh:
             line = line.strip()
@@ -98,6 +98,15 @@ def main():
                 t = part.get("text", "")
                 if t:
                     texts.append(t)
+            elif ev.get("type") == "error":
+                error = ev.get("error")
+                if isinstance(error, str):
+                    errors.append(error)
+                elif isinstance(error, dict):
+                    data = error.get("data") or {}
+                    message = data.get("message") if isinstance(data, dict) else ""
+                    message = message or error.get("message")
+                    errors.append(message or json.dumps(error, ensure_ascii=False))
             elif ev.get("type") == "tool_use":
                 state = part.get("state") or {}
                 status = state.get("status", "")
@@ -130,6 +139,8 @@ def main():
         lines.append("  (none — this reviewer answered without opening anything)")
 
     answer = "".join(texts).strip()
+    if not answer and errors:
+        print("\n".join(errors), file=sys.stderr)
     lines.append("")
     lines.append("## Answer")
     lines.append(answer if answer else "(the model produced no answer text at all)")

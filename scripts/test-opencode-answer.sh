@@ -52,6 +52,14 @@ if ! multi_python >/dev/null; then
   echo "  skip — no working python on this machine; the JSON reader cannot run here"
   echo "ALL PASS"; exit 0
 fi
+PY="$(multi_python)"
+
+echo "== an error event explains a run with no answer =="
+printf '%s\n' '{"type":"error","timestamp":1000,"error":{"name":"UnknownError","data":{"message":"Unexpected server error. Check server logs for details.","ref":"err_47fb8a13"}}}' > "$TMP/error.jsonl"
+"$PY" "$TREE/scripts/opencode-report.py" "$TMP/error.jsonl" > "$TMP/error.out" 2> "$TMP/error.err"
+error_rc=$?
+say "error-only stream is still no-answer" "$error_rc" "3"
+say "provider error reaches stderr" "$(grep -c 'Unexpected server error' "$TMP/error.err")" "1"
 
 echo "== the answer is the answer; the files it read are not =="
 bash "$TREE/scripts/ask.sh" --question q --backend opencode --model m --out-prefix "$TMP/a" >/dev/null 2>&1

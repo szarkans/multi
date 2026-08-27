@@ -24,7 +24,8 @@
 #
 # The old per-provider flags (--model, --fallback, --codex-model, --or-model,
 # --gemini-model) still work: they set the default model for a bare backend
-# name, same as before name:model existed.
+# name, same as before name:model existed. --fallback accepts a comma-separated
+# model list and tries it in order.
 #
 # openrouter runs Claude Code itself against OpenRouter's Anthropic endpoint —
 # same agent loop, different weights. gemini runs the Google CLI, because
@@ -165,7 +166,10 @@ render_opencode() { # render_opencode <raw> <out> <model>
 }
 
 run_codex_one() {
-  local out="$1" model="$2" rc=0
+  local out="$1" model="$2" rc=0 timeout="$MULTI_CODEX_TIMEOUT"
+  if [ "$MULTI_CODEX_TIMEOUT_EXPLICIT" -eq 0 ] && [ "$MULTI_BACKEND_TIMEOUT" -gt "$timeout" ]; then
+    timeout="$MULTI_BACKEND_TIMEOUT"
+  fi
   # A stale marker from a previous run with the same prefix must not condemn
   # this run: the sidecar describes one invocation, not the file forever.
   rm -f "${out}.dead"
@@ -175,7 +179,7 @@ run_codex_one() {
   # other backend's answer died with it.
   # codex has no --dir, so run it inside the target. -o/-log paths are absolute
   # (the run dir), so the cd does not disturb where the capture lands.
-  ( cd "$REPO_DIR" && multi_timeout "$MULTI_BACKEND_TIMEOUT" codex exec \
+  ( cd "$REPO_DIR" && multi_timeout "$timeout" codex exec \
     ${model:+-m "$model"} \
     -s read-only \
     -c model_reasoning_effort="$EFFORT" \
@@ -185,7 +189,7 @@ run_codex_one() {
   # stderr used to go to /dev/null, so a codex that failed left "NO OUTPUT" and
   # nothing to go on. The openrouter path keeps a .log for exactly this reason.
   if [ "$rc" -eq 124 ] && [ ! -s "$out" ]; then
-    multi_fail_backend "$out" "codex: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s" "${out}.log"
+    multi_fail_backend "$out" "codex: TIMEOUT after ${timeout}s" "${out}.log"
   fi
   [ -s "$out" ] || [ ! -s "${out}.log" ] || multi_fail_backend "$out" "codex: NO OUTPUT — exit=$rc (stderr in ${out}.log)" "${out}.log"
 }
@@ -200,24 +204,39 @@ run_opencode_one() {
   # model's answer with every file it opened, and the reader downstream cannot
   # tell those apart. The JSON events can. opencode-report.py turns them into
   # what it did, then what it said.
-  local used="$model" rc=0 rrc=0
-  multi_timeout "$MULTI_BACKEND_TIMEOUT" opencode run --pure --agent plan --format json \
-    -m "$model" --dir "$REPO_DIR" "$QUESTION" > "$raw" 2>&1; rc=$?
-  render_opencode "$raw" "$out" "$used"; rrc=$?
-
-  # No answer means the run did not happen: exhausted usage, an expired
-  # subscription, a model that hangs. Neither CLI can be asked about remaining
-  # quota beforehand, so this is where it is discovered.
-  if [ "$rrc" = 3 ] && [ "$rc" -ne 124 ] && [ -n "$fallback" ] && [ "$fallback" != "$model" ]; then
-    echo "[multi] $model produced no answer (exit $rc) — retrying on $fallback" >&2
-    cp "$raw" "${raw}.first" 2>/dev/null
-    used="$fallback"
-    multi_timeout "$MULTI_BACKEND_TIMEOUT" opencode run --pure --agent plan --format json \
-      -m "$fallback" --dir "$REPO_DIR" "$QUESTION" > "$raw" 2>&1; rc=$?
-    render_opencode "$raw" "$out" "$used"; rrc=$?
+  local used="$model" rc=0 rrc=0 answered=0
+  local candidate chain="$model" fallback_models="" attempted="" retry_note=""
+  if [ -n "$fallback" ]; then
+    fallback_models="$(printf '%s' "$fallback" | tr ',' ' ')"
+    [ -z "$fallback_models" ] || chain="$chain $fallback_models"
   fi
+  # No answer or a timeout means the run did not happen cleanly: exhausted
+  # usage, an expired subscription, a silent model, or a model that hangs.
+  # Neither CLI can be asked about remaining quota beforehand, so walk the
+  # free fallback chain here until one model returns a real answer.
+  for candidate in $chain; do
+    case ",$attempted," in *",$candidate,"*) continue ;; esac
+    [ -z "$retry_note" ] || echo "$retry_note — retrying on $candidate" >&2
+    used="$candidate"
+    attempted="${attempted}${attempted:+,}${used}"
+    multi_timeout "$MULTI_BACKEND_TIMEOUT" opencode run --pure --agent plan --format json \
+      -m "$used" --dir "$REPO_DIR" "$QUESTION" > "$raw" 2>&1; rc=$?
+    render_opencode "$raw" "$out" "$used"; rrc=$?
+    if [ "$rc" -ne 124 ] && [ "$rrc" -ne 3 ]; then
+      answered=1
+      break
+    fi
+    [ -e "${raw}.first" ] || cp "$raw" "${raw}.first" 2>/dev/null
+    if [ "$rc" -eq 124 ]; then
+      retry_note="[multi] $used timed out after ${MULTI_BACKEND_TIMEOUT}s"
+    else
+      retry_note="[multi] $used produced no answer (exit $rc)"
+    fi
+  done
 
-  if [ "$rc" -eq 124 ]; then
+  if [ "$answered" -eq 0 ] && ! { [ "$rc" -eq 124 ] && [ "$rrc" -eq 0 ] && [ -s "$out" ]; }; then
+    multi_fail_backend "$out" "opencode: FALLBACK CHAIN EXHAUSTED — tried $attempted; every model ended in TIMEOUT or NO ANSWER (last model=$used exit=$rc)" "$raw"
+  elif [ "$rc" -eq 124 ]; then
     if [ "$rrc" = 0 ] && [ -s "$out" ]; then
       { echo "opencode: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s — model=$used (partial; run was cut off)"
         cat "$out"
@@ -242,7 +261,7 @@ run_opencode_one() {
   # now carries the fallback's name, but nothing says the model they ASKED for
   # died. Announce it loud, at the TOP where the reader lands — not a line
   # appended to the very bottom that the eye skates past.
-  if [ "$used" != "$model" ] && [ -s "$out" ]; then
+  if [ "$used" != "$model" ] && [ -s "$out" ] && [ ! -e "${out}.dead" ]; then
     { echo "opencode: $model produced no answer — fell back to $used"; echo
       cat "$out"
     } > "${out}.tmp" && mv "${out}.tmp" "$out"

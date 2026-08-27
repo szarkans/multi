@@ -18,7 +18,7 @@ for n in codex opencode; do
 done
 export PATH="$TMP/bin:$PATH"
 export MULTI_HOME="$TMP/home"; mkdir -p "$MULTI_HOME"
-export MULTI_BACKEND_TIMEOUT=3 MULTI_REVIEW_TIMEOUT=3
+export MULTI_BACKEND_TIMEOUT=3 MULTI_CODEX_TIMEOUT=3 MULTI_REVIEW_TIMEOUT=3
 echo "bash $BASH_VERSION | timeout: $(command -v timeout || echo none)"
 
 fail=0
@@ -66,6 +66,32 @@ echo "   says: $(head -1 "$TMP/ro-opencode.txt" 2>/dev/null)"
 say "not empty" "$([ -s "$TMP/ro-opencode.txt" ] && echo yes || echo no)" "yes"
 say "says TIMEOUT" "$(grep -qi 'TIMEOUT' "$TMP/ro-opencode.txt" && echo yes || echo no)" "yes"
 say "dead marker has one-line reason" "$([ -s "$TMP/ro-opencode.txt.dead" ] && [ "$(wc -l < "$TMP/ro-opencode.txt.dead")" -eq 1 ] && echo yes || echo no)" "yes"
+
+echo "== opencode walks the fallback list until a later model answers =="
+cat > "$TMP/bin/opencode" <<'STUB'
+#!/usr/bin/env bash
+model=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -m) model="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+case "$model" in
+  primary|backup1) echo '{"type":"step_start","timestamp":1000,"part":{}}' ;;
+  timeout) sleep 300 ;;
+  backup2) echo '{"type":"text","timestamp":1200,"part":{"text":"later fallback answer"}}' ;;
+  *) echo '{"type":"step_start","timestamp":1000,"part":{}}' ;;
+esac
+STUB
+chmod +x "$TMP/bin/opencode"
+bash "$TREE/scripts/ask.sh" --question q --backend opencode --model primary --fallback backup1,backup2 --out-prefix "$TMP/fl" >/dev/null 2>&1
+say "later fallback answer kept" "$(grep -c 'later fallback answer' "$TMP/fl-opencode.txt")" "1"
+say "later fallback stays live" "$([ ! -e "$TMP/fl-opencode.txt.dead" ] && echo yes || echo no)" "yes"
+say "loud fallback banner present" "$(sed -n 1p "$TMP/fl-opencode.txt" | grep -c 'primary produced no answer — fell back to backup2')" "1"
+bash "$TREE/scripts/ask.sh" --question q --backend opencode --model timeout --fallback backup2 --timeout 1 --out-prefix "$TMP/ft" >/dev/null 2>&1
+say "timeout advances to fallback" "$(grep -c 'later fallback answer' "$TMP/ft-opencode.txt")" "1"
+say "timeout fallback stays live" "$([ ! -e "$TMP/ft-opencode.txt.dead" ] && echo yes || echo no)" "yes"
 
 echo "== an opencode too old for --format json still reaches the judge =="
 cat > "$TMP/bin/opencode" <<'STUB'

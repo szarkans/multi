@@ -47,8 +47,9 @@ fi
 # --- OpenCode -----------------------------------------------------------
 # Model resolution:
 #   1. $MULTI_OPENCODE_MODEL           — explicit override, used as-is
-#   2. first entry of $MULTI_OPENCODE_CANDIDATES that `opencode models` lists
-#   3. nothing -> reviewer skipped
+#   2. first entry of opencode: in the user's models config, used as-is
+#   3. first entry of $MULTI_OPENCODE_CANDIDATES that `opencode models` lists
+#   4. nothing -> reviewer skipped
 # The default candidate order puts the free model first on purpose: it is the
 # one measured working here, and a review is not worth burning paid usage on
 # by default. Set MULTI_OPENCODE_MODEL to spend the subscription deliberately.
@@ -58,48 +59,87 @@ if command -v opencode >/dev/null 2>&1; then
   if [ -n "${MULTI_OPENCODE_MODEL:-}" ]; then
     say "opencode: OK — ${MULTI_OPENCODE_MODEL} (pinned by MULTI_OPENCODE_MODEL)"
   else
-    # `opencode models` is the whole cost of this probe: 2.9s against 49ms for
-    # the codex check, measured 2026-08-20 -- and this probe runs before every
-    # single skill invocation. The list is a catalogue, not a live state, so it
-    # is cached; a model that disappeared mid-hour is already handled, since the
-    # reviewer falls back when its first choice dies. Delete the file or set
-    # MULTI_PROBE_CACHE_MIN=0 to force a fresh read.
-    models_cache="$MULTI_HOME/opencode-models.cache"
-    cache_min="${MULTI_PROBE_CACHE_MIN:-60}"
-    available=""
-    # `find -mmin` rather than stat: stat's flags differ between GNU and BSD.
-    [ "$cache_min" != "0" ] && [ -s "$models_cache" ] \
-      && [ -n "$(find "$models_cache" -mmin "-${cache_min}" 2>/dev/null)" ] \
-      && available="$(cat "$models_cache")"
-    if [ -z "$available" ]; then
-      available="$(multi_timeout 20 opencode models 2>/dev/null)"; models_rc=$?
-      # Only a run that finished cleanly may be cached. A listing that printed
-      # half its models and then timed out is non-empty, and caching it would
-      # pin a truncated catalogue for the next hour -- long enough to make the
-      # probe report "no usable model" on a machine where the model exists.
-      if [ "$models_rc" -eq 0 ] && [ -n "$available" ]; then
-        mkdir -p "$MULTI_HOME" 2>/dev/null
-        # Written elsewhere and renamed: a reader in another session must never
-        # catch this file mid-write and cache-hit on half a list for an hour.
-        cache_tmp="${models_cache}.$$"
-        if printf '%s\n' "$available" > "$cache_tmp" 2>/dev/null; then
-          mv -f "$cache_tmp" "$models_cache" 2>/dev/null || rm -f "$cache_tmp"
+    # Hand-edited `key: space-separated values` file; # starts a comment.
+    # Only opencode is recognized for now. Unknown keys are ignored.
+    models_config="${MULTI_MODELS_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/multi/models}"
+    configured_models=""
+    if [ -f "$models_config" ]; then
+      config_line=""
+      while IFS= read -r config_line || [ -n "$config_line" ]; do
+        config_line="${config_line%%#*}"
+        case "$config_line" in
+          *:*)
+            config_key="${config_line%%:*}"
+            config_value="${config_line#*:}"
+            config_key="$(printf '%s' "$config_key" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+            config_value="$(printf '%s' "$config_value" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+            case "$config_key" in
+              opencode) [ -z "$config_value" ] || { configured_models="$config_value"; break; } ;;
+            esac
+            ;;
+        esac
+      done < "$models_config"
+    fi
+
+    if [ -n "$configured_models" ]; then
+      picked=""
+      fallback=""
+      for m in $configured_models; do
+        if [ -z "$picked" ]; then
+          picked="$m"
+        else
+          fallback="${fallback}${fallback:+,}${m}"
+        fi
+      done
+      say "opencode: OK — ${picked}${fallback:+ (fallback: ${fallback})} (from config)"
+    else
+      # `opencode --pure models` is the whole cost of this probe: 2.9s against 49ms for
+      # the codex check, measured 2026-08-20 -- and this probe runs before every
+      # single skill invocation. The list is a catalogue, not a live state, so it
+      # is cached; a model that disappeared mid-hour is already handled, since the
+      # reviewer falls back when its first choice dies. Delete the file or set
+      # MULTI_PROBE_CACHE_MIN=0 to force a fresh read.
+      models_cache="$MULTI_HOME/opencode-models.cache"
+      cache_min="${MULTI_PROBE_CACHE_MIN:-60}"
+      available=""
+      # `find -mmin` rather than stat: stat's flags differ between GNU and BSD.
+      [ "$cache_min" != "0" ] && [ -s "$models_cache" ] \
+        && [ -n "$(find "$models_cache" -mmin "-${cache_min}" 2>/dev/null)" ] \
+        && available="$(cat "$models_cache")"
+      if [ -z "$available" ]; then
+        available="$(multi_timeout 20 opencode --pure models 2>/dev/null)"; models_rc=$?
+        # Only a run that finished cleanly may be cached. A listing that printed
+        # half its models and then timed out is non-empty, and caching it would
+        # pin a truncated catalogue for the next hour -- long enough to make the
+        # probe report "no usable model" on a machine where the model exists.
+        if [ "$models_rc" -eq 0 ] && [ -n "$available" ]; then
+          mkdir -p "$MULTI_HOME" 2>/dev/null
+          # Written elsewhere and renamed: a reader in another session must never
+          # catch this file mid-write and cache-hit on half a list for an hour.
+          cache_tmp="${models_cache}.$$"
+          if printf '%s\n' "$available" > "$cache_tmp" 2>/dev/null; then
+            mv -f "$cache_tmp" "$models_cache" 2>/dev/null || rm -f "$cache_tmp"
+          fi
         fi
       fi
-    fi
-    picked=""
-    for m in $CANDIDATES; do
-      printf '%s\n' "$available" | grep -qxF "$m" && { picked="$m"; break; }
-    done
-    # The fallback is what the reviewer retries on when the first choice dies
-    # mid-run — running out of paid usage being the usual reason. So it is
-    # only ever a free model: falling back the other way would quietly spend
-    # money the user did not agree to spend on a retry.
-    fallback="$(printf '%s\n' "$available" | grep -- '-free$' | grep -vxF "$picked" | head -1)"
-    if [ -n "$picked" ]; then
-      say "opencode: OK — ${picked}${fallback:+ (fallback: ${fallback})}"
-    else
-      say "opencode: NO USABLE MODEL — none of [$CANDIDATES] is available; set MULTI_OPENCODE_MODEL to one of: $(printf '%s' "$available" | head -5 | tr '\n' ' ')"
+      picked=""
+      for m in $CANDIDATES; do
+        printf '%s\n' "$available" | grep -qxF "$m" && { picked="$m"; break; }
+      done
+      # The fallback chain is what the reviewer walks when earlier choices die
+      # mid-run — running out of paid usage being the usual reason. `opencode/`
+      # is the free channel; `opencode-go/` is not. Keep every free model in the
+      # catalogue's order, except the already-selected primary.
+      fallback=""
+      free_models="$(printf '%s\n' "$available" | grep '^opencode/')"
+      for m in $free_models; do
+        [ "$m" = "$picked" ] || fallback="${fallback}${fallback:+,}${m}"
+      done
+      if [ -n "$picked" ]; then
+        say "opencode: OK — ${picked}${fallback:+ (fallback: ${fallback})}"
+      else
+        say "opencode: NO USABLE MODEL — none of [$CANDIDATES] is available; set MULTI_OPENCODE_MODEL to one of: $(printf '%s' "$available" | head -5 | tr '\n' ' ')"
+      fi
     fi
   fi
 else

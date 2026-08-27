@@ -17,7 +17,9 @@ echo "opencode/other-free"
 STUB
 printf '#!/usr/bin/env bash\necho "Logged in using ChatGPT"\n' > "$TMP/bin/codex"
 chmod +x "$TMP/bin/"*
-export PATH="$TMP/bin:$PATH" MULTI_HOME="$TMP/h" MARKER="$TMP/calls"
+unset MULTI_OPENCODE_MODEL MULTI_OPENCODE_CANDIDATES MULTI_PROBE_CACHE_MIN
+export PATH="$TMP/bin:$PATH" MULTI_HOME="$TMP/h" MARKER="$TMP/calls" \
+  MULTI_MODELS_CONFIG="$TMP/models"
 : > "$MARKER"
 fail=0
 say(){ if [ "$2" = "$3" ]; then echo "  ok   $1"; else echo "  FAIL $1: got '$2' want '$3'"; fail=1; fi; }
@@ -30,6 +32,19 @@ say "opencode models called once, not twice" "$(grep -c CALLED "$MARKER")" "1"
 : > "$MARKER"
 MULTI_PROBE_CACHE_MIN=0 bash "$TREE/scripts/probe.sh" >/dev/null 2>&1
 say "cache can be turned off" "$(grep -c CALLED "$MARKER")" "1"
+
+echo "== a configured model list overrides auto-detection =="
+printf '%s\n' 'opencode: opencode-go/glm-5.3-flash opencode-go/deepseek-v4-flash' > "$MULTI_MODELS_CONFIG"
+rm -f "$MULTI_HOME/opencode-models.cache"
+: > "$MARKER"
+configured="$(bash "$TREE/scripts/probe.sh" 2>/dev/null | grep '^opencode:')"
+say "configured primary and fallback are used" "$configured" "opencode: OK — opencode-go/glm-5.3-flash (fallback: opencode-go/deepseek-v4-flash) (from config)"
+say "config bypasses model catalogue" "$(grep -c CALLED "$MARKER")" "0"
+
+rm -f "$MULTI_MODELS_CONFIG"
+automatic="$(bash "$TREE/scripts/probe.sh" 2>/dev/null | grep '^opencode:')"
+say "missing config restores auto-detection" "$automatic" "opencode: OK — opencode/deepseek-v4-flash-free (fallback: opencode/other-free)"
+say "auto-detection reads the catalogue" "$(grep -c CALLED "$MARKER")" "1"
 
 echo "== a listing that failed halfway is not cached =="
 rm -f "$MULTI_HOME/opencode-models.cache"
