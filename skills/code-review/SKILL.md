@@ -103,17 +103,39 @@ else while they run.
 RUN="$($SCRIPTS/run-dir.sh --slug <two-to-four words: the project and the job, e.g. skills-fixing-multi>)"
 
 # The tree under review. Usually the session's own repo; set REVIEW_DIR to a
-# path or a different worktree when THAT is the target. Resolve it once and hand
-# it to every backend: cwd resets between these blocks, so without an explicit
-# --repo the reviewers silently read the session checkout and can "agree" on an
-# empty diff.
+# path or a different worktree when THAT is the target. Resolve it once: cwd
+# resets between these blocks, so without an explicit path the reviewers silently
+# read the session checkout and can "agree" on an empty diff.
 REPO="$(git -C "${REVIEW_DIR:-.}" rev-parse --show-toplevel)"
 
+# Isolate. The reviewers run on a COPY of the work tree, never the live one:
+# a Bash sub-agent or an opencode flipped to bash by a hostile repo config can
+# run `git checkout -- .` and wipe uncommitted work, and the copy takes that hit
+# instead. The copy also drops the repo's opencode config, so a hostile
+# .opencode/agent/plan.md cannot re-enable write+bash. It carries the diff as a
+# file (review.diff) so nobody needs git in it — opencode under --agent plan
+# cannot run git at all. Pass the SAME --diff spec you review with; drop it for a
+# whole-code (non-diff) review.
+COPY="$($SCRIPTS/snapshot.sh --repo "$REPO" [--diff <spec>] --dest "$RUN/snapshot")"
+# If the snapshot failed (a typo'd --diff, a permission error), $COPY is empty and
+# every reviewer would fall back to cwd — the live tree. STOP instead: that is the
+# data-loss path this exists to close. Fix the target and re-run, don't review.
+[ -n "$COPY" ] || { echo "snapshot failed — not reviewing the live tree"; exit 1; }
+# Snapshot ONCE. Persist the path so later blocks reuse this copy instead of
+# re-running snapshot — a re-run rm -rf's and rebuilds the dir while the
+# background ask.sh (and the sub-agents) are still reading it.
+echo "$COPY" > "$RUN/copy-path"
+
+# collect-context reads the ORIGINAL, not the copy: it only reads, and it needs
+# the .git the copy does not carry to decide which rule files the change touched.
 $SCRIPTS/collect-context.sh --repo "$REPO" [--diff <spec>] [--paths "<paths>"] > "$RUN/ctx.md"
 
-$SCRIPTS/review-prompt.sh --repo "$REPO" --target "<in words>" [--diff <spec>] [--paths "<paths>"] \
+# Everything that a reviewer executes points at $COPY. With --diff, add
+# --diff-artifact review.diff so the prompt hands them the diff file instead of a
+# git command that would fail in the copy.
+$SCRIPTS/review-prompt.sh --repo "$COPY" --target "<in words>" [--diff <spec> --diff-artifact review.diff] [--paths "<paths>"] \
                           [--focus "<user text>"] --context "$RUN/ctx.md" > "$RUN/review.prompt.md"
-$SCRIPTS/ask.sh --repo "$REPO" --question-file "$RUN/review.prompt.md" --out-prefix "$RUN/review" \
+$SCRIPTS/ask.sh --repo "$COPY" --question-file "$RUN/review.prompt.md" --out-prefix "$RUN/review" \
                 --backend "codex,opencode:<model from probe>" --fallback <from probe> \
                 --effort <low|medium|high|xhigh|max> --timeout "${MULTI_REVIEW_TIMEOUT:-900}"
 ```
@@ -121,17 +143,26 @@ $SCRIPTS/ask.sh --repo "$REPO" --question-file "$RUN/review.prompt.md" --out-pre
 `run-dir.sh` prints this session's own directory, `/tmp/multi/<session>--<slug>`,
 and creates it. Two sessions reviewing at once used to share fixed `/tmp` names
 and overwrite each other's files. Shell variables do not survive between
-commands, so repeat that first line — and the `REPO=` line — in every later
-block that needs them; `--slug` only labels the directory the first time, so a
-different wording later still lands in the same place. Runs older than a week
-are swept.
+commands, so repeat `RUN=` and `REPO=` in every later block that needs them.
+`COPY` is the exception: snapshot it **once** (above), then in later blocks read
+the persisted path back with `COPY="$(cat "$RUN/copy-path")"` — never re-run
+`snapshot.sh`, or you rebuild the copy out from under the reviewers already
+reading it. `--slug` only labels the directory the first time, so a different
+wording later still lands in the same place. Runs older than a week are swept,
+and the snapshot with them.
 
 `--diff` is what makes it a *change* review; leave it off and the reviewers read
-the actual code instead, with old code fully in scope. `--paths` narrows hard.
+the actual code instead, with old code fully in scope. `--paths` narrows hard for
+`collect-context` and the sub-agents' scope, but note the limit in a diff review:
+`snapshot.sh` puts the *whole* diff in `review.diff`, so there `--paths` reaches
+the reviewers as a focus instruction, not a hard cut — do not rely on it to
+withhold a path from them.
 `--target` is always required — it is the human sentence, and it is what keeps
-the reviewers pointed at the same thing. `--repo` is the *directory* they work
-in; it defaults to cwd, so you only think about it when the target is a
-different worktree, but passing `$REPO` always is free and removes the guesswork.
+the reviewers pointed at the same thing. `--repo` is the *directory* a backend
+works in: `$REPO` (the original) for `collect-context`, which only reads and
+needs the real `.git`; `$COPY` (the isolated snapshot) for `review-prompt` and
+`ask.sh`, and for the sub-agents. Snapshot the same `--diff` you review with, so
+the copy's `review.diff` matches the change.
 
 The probe at the top of this file ran with no `--repo`, so its `repo:`, branch,
 dirty-file and ahead-of-main numbers describe the **session checkout**. When
@@ -179,10 +210,17 @@ that pass — the rest of the mode is unchanged.
 
 Spawn them **in parallel, in one message**. Give each the target, the paths or
 range, the contents of `$RUN/ctx.md`, and the user's own words if there
-were any. Give them `$REPO` too and say it plainly — *run git and read files in
-`$REPO`, not your current directory* — because a sub-agent starts in the session
-checkout, and if the target is another worktree it would otherwise review the
-wrong tree, exactly as the CLI backends would without `--repo`.
+were any. Point them at `$COPY`, not `$REPO` — *read the files in `$COPY`* — and, **only
+when you snapshotted a diff**, add *the change is in `$COPY/review.diff` (statuses
+in `review.manifest`)*. In a whole-code review (no `--diff`) there is no
+`review.diff` — do not point them at one that isn't there. These reviewer agents
+have **no Bash tool** (they read with Read/Grep/Glob), so — unlike the CLI
+backends, which the copy sandboxes by running *in* it — they cannot run a
+destructive command against the live tree at all. That is the enforced half of
+the #14 fix: a sub-agent's shell would otherwise start in the session checkout,
+where a stray `git checkout -- .` wipes uncommitted work no matter what the
+prompt says. The copy still gives them the code and the diff to read; it just is
+not what protects the live tree from them — removing the shell is.
 
 **Model**: the argument if given, else `MULTI_REVIEWER_MODEL` from the probe, else
 the agent files' default (Sonnet). **No mode raises it on its own** — `ultra`

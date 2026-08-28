@@ -59,19 +59,43 @@ while you do the real work below.
 ```bash
 RUN="$($SCRIPTS/run-dir.sh --slug <two-to-four words: the project and the job, e.g. skills-fixing-multi>)"
 
+# The reviewers run on a COPY of the work tree, never the live one. These are
+# the same "read-only" reviewers that can wipe uncommitted work — a Bash
+# sub-agent, or an opencode flipped to bash by a hostile repo config — so hand
+# them a copy and let it take any destructive hit. The copy carries the change as
+# review.diff (no git in it) and drops the repo's opencode config. Pass the same
+# --diff you are checking; drop it if there is no diff to point at.
+REPO="$(git -C "${REVIEW_DIR:-.}" rev-parse --show-toplevel)"
+COPY="$($SCRIPTS/snapshot.sh --repo "$REPO" [--diff <spec>] --dest "$RUN/snapshot")"
+# If the snapshot failed (empty $COPY), STOP — do not fall through to reviewing
+# the live tree, which is the exact data-loss path this exists to close.
+[ -n "$COPY" ] || { echo "snapshot failed — not reviewing the live tree"; exit 1; }
+# Snapshot ONCE; later blocks read this path back, they do not re-snapshot.
+echo "$COPY" > "$RUN/copy-path"
+
+# Quoted heredoc on purpose: the promise below is pasted from a plan/issue/spec,
+# and an unquoted heredoc would EXECUTE any $(...) or backticks in it while
+# writing the file. The change-location line belongs here ONLY if you snapshotted
+# with --diff; with no --diff there is no review.diff, so describe what changed in
+# words instead.
 cat > "$RUN/done-prompt.md" <<'EOF'
 <the promise, as a concrete list of what was supposed to end up working>
 
-<what actually changed: paths, or the diff range and how to see it>
+<with --diff: "The change under review is in review.diff at the root of the code
+you are in (statuses in review.manifest); new files are in the tree. No .git
+here — do not run git." Without --diff: what changed, in words.>
 EOF
 
-$SCRIPTS/ask.sh --question-file "$RUN/done-prompt.md" \
+$SCRIPTS/ask.sh --repo "$COPY" --question-file "$RUN/done-prompt.md" \
                 --out-prefix "$RUN/done" \
                 --model <from probe> [--fallback <from probe>] --effort high
 ```
 
 `$RUN` is this session's own directory. Shell variables do not survive between
-commands, so repeat that first line in every later block that needs it.
+commands, so repeat `RUN=` and `REPO=` in later blocks. `COPY` is snapshotted
+**once** here; later blocks (the execution sub-agent, `ask.sh`) read it back with
+`COPY="$(cat "$RUN/copy-path")"` — never re-run `snapshot.sh`, or you rebuild the
+copy while a reviewer is reading it.
 
 Append this to the prompt file, verbatim in spirit — it is what makes them
 answer the right question:
@@ -84,14 +108,21 @@ answer the right question:
 > there, say so plainly.
 
 Spawn the `execution` sub-agent at the same time, in the same message. Give it
-the promise, the changed paths, and what you know about the task — it is the
-only reviewer with access to intent, and without that context it will correctly
-refuse to guess.
+the promise, and what you know about the task — it is the only reviewer with
+access to intent, and without that context it will correctly refuse to guess.
+Point it at `$COPY`: *read the code and `$COPY/review.diff` there.* It has no Bash
+tool (it reads with Read/Grep/Glob), so it cannot run a command against the live
+tree — that is what keeps a stray `git checkout` off the user's uncommitted work,
+not the prompt. The verification that DOES run commands is yours, below, on the
+real tree.
 
 ## Then run the checks yourself
 
-This is the part that makes the skill worth anything. **For every claim that
-something works, execute the thing that proves it and read the output.**
+The reviewers judge on a copy; **you** verify on the real tree. This step is
+yours, in the live checkout — running the actual tests, CLI and migrations is the
+point, and it is safe because it is you doing it deliberately, not a reviewer let
+loose. **For every claim that something works, execute the thing that proves it
+and read the output.**
 
 - Tests exist → run them. Not the whole suite if it is slow: the ones covering
   what changed.

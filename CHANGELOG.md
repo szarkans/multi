@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.7.0 — 2026-08-28
+
+- Reviewers run on an isolated copy of your work tree, and the Claude reviewer sub-agents lost their shell entirely — a hostile-config opencode or a stray `git checkout -- .` can no longer wipe uncommitted edits, it hits the copy, not your work (#14, real fix; 2.5.0 was prompt-only).
+- The copy strips the reviewed repo's `.opencode/`/`opencode.json`, so a hostile plan config can't re-enable opencode's write+bash (#12).
+- Secrets stay home: an uncommitted `.env`, key, or `.tfstate` (tracked or not) is withheld from the copy and the diff, so it never reaches the cloud reviewers.
+- OpenCode reviews the code again: the diff travels as a `review.diff` file it can read under `--agent plan`, instead of the "I'll review…" stub — until now only Codex actually reviewed.
+- `.git`, ignored trees and files over 2 MiB (`MULTI_SNAPSHOT_MAX_FILE_BYTES`) stay out of the copy, so a large repo copies source, not gigabytes.
+- Boundary: the copy stops cwd-relative damage (the real #14); it is not an OS sandbox — a reviewer reaching the original by absolute path is out of scope.
+
 ## 2.6.0 — 2026-08-28
 
 - OpenCode fallback is now a chain through every free model, not one spare, and

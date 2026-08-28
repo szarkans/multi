@@ -180,9 +180,15 @@ run_codex_one() {
   # other backend's answer died with it.
   # codex has no --dir, so run it inside the target. -o/-log paths are absolute
   # (the run dir), so the cd does not disturb where the capture lands.
+  # --skip-git-repo-check: a review target is now an isolated snapshot copy
+  # (scripts/snapshot.sh) with no .git, and codex otherwise refuses to start
+  # outside a git repo ("Not inside a trusted directory"). It reads the files and
+  # the copy's review.diff; it needs no git history. Harmless when the target IS
+  # a repo (/ask, /adhd), so it is unconditional.
   ( cd "$REPO_DIR" && multi_timeout "$timeout" codex exec \
     ${model:+-m "$model"} \
     -s read-only \
+    --skip-git-repo-check \
     -c model_reasoning_effort="$EFFORT" \
     -o "$out" \
     "$QUESTION" >/dev/null 2>"${out}.log" )

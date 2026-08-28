@@ -8,7 +8,7 @@ SELF_DIR="$(cd -- "$(dirname -- "$0")" && pwd)"
 # shellcheck source=providers.sh
 . "$SELF_DIR/providers.sh"   # multi_check_paths, multi_untracked_note
 
-TARGET=""; DIFF=""; CONTEXT=""; PATHS=""; FOCUS_TEXT=""; ADVERSARIAL=0; REPO=""
+TARGET=""; DIFF=""; CONTEXT=""; PATHS=""; FOCUS_TEXT=""; ADVERSARIAL=0; REPO=""; DIFF_ARTIFACT=""
 need() { [ "$1" -ge 2 ] || { echo "missing value for $2" >&2; exit 2; }; }
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -17,6 +17,12 @@ while [ $# -gt 0 ]; do
     --context) need $# "$1"; CONTEXT="$2"; shift 2 ;;
     --paths) need $# "$1"; PATHS="$2"; shift 2 ;;
     --focus) need $# "$1"; FOCUS_TEXT="$2"; shift 2 ;;
+    # The reviewers run inside an isolated copy (scripts/snapshot.sh) that has no
+    # .git, so "run git diff yourself" is a dead end there — and opencode under
+    # --agent plan cannot run git at all. When set, the change is handed over as
+    # this file at the root of the code under review, and the prompt points at it
+    # instead of a git command. Empty keeps the legacy run-git-yourself behaviour.
+    --diff-artifact) need $# "$1"; DIFF_ARTIFACT="$2"; shift 2 ;;
     # The review target's directory. Every backend and sub-agent starts in the
     # session checkout, not necessarily the target worktree, so the git command
     # below must say where to run — otherwise a reviewer reads the wrong tree.
@@ -41,10 +47,21 @@ CD=""
 [ -n "$REPO" ] && CD="cd $(printf '%q' "$REPO") && "
 
 if [ -n "$DIFF" ]; then
-  case "$DIFF" in
-    uncommitted) HOW="Run this to see it: ${CD}git diff${PS} && git diff --cached${PS}   (do NOT list the working tree yourself -- new files reach you only through the line below)$(multi_untracked_note "$PATHS")" ;;
-    *)           HOW="Run this to see it: ${CD}git diff ${DIFF}${PS}   (if that is a single commit, use ${CD}git show ${DIFF}${PS} instead)" ;;
-  esac
+  if [ -n "$DIFF_ARTIFACT" ]; then
+    # Isolated-copy mode: the change is a file at the root of the code you are
+    # reviewing. No git — the copy has none. New files are present in the tree.
+    # --paths cannot narrow the artifact (it holds the whole diff), so carry the
+    # restriction as an instruction instead, or the "narrows hard" promise is
+    # silently lost in this mode.
+    PATH_NOTE=""
+    [ -n "$PATHS" ] && PATH_NOTE=" Restrict your review to these paths and ignore findings outside them: $PATHS."
+    HOW="The change under review is in \`${DIFF_ARTIFACT}\` at the root of the code you are reviewing (a unified diff). Each changed file's status (added/modified/deleted/renamed) is in \`review.manifest\` beside it. New files are also present in the tree — read them there. Do NOT try to run git; there is no repository here.${PATH_NOTE}"
+  else
+    case "$DIFF" in
+      uncommitted) HOW="Run this to see it: ${CD}git diff${PS} && git diff --cached${PS}   (do NOT list the working tree yourself -- new files reach you only through the line below)$(multi_untracked_note "$PATHS")" ;;
+      *)           HOW="Run this to see it: ${CD}git diff ${DIFF}${PS}   (if that is a single commit, use ${CD}git show ${DIFF}${PS} instead)" ;;
+    esac
+  fi
   TARGET_LINE="Review this change: ${TARGET}
 ${HOW}"
   SCOPE_RULE="Report what the change introduces. A problem on a line the change did not touch is out of scope here."
