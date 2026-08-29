@@ -45,31 +45,12 @@
 # Codex is sandboxed at the OS level (-s read-only): it may run shell commands,
 # but writes and network are blocked. Solid.
 #
-# OpenCode has no such sandbox. It runs under the built-in `plan` agent, which
-# withholds write/edit/bash -- but only as long as the repo does not override it.
-# --pure disables external plugins, NOT repo configuration: opencode loads the
-# reviewed repo's own opencode.json / .opencode/agent/plan.md and merges them
-# into the plan agent. A hostile repo can ship a plan.md that flips bash/write
-# back to allow, and then the reviewer runs shell in the live tree (verified
-# 2026-08-24, opencode 1.18.18: bash was auto-rejected in a clean repo and ran to
-# exit 0 in one carrying a crafted .opencode/agent/plan.md). So against an
-# UNTRUSTED repo, --agent plan is NOT a sandbox -- it raises the bar, nothing
-# more. The real fix is isolation: run against a scratch copy with the repo's
-# opencode config stripped -- tracked as a follow-up (issue #12, opencode
-# reviewer isolation), not done here.
-#
-# We still pass --agent plan and NOT --auto, because --auto is strictly worse: it
-# auto-approves every tool call not explicitly denied -- full read+write+exec
-# with no crafted config needed at all. plan at least forces an attacker to ship
-# config, and on the common non-hostile repo it genuinely stops an over-eager
-# reviewer from touching the tree. Without --auto, an unapproved permission in
-# non-interactive mode is auto-rejected, not left hanging.
-#
-# Capability asymmetry to remember when findings diverge: Codex can run read-only
-# shell, OpenCode (absent a repo override) cannot run shell at all. Anything that
-# needs to actually execute is the caller's job. OpenCode spends roughly a minute
-# on cold start, so the two backends are always launched together, not in
-# sequence.
+# OpenCode has no OS-level sandbox. Give it a plugin-owned, deny-by-default agent
+# instead: project config is disabled, write/edit/apply_patch stay denied, and
+# only repository reads plus a small read-only shell allowlist run without a
+# prompt. --pure still matters because it disables external plugins; it does not
+# disable configuration. Never add --auto here: it approves every permission
+# which was not explicitly denied.
 set -uo pipefail
 
 # Keys, the child-process isolation and the non-CLI backends all live here.
@@ -228,7 +209,10 @@ run_opencode_one() {
     used="$candidate"
     attempted="${attempted}${attempted:+,}${used}"
     attempted_count=$((attempted_count+1))
-    multi_timeout "$MULTI_BACKEND_TIMEOUT" opencode run --pure --agent plan --format json \
+    OPENCODE_DISABLE_PROJECT_CONFIG=1 \
+      OPENCODE_CONFIG_CONTENT="$(cat "$SELF_DIR/opencode-readonly.json")" \
+      GIT_OPTIONAL_LOCKS=0 \
+      multi_timeout "$MULTI_BACKEND_TIMEOUT" opencode run --pure --agent multi-readonly --format json \
       -m "$used" --dir "$REPO_DIR" "$QUESTION" > "$raw" 2>&1; rc=$?
     render_opencode "$raw" "$out" "$used"; rrc=$?
     last_error=""

@@ -131,21 +131,18 @@ multi_check_paths() {
 #
 # Read this first, because the comment used to promise more than the code can
 # do: this is prompt hygiene, NOT isolation. `codex exec -s read-only` is
-# OS-sandboxed and cannot write. `opencode run --pure --agent plan` withholds
-# write/edit/bash -- but only on a repo that does not fight back: --pure skips
-# plugins, not the repo's own opencode.json / .opencode/agent/plan.md, which
-# opencode loads and lets OVERRIDE the plan agent back to write+bash (verified
-# 2026-08-24; tracked as the opencode-reviewer-isolation follow-up, issue #12).
-# So against a
-# hostile repo opencode is not even read-only, and even codex, read-only, can
-# still OPEN and READ a secret it decides to look at. What this code prevents is
-# narrower and separate: the orchestrator HANDING a secret over -- the prompt
-# used to say "run git status --untracked-files=all and read what you find",
-# which is an invitation to open exactly the files that were never meant to
-# travel. Real isolation -- a reviewer that cannot read a secret or honour a
-# hostile config because it never sees the real tree -- means copying the allowed
-# files into a scratch tree and pointing --dir at that instead, and that is the
-# different piece of work the follow-up covers.
+# OS-sandboxed and cannot write. `opencode run` withholds write via the plugin's
+# deny-by-default `multi-readonly` agent, and OPENCODE_DISABLE_PROJECT_CONFIG=1
+# stops the reviewed repo's own opencode.json / .opencode/agent/plan.md from
+# overriding it back to write+bash (the #12 hole, now closed); --pure also skips
+# external plugins. Even so, a read-only reviewer can still OPEN and READ a secret
+# it decides to look at. What this code prevents is narrower and separate: the
+# orchestrator HANDING a secret over -- the prompt used to say "run git status
+# --untracked-files=all and read what you find", which is an invitation to open
+# exactly the files that were never meant to travel. Real isolation -- a reviewer
+# that never sees the real tree -- is the snapshot copy (scripts/snapshot.sh,
+# #14/#12): the allowed files are copied into a scratch tree with the repo's
+# opencode config stripped, and --dir points there instead of the live checkout.
 #
 # Untracked files belong in a review: a brand-new file IS the change, and a
 # reviewer that never hears about it reports on half the work.

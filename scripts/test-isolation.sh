@@ -182,8 +182,8 @@ say "no reviewer agent grants Bash" "$noshell" "y"
 
 echo "== review-prompt hands the diff over as a file, never a git command =="
 # With the reviewers now running inside a copy that has no .git, telling them to
-# "run git diff" is a dead end (and opencode under --agent plan cannot run git at
-# all). --diff-artifact switches the prompt to point at review.diff instead.
+# "run git diff" is a dead end. --diff-artifact switches the prompt to point at
+# review.diff instead.
 P="$(bash "$TREE/scripts/review-prompt.sh" --target t --diff uncommitted --diff-artifact review.diff 2>/dev/null)"
 say "prompt names review.diff" \
   "$(printf '%s' "$P" | grep -c 'review.diff' | awk '{print ($1>0)?"y":"n"}')" "y"

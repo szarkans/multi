@@ -18,10 +18,10 @@ while [ $# -gt 0 ]; do
     --paths) need $# "$1"; PATHS="$2"; shift 2 ;;
     --focus) need $# "$1"; FOCUS_TEXT="$2"; shift 2 ;;
     # The reviewers run inside an isolated copy (scripts/snapshot.sh) that has no
-    # .git, so "run git diff yourself" is a dead end there — and opencode under
-    # --agent plan cannot run git at all. When set, the change is handed over as
-    # this file at the root of the code under review, and the prompt points at it
-    # instead of a git command. Empty keeps the legacy run-git-yourself behaviour.
+    # .git, so "run git diff yourself" is a dead end there. When set, the change
+    # is handed over as this file at the root of the code under review, and the
+    # prompt points at it instead of a git command. Empty keeps the legacy
+    # run-git-yourself behaviour.
     --diff-artifact) need $# "$1"; DIFF_ARTIFACT="$2"; shift 2 ;;
     # The review target's directory. Every backend and sub-agent starts in the
     # session checkout, not necessarily the target worktree, so the git command

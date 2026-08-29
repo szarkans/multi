@@ -24,8 +24,7 @@
 # is out of scope. This raises the floor for #14/#12, it does not seal them.
 #
 # The change is written INTO the copy as two files the reviewers read directly,
-# so nobody needs git in the copy (opencode under `--agent plan` cannot run it at
-# all, and there is no `.git` there anyway):
+# so nobody needs git in the copy (there is no `.git` there anyway):
 #   review.diff      the unified diff under review
 #   review.manifest  one `STATUS<TAB>path` line per changed file (A/M/D/R…)
 set -uo pipefail

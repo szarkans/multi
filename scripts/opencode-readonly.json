@@ -1,0 +1,54 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "agent": {
+    "multi-readonly": {
+      "description": "Read-only repository reviewer for the multi plugin",
+      "mode": "primary",
+      "permission": {
+        "*": "deny",
+        "read": {
+          "*": "allow",
+          "*.env": "deny",
+          "*.env.*": "deny",
+          "*.env.example": "allow"
+        },
+        "grep": "allow",
+        "glob": "allow",
+        "list": "allow",
+        "bash": {
+          "*": "deny",
+          "pwd": "allow",
+          "ls": "allow",
+          "ls *": "allow",
+          "grep *": "allow",
+          "head *": "allow",
+          "tail *": "allow",
+          "wc *": "allow",
+          "stat *": "allow",
+          "git status": "allow",
+          "git status *": "allow",
+          "git diff": "allow",
+          "git diff *": "allow",
+          "git log": "allow",
+          "git log *": "allow",
+          "git show": "allow",
+          "git show *": "allow",
+          "git grep": "allow",
+          "git grep *": "allow",
+          "git ls-files": "allow",
+          "git ls-files *": "allow",
+          "git ls-tree": "allow",
+          "git ls-tree *": "allow",
+          "git rev-parse": "allow",
+          "git rev-parse *": "allow",
+          "git blame": "allow",
+          "git blame *": "allow",
+          "*--output*": "deny",
+          "*>*": "deny",
+          "*<*": "deny"
+        },
+        "edit": "deny"
+      }
+    }
+  }
+}

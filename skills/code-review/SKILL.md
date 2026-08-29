@@ -113,8 +113,8 @@ REPO="$(git -C "${REVIEW_DIR:-.}" rev-parse --show-toplevel)"
 # run `git checkout -- .` and wipe uncommitted work, and the copy takes that hit
 # instead. The copy also drops the repo's opencode config, so a hostile
 # .opencode/agent/plan.md cannot re-enable write+bash. It carries the diff as a
-# file (review.diff) so nobody needs git in it — opencode under --agent plan
-# cannot run git at all. Pass the SAME --diff spec you review with; drop it for a
+# file (review.diff) so nobody needs git in it — the copy has no .git. Pass the
+# SAME --diff spec you review with; drop it for a
 # whole-code (non-diff) review.
 COPY="$($SCRIPTS/snapshot.sh --repo "$REPO" [--diff <spec>] --dest "$RUN/snapshot")"
 # If the snapshot failed (a typo'd --diff, a permission error), $COPY is empty and
