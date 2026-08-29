@@ -33,13 +33,13 @@ observations".
 
 From the probe lines above — they are already there, do not re-run it.
 
-**No second reviewer family → stop.** This is multi-model review; the review
-pipeline can run two non-Claude families, Codex and OpenCode — without at
-least one of them there is nothing here that a single-model review does not
-already do. OpenRouter and Gemini are real second families, but this pipeline
-cannot run them as reviewers yet: they serve `/multi:ask`, not this skill.
-Say which is missing and point at `/multi:setup`. Do not quietly deliver a
-one-model review wearing a three-model label.
+**No second reviewer family → stop.** This is multi-model review; without at
+least one non-Claude reviewer there is nothing here that a single-model review
+does not already do. The pipeline runs four as reviewers: Codex, OpenCode,
+OpenRouter (Claude Code driving a non-Claude model) and Gemini — any one of
+them satisfies the gate, so include whichever the probe shows configured. If
+none is, say so and point at `/multi:setup`. Do not quietly deliver a one-model
+review wearing a multi-model label.
 
 Anything else missing is a note, not a stop: no OpenCode, no ponytail, not a
 git repo (fine — then the target is files, not a diff). Name what was missing
@@ -136,7 +136,7 @@ $SCRIPTS/collect-context.sh --repo "$REPO" [--diff <spec>] [--paths "<paths>"] >
 $SCRIPTS/review-prompt.sh --repo "$COPY" --target "<in words>" [--diff <spec> --diff-artifact review.diff] [--paths "<paths>"] \
                           [--focus "<user text>"] --context "$RUN/ctx.md" > "$RUN/review.prompt.md"
 $SCRIPTS/ask.sh --repo "$COPY" --question-file "$RUN/review.prompt.md" --out-prefix "$RUN/review" \
-                --backend "codex,opencode:<model from probe>" --fallback <from probe> \
+                --backend "codex,opencode:<model from probe>,openrouter" --fallback <from probe> \
                 --effort <low|medium|high|xhigh|max> --timeout "${MULTI_REVIEW_TIMEOUT:-900}"
 ```
 

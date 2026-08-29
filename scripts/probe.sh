@@ -154,7 +154,7 @@ fi
 # itself. Reported as configured / not configured only — actually checking the
 # key costs a network round trip, which scripts/setup.sh status does and this does not.
 if multi_have_openrouter; then
-  say "openrouter: OK — ${MULTI_OPENROUTER_MODEL} first, then falls back through busy free pools (MULTI_OPENROUTER_MODELS to change, or ask.sh --backend openrouter:model for one run)"
+  say "openrouter: configured (key not checked here — /multi:setup status verifies it) — ${MULTI_OPENROUTER_MODEL} first, then falls back through busy free pools (MULTI_OPENROUTER_MODELS to change, or ask.sh --backend openrouter:model for one run)"
 elif [ -n "${OPENROUTER_API_KEY:-}" ]; then
   say "openrouter: KEY SET BUT claude CLI MISSING"
 else
@@ -166,7 +166,7 @@ fi
 # endpoint, and the CLI spends the key's free daily quota rather than paying a
 # router for the same model.
 if multi_have_gemini; then
-  say "gemini: OK${MULTI_GEMINI_MODEL:+ — $MULTI_GEMINI_MODEL}"
+  say "gemini: configured (key not checked here — /multi:setup status verifies it)${MULTI_GEMINI_MODEL:+ — $MULTI_GEMINI_MODEL}"
 elif [ -n "${GEMINI_API_KEY:-}" ]; then
   say "gemini: KEY SET BUT gemini CLI MISSING (npm i -g @google/gemini-cli)"
 elif command -v gemini >/dev/null 2>&1; then

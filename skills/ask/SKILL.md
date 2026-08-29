@@ -34,9 +34,14 @@ RUN="$($SCRIPTS/run-dir.sh --slug <two-to-four words: the project and the job, e
 
 $SCRIPTS/ask.sh --question "<the user's question, verbatim>" \
                 --out-prefix "$RUN/ask" \
-                --backend "codex,opencode:<model from probe>" \
+                --backend "codex,opencode:<model from probe>,openrouter" \
                 [--fallback <fallback model from probe>] [--effort <low|medium|high|xhigh|max>]
 ```
+
+`--backend` lists who answers: `codex` and `opencode:<model from probe>`, plus
+`openrouter` (and `,gemini`) for whichever the probe shows configured — drop any
+it shows missing. Bare `openrouter`/`gemini` use the model from your config, so
+nothing is pinned here.
 
 Pass the question **as the user asked it**. Do not rewrite it into a better
 prompt: the point is what different models do with the same words. Add context
