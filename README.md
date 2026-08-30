@@ -19,8 +19,8 @@ currently supports:
 
 <h2 align="center">what's the point?</h2>
 
-one model planning, doing and reviewing work is not good. by using `multi`ple models you can get something truly valuable - differing opinions, because they’re what lead to best results.  
-three LLMs can find 10 bugs but only one will find 11th - and that's why you **need** to use `multi`. dont believe this words tho - check [evals](#evals) urself! 
+one model planning, doing and reviewing work is not good. by using `multi`ple models you can get something truly valuable - differing opinions.
+three LLMs can find 5 bugs but only one will find 6th - and that's why you **need** to use `multi`. dont take my word fot it tho - check [evals](#evals) urself! 
 
 best combo i found to myself is `Codex 5.6-sol` + `OpenCode Go` with `Qwen3.8-flash` and OpenRouter key with `GLM5.3-flash`, but you do you - you can use free models from OpenCode, OpenRouter and basically anything that grants you ai api
 
