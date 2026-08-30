@@ -6,7 +6,7 @@
 
 ***
 
-<h3 align="center">what's this about?</h3>
+<h2 align="center">what's this about?</h3>
 
 `multi` runs one task through several AIs at once — code review, "is it actually done", [adhd](https://github.com/UditAkhourii/adhd) planning, or just a question — and shows you where the models converge and where they split. you judge, not them.
 
@@ -17,7 +17,12 @@ currently supports:
 - gemini
 - headless claude code with any API key you provide (e.g. openrouter)
 
-it **can** use all of those models but it doesn't mean it's gonna be **better** — they're all still just LLMs. just use whatever you have or you want (or everything at once idc yolo)
+<h2 align="center">what's the point?</h2>
+
+one model planning, doing and reviewing work is not good. by using `multi`ple models you can get something truly valuable - differing opinions, because they’re what lead to best results.  
+three LLMs can find 10 bugs but only one will find 11th - and that's why you **need** to use `multi`. dont believe this words tho - check [evals](#evals) urself! 
+
+best combo i found to myself is `Codex 5.6-sol` + `OpenCode Go` with `Qwen3.8-flash` and OpenRouter key with `GLM5.3-flash`, but you do you - you can use free models from OpenCode, OpenRouter and basically anything that grants you ai api
 
 <h2 align="center">commands</h2>
 
@@ -52,17 +57,3 @@ I'm really tired of b2b-ai-saas-skills-loop-code readme's.
 <h2 align="center">evals</h3>
 
 TBA.
-
-<h2 align="center">license</h3>
-
-```
-                          __/\\\\____________/\\\\__/\\\\\\\\\\\__/\\\\\\\\\\\\\\\_______        
-                           _\/\\\\\\________/\\\\\\_\/////\\\///__\///////\\\/////________       
-                            _\/\\\//\\\____/\\\//\\\_____\/\\\___________\/\\\_____________      
-                             _\/\\\\///\\\/\\\/_\/\\\_____\/\\\___________\/\\\_____________     
-                              _\/\\\__\///\\\/___\/\\\_____\/\\\___________\/\\\_____________    
-                               _\/\\\____\///_____\/\\\_____\/\\\___________\/\\\_____________   
-                                _\/\\\_____________\/\\\_____\/\\\___________\/\\\_____________  
-                                 _\/\\\_____________\/\\\__/\\\\\\\\\\\_______\/\\\________/\\\_ 
-                                  _\///______________\///__\///////////________\///________\///__
-```
