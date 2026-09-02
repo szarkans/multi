@@ -25,7 +25,7 @@
 # The old per-provider flags (--model, --fallback, --codex-model, --or-model,
 # --gemini-model) still work: they set the default model for a bare backend
 # name, same as before name:model existed. --fallback accepts a comma-separated
-# model list and tries it in order.
+# model list for opencode and tries it in order; other backends ignore it.
 #
 # openrouter runs Claude Code itself against OpenRouter's Anthropic endpoint —
 # same agent loop, different weights. gemini runs the Google CLI, because
@@ -195,9 +195,13 @@ run_opencode_one() {
   # model's answer with every file it opened, and the reader downstream cannot
   # tell those apart. The JSON events can. opencode-report.py turns them into
   # what it did, then what it said.
-  local used="$model" rc=0 rrc=0 answered=0 attempted_count=0
+  local used="$model" rc=0 rrc=0 answered=0 attempted_count=0 silent_count=0 timeout_count=0
   local candidate chain="$model" fallback_models="" attempted="" retry_note="" last_error="" failure_error=""
   local primary_failure="" partial_model="" partial_size=0 best_partial_size=0
+  local candidate_pid elapsed stalled effective_stall=0
+  if [ "$MULTI_OPENCODE_STALL" -lt "$MULTI_BACKEND_TIMEOUT" ]; then
+    effective_stall="$MULTI_OPENCODE_STALL"
+  fi
   if [ -n "$fallback" ]; then
     fallback_models="$(printf '%s' "$fallback" | tr ',' ' ')"
     [ -z "$fallback_models" ] || chain="$chain $fallback_models"
@@ -212,21 +216,40 @@ run_opencode_one() {
     used="$candidate"
     attempted="${attempted}${attempted:+,}${used}"
     attempted_count=$((attempted_count+1))
+    stalled=0
+    elapsed=0
+    : > "$raw"
     OPENCODE_DISABLE_PROJECT_CONFIG=1 \
       OPENCODE_CONFIG_CONTENT="$(cat "$SELF_DIR/opencode-readonly.json")" \
       GIT_OPTIONAL_LOCKS=0 \
       multi_timeout "$MULTI_BACKEND_TIMEOUT" opencode run --pure --agent multi-readonly --format json \
-      -m "$used" --dir "$REPO_DIR" "$QUESTION" > "$raw" 2>&1; rc=$?
+      -m "$used" --dir "$REPO_DIR" "$QUESTION" > "$raw" 2>&1 &
+    candidate_pid=$!
+    while kill -0 "$candidate_pid" 2>/dev/null; do
+      grep -q '^{' "$raw" 2>/dev/null && break
+      if [ "$effective_stall" -gt 0 ] && [ "$elapsed" -ge "$effective_stall" ]; then
+        stalled=1
+        silent_count=$((silent_count+1))
+        multi_kill_tree "$candidate_pid"
+        break
+      fi
+      sleep 1
+      elapsed=$((elapsed+1))
+    done
+    wait "$candidate_pid" 2>/dev/null; rc=$?
+    [ "$stalled" -eq 1 ] || [ "$rc" -ne 124 ] || timeout_count=$((timeout_count+1))
     render_opencode "$raw" "$out" "$used"; rrc=$?
     last_error=""
     [ ! -s "${out}.error" ] || last_error="$(sed -n '1p' "${out}.error")"
     [ -z "$last_error" ] || failure_error="$last_error"
-    if [ "$rc" -ne 124 ] && [ "$rrc" -ne 3 ]; then
+    if [ "$stalled" -eq 0 ] && [ "$rc" -ne 124 ] && [ "$rrc" -ne 3 ]; then
       answered=1
       break
     fi
     if [ "$attempted_count" -eq 1 ]; then
-      if [ "$rc" -eq 124 ]; then
+      if [ "$stalled" -eq 1 ]; then
+        primary_failure="emitted nothing for ${effective_stall}s"
+      elif [ "$rc" -eq 124 ]; then
         primary_failure="timed out after ${MULTI_BACKEND_TIMEOUT}s"
       else
         primary_failure="produced no answer"
@@ -243,7 +266,9 @@ run_opencode_one() {
       fi
     fi
     [ -e "${raw}.first" ] || cp "$raw" "${raw}.first" 2>/dev/null
-    if [ "$rc" -eq 124 ]; then
+    if [ "$stalled" -eq 1 ]; then
+      retry_note="[multi] $used emitted nothing for ${effective_stall}s — presumed out of quota or never started"
+    elif [ "$rc" -eq 124 ]; then
       retry_note="[multi] $used timed out after ${MULTI_BACKEND_TIMEOUT}s"
     else
       retry_note="[multi] $used produced no answer (exit $rc)"
@@ -261,7 +286,19 @@ run_opencode_one() {
   elif [ "$answered" -eq 0 ] && [ "$attempted_count" -gt 1 ]; then
     local calls_note=""
     [ ! -e "${out}.calls" ] || calls_note="; what it did is in ${out}.calls"
-    multi_fail_backend "$out" "opencode: FALLBACK CHAIN EXHAUSTED — tried $attempted; every model ended in TIMEOUT or NO ANSWER (last exit=$rc${failure_error:+; one model reported: $failure_error})${calls_note}" "$raw"
+    if [ "$silent_count" -eq "$attempted_count" ]; then
+      multi_fail_backend "$out" "opencode: FALLBACK CHAIN EXHAUSTED — tried $attempted; every model was SILENT/stalled after ${effective_stall}s with no events${calls_note}" "$raw"
+    elif [ "$silent_count" -gt 0 ]; then
+      if [ "$timeout_count" -gt 0 ]; then
+        multi_fail_backend "$out" "opencode: FALLBACK CHAIN EXHAUSTED — tried $attempted; every model ended in TIMEOUT, NO ANSWER, or SILENT/stalled ($silent_count wrote no events for ${effective_stall}s; last exit=$rc${failure_error:+; one model reported: $failure_error})${calls_note}" "$raw"
+      else
+        multi_fail_backend "$out" "opencode: FALLBACK CHAIN EXHAUSTED — tried $attempted; every model ended in NO ANSWER or SILENT/stalled ($silent_count wrote no events for ${effective_stall}s; last exit=$rc${failure_error:+; one model reported: $failure_error})${calls_note}" "$raw"
+      fi
+    else
+      multi_fail_backend "$out" "opencode: FALLBACK CHAIN EXHAUSTED — tried $attempted; every model ended in TIMEOUT or NO ANSWER (last exit=$rc${failure_error:+; one model reported: $failure_error})${calls_note}" "$raw"
+    fi
+  elif [ "$stalled" -eq 1 ]; then
+    multi_fail_backend "$out" "opencode: SILENT — model=$used wrote no events for ${effective_stall}s (out of quota, or the CLI never started)" "$raw"
   elif [ "$rc" -eq 124 ]; then
     if [ "$rrc" = 0 ] && [ -s "$out" ]; then
       { echo "opencode: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s — model=$used (partial; run was cut off)"
@@ -276,6 +313,8 @@ run_opencode_one() {
     else
       multi_fail_backend "$out" "opencode: NO ANSWER — model=$used exit=$rc — it ran but said nothing; what it did is in ${out}.calls" "$raw"
     fi
+  elif [ "$rrc" = 2 ] && [ "$rc" -ne 0 ]; then
+    multi_fail_backend "$out" "opencode: NO OUTPUT — model=$used exit=$rc" "$raw"
   elif [ "$rrc" = 2 ] || [ "$rrc" = 4 ]; then
     local why="an opencode without --format json"; [ "$rrc" = 4 ] && why="no python3 on this machine"
     # Not a dead backend: the model answered, the answer is just unstructured
@@ -302,9 +341,33 @@ run_opencode_one() {
 run_openrouter_one() { multi_run_openrouter "$QUESTION" "$1" "$2"; }
 run_gemini_one()     { multi_run_gemini     "$QUESTION" "$1" "$2"; }
 
+multi_ask_terminated() {
+  local signal="$1" pb pid suffix i name f
+  trap - TERM INT HUP
+  for pb in $pids; do
+    pid="${pb%%:*}"
+    suffix="${pb#*:}"
+    f="${PREFIX}-${suffix}.txt"
+    [ -e "${f}.running" ] || continue
+    multi_kill_tree "$pid"
+    wait "$pid" 2>/dev/null
+    name="$suffix"
+    for i in "${!SUFFIXES[@]}"; do
+      [ "${SUFFIXES[$i]}" = "$suffix" ] && { name="${NAMES[$i]}"; break; }
+    done
+    # The KILLED marker intentionally overwrites a streaming backend's partial answer.
+    multi_fail_backend "$f" "${name}: KILLED — ask.sh was terminated before this backend finished"
+    rm -f "${f}.running"
+  done
+  exit $((128+signal))
+}
+
 # All backends start at once. OpenCode spends most of a minute waking up and
 # every model takes 30-90s, so anything sequential here is pure wall clock.
 pids=""
+trap 'multi_ask_terminated 15' TERM
+trap 'multi_ask_terminated 2' INT
+trap 'multi_ask_terminated 1' HUP
 for i in "${!NAMES[@]}"; do
   name="${NAMES[$i]}"; model="${MODELS[$i]}"; out="${PREFIX}-${SUFFIXES[$i]}.txt"
   # A reused prefix (loop mode re-reviews with the same $RUN/review) must not
@@ -314,16 +377,17 @@ for i in "${!NAMES[@]}"; do
   # multi_fail_backend, so a round that FAILS then SUCCEEDS leaves last round's
   # stderr tail sitting next to a live answer — the same stale-file confusion
   # this line exists to close, one filename over.
-  rm -f "$out" "${out}.dead" "${out}.dead.log" "${out}.log"
+  rm -f "$out" "${out}.dead" "${out}.dead.log" "${out}.log" "${out}.running"
+  : > "${out}.running"
   # ONE cd for every backend: each harness reads the tree from its cwd, and
   # per-backend cwd handling is how openrouter/gemini shipped reviewing the
   # caller's directory as an empty diff. A new backend inherits this for free.
   # All -o/log/out paths are absolute (made so above), so nothing lands astray.
   case "$name" in
-    codex)      ( cd "$REPO_DIR" && run_codex_one      "$out" "${model:-$CODEX_MODEL}"        ) & ;;
-    opencode)   ( cd "$REPO_DIR" && run_opencode_one   "$out" "${model:-$MODEL}" "$FALLBACK"  ) & ;;
-    openrouter) ( cd "$REPO_DIR" && run_openrouter_one "$out" "${model:-$OR_MODEL}"           ) & ;;
-    gemini)     ( cd "$REPO_DIR" && run_gemini_one     "$out" "${model:-$MULTI_GEMINI_MODEL}" ) & ;;
+    codex)      ( cd "$REPO_DIR" && run_codex_one      "$out" "${model:-$CODEX_MODEL}";        rm -f "${out}.running" ) & ;;
+    opencode)   ( cd "$REPO_DIR" && run_opencode_one   "$out" "${model:-$MODEL}" "$FALLBACK"; rm -f "${out}.running" ) & ;;
+    openrouter) ( cd "$REPO_DIR" && run_openrouter_one "$out" "${model:-$OR_MODEL}";           rm -f "${out}.running" ) & ;;
+    gemini)     ( cd "$REPO_DIR" && run_gemini_one     "$out" "${model:-$MULTI_GEMINI_MODEL}"; rm -f "${out}.running" ) & ;;
   esac
   pids="$pids $!:${SUFFIXES[$i]}"
 done

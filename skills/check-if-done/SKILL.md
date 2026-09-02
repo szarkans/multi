@@ -88,8 +88,15 @@ EOF
 
 $SCRIPTS/ask.sh --repo "$COPY" --question-file "$RUN/done-prompt.md" \
                 --out-prefix "$RUN/done" \
-                --model <from probe> [--fallback <from probe>] --effort high
+                --backend "codex,opencode:<model from probe>,openrouter" \
+                [--fallback <fallback model from probe>] --effort high
 ```
+
+`--backend` lists who answers, the same way `code-review` and `ask` do: `codex`,
+`opencode:<model>`, plus `openrouter` (and `,gemini`) for whichever the probe
+shows configured — drop any it shows missing. The OpenCode model is the one
+after `opencode: OK —` in the probe; `reviewer-model:` is a different knob (the
+Claude sub-agent model) and OpenCode has no model by that name.
 
 `$RUN` is this session's own directory. Shell variables do not survive between
 commands, so repeat `RUN=` and `REPO=` in later blocks. `COPY` is snapshotted
@@ -158,8 +165,8 @@ migrations, deploys, calls to third-party services with side effects.
 
 ```
 # ✅ Check-if-done — <what was promised> 
-Checked by: Claude · execution · Codex · OpenCode <model>
-<one line if a reviewer failed or was missing — `Codex FAILED: <reason>` / `OpenCode FAILED: <reason>` from the one-line text in the corresponding `.dead` marker; point at `/multi:setup` to connect anything missing>
+Checked by: Claude · execution · Codex · OpenCode <model> · OpenRouter <model> [· Gemini]
+<one line per reviewer that failed or was missing — `Codex FAILED: <reason>` / `OpenCode FAILED: <reason>` / `OpenRouter FAILED: <reason>` from the one-line text in its `.dead` marker (`done-<backend>.txt.dead`); a backend you launched must appear here or in the list above, never vanish; point at `/multi:setup` to connect anything missing>
 
 ## Verdict
 DONE: yes | partially | no — <one sentence>

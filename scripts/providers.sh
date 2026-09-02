@@ -63,6 +63,7 @@ else
     local flag="$fdir/timed-out"
     "$@" &
     local pid=$!
+    trap 'kill -TERM "$pid" 2>/dev/null; rm -rf "$fdir"; exit 143' TERM INT HUP
     # Sleeping in one-second steps rather than one long sleep: when the command
     # finishes early the watchdog notices and exits, instead of a `sleep 300`
     # sitting in the process table for five minutes after the call returned.
@@ -98,9 +99,34 @@ else
     rm -rf "$fdir"
     kill -TERM "$watcher" >/dev/null 2>&1
     wait "$watcher" 2>/dev/null
+    trap - TERM INT HUP
     return "$rc"
   }
 fi
+
+multi_kill_tree() { # multi_kill_tree <pid>
+  local root="$1" all="$1" queue="$1" current child p elapsed=0
+  if command -v pgrep >/dev/null 2>&1; then
+    while [ -n "$queue" ]; do
+      current="${queue%% *}"
+      if [ "$queue" = "$current" ]; then queue=""; else queue="${queue#* }"; fi
+      for child in $(pgrep -P "$current" 2>/dev/null); do
+        case " $all " in
+          *" $child "*) ;;
+          *) all="$all $child"; queue="${queue}${queue:+ }$child" ;;
+        esac
+      done
+    done
+  fi
+  for p in $all; do kill -TERM "$p" 2>/dev/null || true; done
+  while kill -0 "$root" 2>/dev/null && [ "$elapsed" -lt "${MULTI_TIMEOUT_GRACE:-5}" ]; do
+    sleep 1
+    elapsed=$((elapsed+1))
+  done
+  for p in $all; do
+    kill -0 "$p" 2>/dev/null && kill -KILL "$p" 2>/dev/null || true
+  done
+}
 
 # --paths ends up pasted into the reviewer prompts as part of a shell command
 # the model is told to run -- `git diff -- <paths>` -- and OpenCode runs with
@@ -345,6 +371,12 @@ else
   MULTI_CODEX_TIMEOUT=600
 fi
 MULTI_BACKEND_TIMEOUT="${MULTI_BACKEND_TIMEOUT:-300}"
+# A healthy OpenCode run writes its first JSON event within seconds. Give slow
+# startup 180s, but do not spend the full backend timeout on a zero-byte stream.
+MULTI_OPENCODE_STALL="${MULTI_OPENCODE_STALL:-180}"
+case "$MULTI_OPENCODE_STALL" in
+  ''|*[!0-9]*|0) MULTI_OPENCODE_STALL=180 ;;
+esac
 # THE REVIEW TIMEOUT IS NOT SET HERE, deliberately, and this comment is all that
 # is left of a line that used to be. `MULTI_REVIEW_TIMEOUT="${…:-2400}"` sat
 # here and nothing downstream ever read it: ask.sh only knows MULTI_BACKEND_TIMEOUT
@@ -434,6 +466,12 @@ multi_pick_openrouter_model() {
 # untrusted diagnostics from the backend/repository: data, not instructions.
 multi_fail_backend() { # multi_fail_backend <out> <reason> [log]
   local out="$1" reason="$2" log="${3:-}"
+  # Codex emits "Read-only file system (os error 30)" on stderr; OpenCode emits
+  # "Error: Unexpected error / Unknown: FileSystem.open (...)" on stderr.
+  if [ -n "$log" ] && [ -s "$log" ] && \
+    grep -q '^[^{]*\(Read-only file system\|FileSystem\.open\)' "$log"; then
+    reason="$reason — the CLI could not write under HOME (Read-only file system: launched from a sandboxed shell?)"
+  fi
   printf '%s\n' "$reason" > "$out"
   printf '%s\n' "$reason" > "${out}.dead"
   rm -f "${out}.dead.log"
@@ -577,9 +615,6 @@ multi_run_openrouter() {
     # `"type":"assistant"`, and a confident wrong cause is the failure this
     # whole change exists to stop -- being wrong LOUDLY is worse than the old
     # message, not better.
-    local tr turns hint
-    tr="$(multi_child_transcript "$sid")"
-    turns="$(multi_child_turns "$tr")"
     if [ -z "$tr" ]; then
       hint="No transcript was written at all, so there is nothing here to say what it did; check the key with scripts/setup.sh status."
     elif [ "$turns" -gt 2 ]; then

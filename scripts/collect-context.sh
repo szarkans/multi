@@ -62,7 +62,7 @@ PATH_ARR=()
 # change, not the slice the reviewer happens to look at. core.quotePath=false
 # keeps non-ASCII paths as plain bytes, or a rule file with a non-ASCII name
 # would never match its octal-quoted git listing.
-FILES=""; CHANGED=""
+FILES=""; CHANGED=""; IGNORED_UNTRACKED=""
 if [ -n "$DIFF" ]; then
   case "$DIFF" in
     uncommitted)
@@ -73,6 +73,7 @@ if [ -n "$DIFF" ]; then
       # the injection, and exclude-standard would drop the very file to
       # distrust.
       CHANGED="$( { printf '%s\n' "$tracked"; git -c core.quotePath=false ls-files --others; } 2>/dev/null | sort -u )"
+      IGNORED_UNTRACKED="$(git -c core.quotePath=false ls-files --others --ignored --exclude-standard 2>/dev/null)"
       ;;
     *)
       # git diff first: `git diff <commit>` means "changes since it, vs the
@@ -110,6 +111,7 @@ elif [ -n "$PATHS" ]; then
   # (neither flag) gets NO proxy: there is no change under review to distrust,
   # and the reviewers read those very files as code anyway.
   CHANGED="$( { git -c core.quotePath=false diff --name-only; git -c core.quotePath=false diff --cached --name-only; git -c core.quotePath=false ls-files --others; } 2>/dev/null | sort -u )"
+  IGNORED_UNTRACKED="$(git -c core.quotePath=false ls-files --others --ignored --exclude-standard 2>/dev/null)"
 fi
 
 if [ ${#PATH_ARR[@]} -gt 0 ]; then
@@ -218,7 +220,11 @@ skip_if_modified() { # skip_if_modified <path> ; 0 = skipped, note printed
   # spelling may differ from the on-disk one; a byte match would miss it.
   # Ceiling: NFC/NFD normalization differences still defeat the match.
   grep -qixF -- "$1" <<<"$CHANGED" || return 1
-  printf '\n[...skipped: %s is modified by the reviewed change, so it is not trusted as rules...]\n' "$1"
+  if [ -n "$IGNORED_UNTRACKED" ] && grep -qixF -- "$1" <<<"$IGNORED_UNTRACKED"; then
+    printf '\n[...skipped: %s is untracked and gitignored, so it is not trusted as rules — there is no diff of the file itself; if this change touches .gitignore, that is how it got here...]\n' "$1"
+  else
+    printf '\n[...skipped: %s is modified by the reviewed change, so it is not trusted as rules...]\n' "$1"
+  fi
   return 0
 }
 

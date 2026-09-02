@@ -1,11 +1,22 @@
 # Changelog
 
-## 2.8.1 — 2026-09-02
+## 1.9.0 — 2026-09-02
+
+- An OpenCode model that is out of quota no longer eats the whole review budget. Out of quota, `opencode run` writes no events at all and just sits there; the fallback chain then gave every next model a fresh full timeout — measured 44 minutes of a 71-minute review on one silent model, and a 6-model chain could take 4 hours. A healthy run writes its first JSON event within seconds, so a model that has written no event for `MULTI_OPENCODE_STALL` seconds (default 180; a stderr warning does not count) is now killed, with its whole process tree, and the chain moves on; its marker says `SILENT`, not `TIMEOUT` (#16).
+- A killed `ask.sh` leaves markers. Terminating it from outside (Ctrl-C, `pkill`, a caller's own timeout) used to leave a 0-byte transcript and neither an answer nor a `.dead`, so a judge reading `*.dead` saw a reviewer that neither answered nor failed. TERM/INT/HUP now stop the children and write `<backend>: KILLED — …` for every backend still running (#23).
+- A CLI that cannot write under `$HOME` says so. Run from a sandboxed shell where `$HOME` is read-only, both Codex and OpenCode die on startup and were reported as `NO OUTPUT`, the same text a model that answered nothing gets. The marker now adds that the CLI could not write under HOME and suggests the sandbox. Only the CLI's own stderr lines can trigger it, never text the model read from the reviewed repo. An OpenCode that died at startup without a single JSON event used to be counted as a live "raw capture" answer — that is how today's `RAW CAPTURE ONLY — model=sonnet exit=1` passed as alive — and is now a dead backend with a reason (#21, #22).
+- `check-if-done` reviews with OpenRouter and Gemini too. It called `ask.sh` without `--backend`, so it silently got Codex + OpenCode only while `code-review` and `ask` used every configured backend; and its `--model <from probe>` wording sent the agent copying the Claude sub-agent model into OpenCode. It now passes the same explicit backend list as the other skills, and says which probe line to copy (#17, #22).
+- Claude reviewer sub-agents cite lines from the file, not from `review.diff`. The agents were pointed at the diff and asked for `FILE:LINE` with nothing saying the diff's numbering is not the file's; one cited line 290 of a 16-line file, and the judge had to renumber by hand, which also broke corroboration against Codex and OpenRouter (#18).
+- The ponytail section of the review report is labelled for what it is: the judge's own read under a different ruleset, not a fourth independent reviewer. Its placement between independent sections implied a fourth model family (#19).
+- The rule-file skip note is honest about a gitignored `CLAUDE.md`. Untracked ignored files are deliberately counted as touched by the change (a `.gitignore` edit is how a hostile rule file hides), but the note called such a file "modified by the reviewed change" and sent readers hunting for a diff that does not exist. It now says the file is untracked and gitignored; it is still skipped (#20).
+- Cleanup: `--fallback` documented as OpenCode-only, a duplicated `local` in the OpenRouter runner dropped, and the `MULTI_RUN_KEEP_DAYS=0` test now checks that an old run survives instead of comparing two literals (#24).
+
+## 1.8.1 — 2026-09-02
 
 - The honest timeout diagnosis now works on macOS too. 2.8.0 located the child's transcript with `find -print -quit`, and `-quit` is a GNU extension that stock macOS `find` does not have — there it failed silently, the transcript came back empty, and every timed-out OpenRouter reviewer was blamed on a rejected key again, which is the exact misdiagnosis 2.8.0 was written to end. It is a plain glob now, with no external command in the path at all.
 - The usage example at the top of `ask.sh` still said `--timeout 900` after the default moved to 2400.
 
-## 2.8.0 — 2026-09-02
+## 1.8.0 — 2026-09-02
 
 - A slow reviewer is no longer killed and thrown away: the review budget went from 900s to 2400s. Measured on a real review — the OpenRouter reviewer worked for 36 model turns over 890s and was killed 5 seconds before writing its report, discarding 1.05M paid input tokens and leaving a 0-byte file. `claude -p` prints nothing until it finishes, so any kill costs the whole run.
 - A failed OpenRouter reviewer now says what actually happened instead of guessing. It used to claim "the key was probably rejected" every time; now it counts the model turns the child really made and names its transcript, and no branch states a cause as settled — zero turns fits a rejected key, a pool that went 429, or a transcript format this code stopped recognising, and the message says so.
@@ -20,7 +31,7 @@
 - `/multi:setup` rewritten, with per-backend reference pages it loads only when needed.
 - Russian and Chinese READMEs match the rewritten English one.
 
-## 2.7.0 — 2026-08-28
+## 1.7.0 — 2026-08-28
 
 - Reviewers run on an isolated copy of your work tree, and the Claude reviewer sub-agents lost their shell entirely — a hostile-config opencode or a stray `git checkout -- .` can no longer wipe uncommitted edits, it hits the copy, not your work (#14, real fix; 2.5.0 was prompt-only).
 - The copy strips the reviewed repo's `.opencode/`/`opencode.json`, so a hostile plan config can't re-enable opencode's write+bash (#12).
@@ -29,7 +40,7 @@
 - `.git`, ignored trees and files over 2 MiB (`MULTI_SNAPSHOT_MAX_FILE_BYTES`) stay out of the copy, so a large repo copies source, not gigabytes.
 - Boundary: the copy stops cwd-relative damage (the real #14); it is not an OS sandbox — a reviewer reaching the original by absolute path is out of scope.
 
-## 2.6.0 — 2026-08-28
+## 1.6.0 — 2026-08-28
 
 - OpenCode fallback is now a chain through every free model, not one spare, and
   it advances on a timeout too — not only on an empty answer. A dead free model
@@ -45,7 +56,7 @@
   empty instead of "it ran but said nothing".
 - Gemini stderr now lands in `.dead.log` on failure instead of vanishing.
 
-## 2.5.0 — 2026-08-26
+## 1.5.0 — 2026-08-26
 
 - `--repo`: reviewers read the right worktree instead of an empty diff when the
   target isn't the session checkout (#13).
@@ -56,7 +67,7 @@
 - `MULTI_RUN_ID` keeps concurrent non-Claude-Code runs out of one shared dir (#9e-4).
 - Marketplace owner name fixed (`szarkan` → `szarkans`).
 
-## 2.4.1 — 2026-08-25
+## 1.4.1 — 2026-08-25
 
 - When the OpenCode reviewer's chosen model dies mid-run, the reviewer retries
   on a fallback model — but the swap used to be silent: the fallback's name sat
@@ -91,7 +102,7 @@
   under test stands still is flagged as possibly bending the tests to fit a bug
   instead of fixing the code. Catches "green but faked" completions.
 
-## 2.3.1 — 2026-08-22
+## 1.3.1 — 2026-08-22
 
 - `collect-context.sh` no longer exits 1 on success: the trailing `[ -f ]`
   in the nested-guidance loop leaked its status as the script's. Regression
@@ -100,7 +111,7 @@
   planted bug — the lost `TelegramBadRequest` fallback for preview cards in
   `_send_card` — instead of a publish-status failure that isn't in the diff.
 
-## 2.3.0 — 2026-08-22
+## 1.3.0 — 2026-08-22
 
 The second transport core is gone. `review-codex.sh` and `review-opencode.sh`
 (353 lines, two near-duplicate prompt builders each running its own backend)
@@ -124,7 +135,7 @@ eval corpus: recall unchanged (5/5).
 - Test suites rewired to the new pair; every injection and failure-path
   assertion preserved.
 
-## 2.2.0 — 2026-08-22
+## 1.2.0 — 2026-08-22
 
 Two ways a failed reviewer could lie about its status are fixed, and the
 core contract is now written down.

@@ -37,8 +37,10 @@ CLAUDE_CODE_SESSION_ID=dddd-4444 bash "$TREE/scripts/run-dir.sh" --slug fresh >/
 say "week-old run removed" "$([ -d "$old" ] && echo still-there || echo gone)" "gone"
 say "current runs untouched" "$([ -d "$a" ] && echo yes || echo no)" "yes"
 
+old2="$MULTI_RUN_BASE/ffff-6666--ancient-kept"
+mkdir -p "$old2"; touch -t 202601010000 "$old2"
 CLAUDE_CODE_SESSION_ID=eeee-5555 MULTI_RUN_KEEP_DAYS=0 bash "$TREE/scripts/run-dir.sh" --slug x >/dev/null
-say "sweep can be turned off" "0" "0"
+say "sweep can be turned off" "$([ -d "$old2" ] && echo kept || echo swept)" "kept"
 
 echo "== no session id: MULTI_RUN_ID gives each run its own identity =="
 # Outside Claude Code there is no session id, and every non-CC run would key on

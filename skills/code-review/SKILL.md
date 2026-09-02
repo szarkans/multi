@@ -179,7 +179,10 @@ not know the project's settled decisions spends its findings re-litigating them.
 target whenever the probe found it. It hunts one thing, over-engineering, and
 that keeps the defect reviewers out of matters of taste entirely (see below).
 Its findings are a different kind of thing and never mix with defects: they get
-their own section and cannot corroborate or contradict a bug.
+their own section and cannot corroborate or contradict a bug. Invoking a skill
+loads it into *you*: the lens is your own read under a different ruleset, in a
+context that has already seen every other reviewer's findings — not a fourth
+independent reviewer. The report labels it that way; do not count it as one.
 
 > If ponytail mode is *active*, its `SubagentStart` hook injects the YAGNI
 > ruleset into every sub-agent, including the ones hunting bugs. If findings
@@ -213,7 +216,10 @@ range, the contents of `$RUN/ctx.md`, and the user's own words if there
 were any. Point them at `$COPY`, not `$REPO` — *read the files in `$COPY`* — and, **only
 when you snapshotted a diff**, add *the change is in `$COPY/review.diff` (statuses
 in `review.manifest`)*. In a whole-code review (no `--diff`) there is no
-`review.diff` — do not point them at one that isn't there. These reviewer agents
+`review.diff` — do not point them at one that isn't there. Say once that line
+numbers come from the file, not from `review.diff`: a sub-agent that cites
+diff positions breaks the corroboration match against Codex and OpenRouter,
+who cite real lines. These reviewer agents
 have **no Bash tool** (they read with Read/Grep/Glob), so — unlike the CLI
 backends, which the copy sandboxes by running *in* it — they cannot run a
 destructive command against the live tree at all. That is the enforced half of
@@ -250,6 +256,10 @@ goes in `Dropped`. `(none — this reviewer answered without opening anything)`
 means the whole report is guesswork. `NO ANSWER` means it ran and said
 nothing: that reviewer was absent, say so as `Codex/Opencode FAILED: <reason>`
 from the one-line text in `*.dead` rather than reading silence as agreement.
+No answer file and no `.dead` at all means the transport itself was killed
+before writing anything (`KILLED` is what a caught signal writes; a SIGKILL
+writes nothing, and leaves a stale `<file>.running` sidecar behind) — that
+reviewer was absent too, say so.
 
 Bucket by *the underlying problem*, not by wording — the same bug gets three
 different descriptions:
@@ -285,7 +295,7 @@ not a schema — drop empty sections, and match the surrounding conversation.
 
 ```
 # 🔍 Multi-review — <target> · <mode>
-Reviewers: Claude <n> · Codex <effort> · OpenCode <model> · ponytail
+Reviewers: Claude <n> · Codex <effort> · OpenCode <model> · ponytail (lens: same judge, different ruleset)
 <one line if something was missing or died, and why>
 
 ## ✅ Corroborated (<n>)
@@ -298,7 +308,7 @@ Reviewers: Claude <n> · Codex <effort> · OpenCode <model> · ponytail
 ## ⚖️ Reviewers disagreed (<k>)
 - `path/file.py:44` — Codex calls it a race; correctness says the caller holds the lock. <Your call, and why.>
 
-## 🪒 Simplicity — ponytail (<p>)
+## 🪒 Simplicity — ponytail lens, not an independent reviewer (<p>)
 - `path/file.py:52-71` — delete: retry wrapper around an idempotent local call.
 
 ## 🔹 Minor (<q>)
