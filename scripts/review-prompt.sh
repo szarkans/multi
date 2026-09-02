@@ -63,7 +63,11 @@ if [ -n "$DIFF" ]; then
     esac
   fi
   TARGET_LINE="Review this change: ${TARGET}
-${HOW}"
+${HOW}
+The diff is where your reading starts, not where it ends. Before judging, open
+the changed files themselves, the tests that cover them, and their callers —
+a bug introduced by a change is often visible only next to code the diff does
+not show. Still report only what the change introduces."
   SCOPE_RULE="Report what the change introduces. A problem on a line the change did not touch is out of scope here."
 else
   TARGET_LINE="Review this: ${TARGET}${REPO:+

@@ -1,12 +1,13 @@
 ---
 name: setup
 description: >-
-  Walks a non-technical user through connecting every judge model this plugin
-  can use — Codex, OpenCode, OpenRouter, Gemini — one at a time, in plain
-  words. Use for "multi setup", "set up multi", "configure judges/reviewers/
-  backends", "onboarding", or whenever a probe shows missing backends and the
-  user needs to know what to do about it.
-allowed-tools: Bash, Read, Grep, Glob
+  Walks a user through connecting the judge models this plugin can use — Codex,
+  OpenCode, OpenRouter (or any compatible endpoint: 9router, z.ai, Moonshot),
+  Gemini — and through picking models, including "research current models for
+  me". Use for "multi setup", "set up multi", "configure judges/reviewers/
+  backends", "connect 9router", "change/pick models", "onboarding", or whenever
+  a probe shows missing backends and the user needs to know what to do about it.
+allowed-tools: Bash, Read, Grep, Glob, WebSearch, WebFetch
 argument-hint: "[nothing needed — just run it]"
 ---
 
@@ -15,140 +16,90 @@ argument-hint: "[nothing needed — just run it]"
 !`sh -c 'for p in "$CLAUDE_PLUGIN_ROOT/scripts" "$HOME/.claude/skills/multi/scripts" "./.claude/skills/multi/scripts"; do [ -x "$p/probe.sh" ] && { "$p/probe.sh"; echo "scripts-dir: $p"; exit 0; }; done; echo "probe: NOT FOUND — locate scripts/probe.sh in this plugin and run it yourself"'`
 
 `$SCRIPTS` is whatever the probe printed as `scripts-dir:`. The probe already
-ran above — read it, do not run it again.
+ran above — read it, do not run it again. It detected everything detectable:
+which CLIs are installed, who is logged in, which keys exist, whether the
+OpenCode paid channel is available, and what other AI CLIs live on this
+machine. **Never ask the user about anything the probe already answered.**
 
 The user here is not assumed technical. No jargon, no walls of text, one step
 at a time, and never make them feel behind for not having done this already.
 
-## What this plugin actually is, in plain words
+## First contact: what this is, in three sentences
 
-Say this first, briefly, before touching any config:
+Only when little or nothing is connected yet (Claude alone, or one backend).
+Returning users with a working lineup skip straight to fixing gaps.
 
-This plugin asks several different AI models to look at the same thing
-instead of just one. When they agree, that is a real signal. When they
-disagree, that disagreement is the whole point — one model alone can't tell
-you it might be wrong, three models can.
+> This plugin asks several different AI models to look at the same thing
+> instead of just one — when they agree it's a real signal, and when they
+> disagree, that disagreement is exactly what one model alone can never show
+> you. You'll use it mostly as `/multi:code-review` (several models review
+> your changes before a PR), `/multi:ask` (one question, several independent
+> answers), and `/multi:check-if-done` (is this actually finished?).
+> Claude is already connected; each backend below adds an independent
+> reviewer, most at no extra cost.
 
-The lineup:
+## One question, only about what the probe can't see
 
-- **Claude** — already here, always available, nothing to configure.
-- **GPT**, through the Codex CLI — needs a ChatGPT account.
-- **DeepSeek**, through OpenCode — free, works out of the box once installed.
-- **Gemini**, through its own CLI — needs a free API key.
-- **OpenRouter** — the bonus one. A single key unlocks many other model
-  families at once. Free models by default, or any specific model with
-  `--backend name:model` (e.g. `--backend openrouter:z-ai/glm-5.2:free`).
+The probe knows what's installed. It cannot know what accounts the user has
+or what they're willing to pay. Ask **one** question covering only the
+missing backends, shaped like this (adjust to the actual gaps):
 
-## Fix one thing at a time
+> To pick what to connect, tell me:
+> - Do you have a ChatGPT subscription? (unlocks GPT as a reviewer, no extra cost)
+> - Are you okay creating one free account + API key? (unlocks many model
+>   families at once via OpenRouter or a compatible service)
+> - Or keep it strictly free-and-local for now? (OpenCode's free models)
 
-Look at the probe output above. For each backend that is missing or not
-configured, offer the fix — **one at a time, not all four in a list.** Start
-with the most valuable one that's missing. Codex comes first if it's missing:
-`/multi:code-review` refuses to run at all without it, the others just get
-weaker.
+Then recommend an order — the fewest steps to reach **at least one non-Claude
+reviewer** (without one, `/multi:code-review` refuses to run; with one it
+works, and each further backend makes it stronger). Typical value order:
+Codex if they have the subscription, otherwise an OpenRouter-style key,
+OpenCode as the free floor, Gemini as a free extra.
 
-Order to work through, skipping each install or login fix already `OK`. The
-OpenCode model-choice check below always runs, even when OpenCode is `OK`:
+## Connect each chosen backend
 
-1. **Codex missing or not logged in**
-   ```
-   codex login
-   ```
-   Needs a ChatGPT account. This opens a browser to sign in — nothing to type
-   here.
+Work through the user's picks **one at a time** — give one step, wait for
+them to do it, then the next. Never paste four install blocks in one message.
 
-2. **OpenCode**
-   If it is missing:
-   ```
-   curl -fsSL https://opencode.ai/install | bash
-   ```
-   (or `npm install -g opencode-ai` if they'd rather use npm). Nothing to pay
-   for or sign up to — it works with free models right out of the box.
+For each backend, read its reference file first and follow it:
 
-   Once OpenCode is checked — whether it was already `OK` or was just
-   installed — check its model choice. The config is
-   `${XDG_CONFIG_HOME:-$HOME/.config}/multi/models`, unless
-   `MULTI_MODELS_CONFIG` overrides it. It is a hand-edited file of
-   `key: value1 value2 ...` lines with `#` comments. Today the only key is
-   `opencode:`; its first model is primary and the rest are fallbacks.
+- **Codex (GPT)** — `references/codex.md`
+- **OpenCode** — `references/opencode.md`
+- **OpenRouter / 9router / z.ai / any compatible endpoint** — `references/openrouter.md`
+- **Gemini** — `references/gemini.md`
 
-   Determine the effective primary model in this exact order: use
-   `MULTI_OPENCODE_MODEL` when it is set; otherwise use the first model on the
-   config's `opencode:` line when present; otherwise use the auto-detected
-   primary reported by the probe above. If the config has an `opencode:` line,
-   still say which models are pinned, in order, but do not use the line's mere
-   presence or absence to decide whether the active channel is free.
+If the probe printed a `models-config: LEGACY PATH` line, offer the one-line
+`mv` it shows — everything of this plugin lives under `~/.claude/multi/`.
 
-   Decide the warning from the effective primary model's provider prefix:
-   `opencode/*` is the free channel and `opencode-go/*` is the paid Go
-   subscription channel. Warn **only** when the effective primary is an
-   `opencode/*` free model. Thus an environment override takes precedence over
-   a configured model, and a configured free primary still gets the warning.
-   For a free effective primary, say this **loudly and plainly**:
+If the probe listed `other-ai-clis`, you may mention them in one sentence as
+detected-but-not-yet-supported. Do not improvise support for them.
 
-   > **Important: you're using free models. They are weaker and less stable. A
-   > review may come back thin or even empty, so reviewing on free is a real
-   > quality compromise.**
+## Picking models
 
-   Then ask an explicit yes/no question:
+When a backend is connected but the model choice is the question (free vs
+paid, which pin, which fallbacks) — or the user asks "which models should I
+use" — offer the fork:
 
-   > Want me to look up the current models, their prices, and how much usage
-   > you'd get (how much you'd pay) — and help you pick a good one + fallbacks?
+1. **Sane default** — keep what the probe picked; say in one line what that
+   is and what it costs (usually: free, weaker, can flake).
+2. **"Research it for me"** — read `references/model-research.md` and follow
+   it: live catalogue + web search (your own model knowledge is stale),
+   propose a pick, write the config only after the user approves.
 
-   If **no**, acknowledge that keeping free is a deliberate choice and move
-   on. If **yes**:
+## Keys never touch this chat
 
-   - Run both `opencode --pure models` and
-     `opencode --pure models --verbose`; `--pure` is required so plugin noise
-     does not pollute the output, and the verbose listing includes costs.
-   - Use web search for unfamiliar model names: your own model knowledge is
-     stale and newer models will not be in it. Check what they actually are,
-     their quality and benchmarks, and current pricing.
-   - Propose one primary model and an ordered fallback chain.
-   - After the user chooses, create the config directory if needed and write
-     `opencode: <primary> <fallback1> <fallback2> ...`, preserving every other
-     line already in the file.
+Not a preference — a key that reaches this conversation is a leaked key: it
+is in the transcript, and if it also reached a command line it is in shell
+history and was visible in `ps`. So `setup.sh set <NAME>` is given **without**
+a value and run **by the user, in their own terminal**: it prompts, reads the
+key without echoing, and writes it out of sight. If a key lands in the chat
+anyway, say plainly it should be rotated at the provider — deleting a message
+does not un-leak it.
 
-   Remind them that this is deliberately hand-editable: they can change that
-   one `opencode:` line themselves at any time, with no agent needed.
-
-3. **OpenRouter not configured**
-   Key comes from [openrouter.ai](https://openrouter.ai) — sign up, create a
-   key. There's a free tier, no card needed to get one key working. Then they
-   run this **themselves, in their own terminal** — it asks for the key and
-   does not echo it:
-   ```
-   $SCRIPTS/setup.sh set OPENROUTER_API_KEY
-   ```
-
-4. **Gemini not configured**
-   Key is free, from [aistudio.google.com](https://aistudio.google.com). The
-   second line is theirs to run in their own terminal, same as above:
-   ```
-   npm i -g @google/gemini-cli
-   $SCRIPTS/setup.sh set GEMINI_API_KEY
-   ```
-
-Give one fix, wait for them to do it or ask a question, then move to the
-next. Do not paste all four blocks in one message — that's the thing this
-skill exists to avoid.
-
-## Never ask for a key in chat, and never run the command yourself
-
-Not a preference — a key that reaches this conversation is a leaked key: it is
-in the transcript, and if it also reached a command line it is in their shell
-history and was visible in `ps` to everyone on the machine. So `setup.sh set
-<NAME>` is given **without** a value and run **by them**, in their own
-terminal: it prompts, reads the key without echoing it, and writes it out of
-sight. If a key does land in the chat anyway, say plainly that it should be
-rotated at the provider — a leaked key is not un-leaked by deleting a message.
-
-Keys live outside this plugin's folder, in `~/.claude/multi/providers.env`,
-which `scripts/setup.sh` sets to permission `600` — only their own user can
-read it. On Windows/MSYS and on some mounts (exFAT, some NTFS) `chmod` is
-accepted and does nothing; the script checks afterwards and prints a warning
-when that happened, so if you see no warning the file really is owner-only,
-and if you see one, repeat it to them rather than restating the `600` line.
+Keys live in `~/.claude/multi/providers.env`, permission `600` (owner-only).
+On Windows/MSYS and some mounts `chmod` silently does nothing; `setup.sh`
+checks afterwards and warns when that happened — if it warned, repeat the
+warning to the user instead of claiming the file is protected.
 
 ## Finish: show where things stand
 
@@ -157,19 +108,17 @@ Run:
 $SCRIPTS/setup.sh status
 ```
 
-Report it as one short block — who's connected, and what each missing one
-would still add:
+This one actually verifies keys over the network (the probe above does not).
+Report one short block — who's connected, and what each missing one would add:
 
 ```
-Connected: Claude, Codex
-Not yet:   OpenCode (free third opinion), OpenRouter (bonus — many models via one key), Gemini (free fourth opinion)
+Connected: Claude, Codex, OpenRouter (endpoint: 9router)
+Not yet:   OpenCode (free extra reviewer), Gemini (free extra reviewer)
 
-With just Claude: /multi:code-review refuses to run (needs Codex at minimum).
-/multi:ask and /multi:adhd still work, just with fewer opinions.
+/multi:code-review works — you have non-Claude reviewers. Each missing
+backend is one more independent opinion, most at no extra cost.
 ```
 
-Be honest about degradation, not alarming about it. Missing backends are a
-normal starting state, not a broken install.
-
-Then stop. Don't chain into another skill or start reviewing anything —
-this skill's only job is getting the judges connected.
+Be honest about degradation, not alarming: missing backends are a normal
+starting state, not a broken install. Then stop — this skill's only job is
+getting the judges connected, not running a review.

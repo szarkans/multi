@@ -137,7 +137,7 @@ $SCRIPTS/review-prompt.sh --repo "$COPY" --target "<in words>" [--diff <spec> --
                           [--focus "<user text>"] --context "$RUN/ctx.md" > "$RUN/review.prompt.md"
 $SCRIPTS/ask.sh --repo "$COPY" --question-file "$RUN/review.prompt.md" --out-prefix "$RUN/review" \
                 --backend "codex,opencode:<model from probe>,openrouter" --fallback <from probe> \
-                --effort <low|medium|high|xhigh|max> --timeout "${MULTI_REVIEW_TIMEOUT:-900}"
+                --effort <low|medium|high|xhigh|max> --timeout "${MULTI_REVIEW_TIMEOUT:-2400}"
 ```
 
 `run-dir.sh` prints this session's own directory, `/tmp/multi/<session>--<slug>`,
@@ -332,7 +332,7 @@ changed as `file:line` one-liners. If the cap is hit with findings open, say so.
 - **Lockfiles, generated code, vendored trees** — say so and skip the external
   reviewers; there is nothing there for them.
 - **A reviewer hangs** — the caller passes
-  `--timeout "${MULTI_REVIEW_TIMEOUT:-900}"` to `ask.sh`; that value bounds each
+  `--timeout "${MULTI_REVIEW_TIMEOUT:-2400}"` to `ask.sh`; that value bounds each
   backend, and a failed run writes the reason as the one-line `.dead` text, so
   a hang arrives as `... FAILED: ...`, never as an empty file.
   Treat that reviewer as absent and name it in the report. A reviewer still

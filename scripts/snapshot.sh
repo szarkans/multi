@@ -111,6 +111,25 @@ copy_one() { # copy_one <path>
   local f="$1" src="$ROOT/$1" dst="$DEST/$1" sz
   # Strip the reviewed repo's own opencode config from the copy (#12), any depth.
   case "$f" in .opencode/*|opencode.json|*/.opencode/*|*/opencode.json) return ;; esac
+  # Same hole, other harnesses: since the runners cd into the copy, a bare
+  # `claude -p` auto-loads .claude/settings.json (hooks, permissions) and
+  # CLAUDE.md/AGENTS.md as trusted instructions, gemini loads .gemini/ and
+  # GEMINI.md, codex loads AGENTS.md. Reviewed-repo rules are untrusted data —
+  # legit context reaches reviewers via collect-context's trust filter instead.
+  # ponytail: blocklist by filename — a harness that grows a new config name
+  # walks right past it. The real guard is each harness's own disable flag
+  # (claude --setting-sources user, opencode OPENCODE_DISABLE_PROJECT_CONFIG,
+  # codex -c project_doc_max_bytes=0, all set in ask.sh/providers.sh); gemini
+  # has no such flag, so for gemini this list is the only shield.
+  # .gitignore/.geminiignore go too: the copy holds no ignored files and no
+  # .git, so they serve nothing — but gemini's read/search tools honor them,
+  # and a hostile one blinds the reviewer to the tree while looking successful.
+  case "$f" in
+    .claude/*|*/.claude/*|.gemini/*|*/.gemini/*) return ;;
+    CLAUDE.md|CLAUDE.local.md|AGENTS.md|AGENTS.override.md|GEMINI.md) return ;;
+    */CLAUDE.md|*/CLAUDE.local.md|*/AGENTS.md|*/AGENTS.override.md|*/GEMINI.md) return ;;
+    .gitignore|*/.gitignore|.geminiignore|*/.geminiignore) return ;;
+  esac
   # A control character (newline/tab) in a name is attacker-controlled; the diff
   # loop already refuses to list such a file, so do not copy it either, or the
   # manifest's "not copied" note becomes a lie (the file would be in the tree).
@@ -144,7 +163,12 @@ git -C "$ROOT" ls-files -z --cached --others --exclude-standard | while IFS= rea
 # opencode.config.ts still loads as valid opencode config. Purge them by name,
 # case-insensitively, at any depth, whatever slipped through.
 find "$DEST" \( -iname '.opencode' -o -iname 'opencode.json' -o -iname 'opencode.jsonc' \
-                -o -iname 'opencode.config.*' \) -exec rm -rf -- {} + 2>/dev/null || true
+                -o -iname 'opencode.config.*' \
+                -o -iname '.claude' -o -iname '.gemini' -o -iname '.mcp.json' \
+                -o -iname 'CLAUDE.md' -o -iname 'CLAUDE.local.md' \
+                -o -iname 'AGENTS.md' -o -iname 'AGENTS.override.md' -o -iname 'GEMINI.md' \
+                -o -iname '.gitignore' -o -iname '.geminiignore' \) \
+  -exec rm -rf -- {} + 2>/dev/null || true
 
 # --- write the change as files the reviewers read directly ------------------
 [ -n "$DIFF" ] || { printf '%s' "$DEST"; exit 0; }
@@ -181,6 +205,10 @@ build_excludes() { # build_excludes <rev> <checksize:0|1>
       .opencode/*|opencode.json|*/.opencode/*|*/opencode.json)
         EXARGS+=(":(exclude,literal)$f"); printf '%s (opencode config, held out of the diff)\n' "$f" >> "$skipped"; continue ;;
     esac
+    # Harness instruction files (CLAUDE.md, AGENTS.md, .claude/*, …) STAY in the
+    # diff on purpose: there they are inert text, and a change that edits the
+    # rules is exactly what a reviewer must see. Only the copy strips them —
+    # that is where they would load as trusted config.
     if snap_is_secret "$f"; then
       EXARGS+=(":(exclude,literal)$f"); printf '%s (withheld: %s — secret, not in diff)\n' "$f" "$SECRET_RULE" >> "$skipped"; continue
     fi

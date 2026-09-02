@@ -6,3 +6,5 @@ evals/out*/
 __pycache__/
 docs/
 /CLAUDE.md
+tmp/
+_incidents/

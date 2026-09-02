@@ -61,7 +61,18 @@ if command -v opencode >/dev/null 2>&1; then
   else
     # Hand-edited `key: comma-or-space-separated values` file; # starts a comment.
     # Only opencode is recognized for now. Unknown keys are ignored.
-    models_config="${MULTI_MODELS_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/multi/models}"
+    # Lives with everything else of this plugin under ~/.claude (MULTI_HOME) —
+    # one place to look, one place to back up.
+    models_config="${MULTI_MODELS_CONFIG:-$MULTI_HOME/models}"
+    # One release of grace for the old XDG location: read it when the new home
+    # has no file, and say so, so the setup skill can offer the one-line mv.
+    if [ ! -f "$models_config" ] && [ -z "${MULTI_MODELS_CONFIG:-}" ]; then
+      legacy_config="${XDG_CONFIG_HOME:-$HOME/.config}/multi/models"
+      if [ -f "$legacy_config" ]; then
+        models_config="$legacy_config"
+        say "models-config: LEGACY PATH — still read, but move it: mv \"$legacy_config\" \"$MULTI_HOME/models\""
+      fi
+    fi
     configured_models=""
     if [ -f "$models_config" ]; then
       config_line=""
@@ -143,6 +154,31 @@ if command -v opencode >/dev/null 2>&1; then
         say "opencode: NO USABLE MODEL — none of [$CANDIDATES] is available; set MULTI_OPENCODE_MODEL to one of: $(printf '%s' "$available" | head -5 | tr '\n' ' ')"
       fi
     fi
+
+    # The paid Go channel showing up means a subscription is available, and the
+    # setup skill keys its "spend it deliberately" offer on this line. OUTSIDE
+    # the branches above on purpose: it used to sit in the no-config branch, so
+    # the one user who most needs the offer -- a Go subscriber whose config pins
+    # free opencode/* models -- was the one who never saw it. $available is
+    # empty on the config branch, hence the cache file and the config itself as
+    # the other two witnesses; all three are free to read.
+    # ${available:-}: it is only assigned inside the no-config branch, and under
+    # set -u a bare $available aborts the whole probe for every user who HAS a
+    # config. tr ' ' '\n': the config is one space-separated line, so a
+    # line-anchored grep would miss a go model that is not written first.
+    # ponytail: the cache is only ever WRITTEN by the no-config branch, so a
+    # user who pinned free opencode/* models before ever probing without a
+    # config still never sees this line -- the exact user it is for. Closing
+    # that needs a real `opencode --pure models` call on the config path, and
+    # this probe runs before every skill invocation; 2.9s each time is the
+    # price, and it was not judged worth it.
+    paid_seen="$(printf '%s\n%s\n' "$configured_models" "${available:-}" | tr ' ' '\n')"
+    [ -s "$MULTI_HOME/opencode-models.cache" ] \
+      && paid_seen="$paid_seen
+$(cat "$MULTI_HOME/opencode-models.cache" 2>/dev/null)"
+    if grep -q '^opencode-go/' <<<"$paid_seen"; then
+      say "opencode-paid-channel: available (opencode-go/* listed)"
+    fi
   fi
 else
   say "opencode: MISSING (third reviewer will be skipped)"
@@ -173,6 +209,17 @@ elif command -v gemini >/dev/null 2>&1; then
   say "gemini: NOT CONFIGURED (CLI present, no GEMINI_API_KEY — ask the user to run scripts/setup.sh set GEMINI_API_KEY in their own terminal (it prompts for the key))"
 else
   say "gemini: MISSING"
+fi
+
+# --- other AI CLIs (not reviewers yet) ----------------------------------
+# Raw detection for the setup skill: what else on this machine could one day
+# hold a quota. Reported only — nothing here configures or calls them.
+others=""
+for c in antigravity aider goose droid amp cursor-agent; do
+  command -v "$c" >/dev/null 2>&1 && others="${others}${others:+, }$c"
+done
+if [ -n "$others" ]; then
+  say "other-ai-clis: $others (detected only — not usable as reviewers yet)"
 fi
 
 # --- ponytail -----------------------------------------------------------

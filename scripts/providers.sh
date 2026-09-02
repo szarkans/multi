@@ -310,6 +310,19 @@ MULTI_PROVIDERS_ENV="${MULTI_PROVIDERS_ENV:-$MULTI_HOME/providers.env}"
 # has nothing to do with the question.
 MULTI_CHILD_HOME="${MULTI_CHILD_HOME:-$MULTI_HOME/child-home}"
 
+# The "openrouter" backend is really "any Anthropic-compatible endpoint + API
+# key": point it at 9router, z.ai, Moonshot or a self-hosted router by setting
+# this. The health check and the runner share it, so a pool probe always tests
+# the endpoint the review will actually use.
+# A custom endpoint serves its own model list: set MULTI_OPENROUTER_MODELS too,
+# or the pool probe walks OpenRouter-specific :free names, 404s on all of them
+# and reports ALL POOLS BUSY. Trailing slashes (any number — pastes carry
+# doubles) are stripped: "…/api/" would request //v1/messages, a silent 404
+# on stricter routers.
+MULTI_OPENROUTER_BASE_URL="${MULTI_OPENROUTER_BASE_URL:-https://openrouter.ai/api}"
+while [ "${MULTI_OPENROUTER_BASE_URL%/}" != "$MULTI_OPENROUTER_BASE_URL" ]; do
+  MULTI_OPENROUTER_BASE_URL="${MULTI_OPENROUTER_BASE_URL%/}"
+done
 MULTI_OPENROUTER_MODEL="${MULTI_OPENROUTER_MODEL:-z-ai/glm-5.2:free}"
 # A `:free` model is not a queue you are in — it is a shared upstream pool, and
 # when it is busy every key gets HTTP 429 regardless of credit. Measured
@@ -332,11 +345,25 @@ else
   MULTI_CODEX_TIMEOUT=600
 fi
 MULTI_BACKEND_TIMEOUT="${MULTI_BACKEND_TIMEOUT:-300}"
-# A review is a different job from a question: it reads a diff, opens files and
-# thinks at whatever --effort was asked for, so the same 300s that is generous
-# for /multi:ask would cut real reviews off mid-thought. This one exists to stop
-# a hung CLI, not to pace a slow one.
-MULTI_REVIEW_TIMEOUT="${MULTI_REVIEW_TIMEOUT:-900}"
+# THE REVIEW TIMEOUT IS NOT SET HERE, deliberately, and this comment is all that
+# is left of a line that used to be. `MULTI_REVIEW_TIMEOUT="${…:-2400}"` sat
+# here and nothing downstream ever read it: ask.sh only knows MULTI_BACKEND_TIMEOUT
+# (set by --timeout), and skills/code-review/SKILL.md is markdown that cannot
+# source this file -- it evaluates its own `${MULTI_REVIEW_TIMEOUT:-2400}` in the
+# agent's shell and passes the result as --timeout. So an edit here would have
+# looked like it changed the review budget and changed nothing. The real
+# defaults live at the three call sites: SKILL.md (twice) and evals/run.sh.
+#
+# Why 2400 there. Measured 2026-09-02 on a real review: the openrouter reviewer
+# (z-ai/glm-5.3-flash) took 36 model turns over 890s -- median 13.6s per turn,
+# slowest 266s -- and was killed 5 seconds before it wrote its report. It had
+# already spent 1.05M input tokens, and a text-mode `claude -p` prints nothing
+# until the end, so the kill threw away every one of them and left a 0-byte
+# file. The same target with 2400s answered. A slow model is not a hung one,
+# and the cost of cutting it off is the whole run, paid for and discarded.
+# ponytail: raising the ceiling does not remove it -- any kill still discards
+# 100% of the paid work. The real fix is incremental capture
+# (--output-format stream-json, keep what arrived), and it is not done.
 
 
 # --- availability -------------------------------------------------------
@@ -354,13 +381,17 @@ multi_have_gemini()     { [ -n "${GEMINI_API_KEY:-}" ]     && command -v gemini 
 # must not become 100 silent seconds, but a slow healthy pool must not read as
 # dead either.
 # multi_check_openrouter [model] — one word about one model.
+# Bearer ONLY, mirroring the runner: the child claude authenticates with
+# ANTHROPIC_AUTH_TOKEN (Bearer) and nothing else, so the probe must send the
+# same header or its verdict describes a different request than the run —
+# an x-api-key-only endpoint would probe OK and then 401 on every review.
 multi_check_openrouter() {
   [ -n "${OPENROUTER_API_KEY:-}" ] || { echo "NO KEY"; return 1; }
   local m="${1:-$MULTI_OPENROUTER_MODEL}" code
   code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
-    https://openrouter.ai/api/v1/messages \
+    "${MULTI_OPENROUTER_BASE_URL}/v1/messages" \
     -H 'content-type: application/json' \
-    -H "x-api-key: ${OPENROUTER_API_KEY}" \
+    -H "authorization: Bearer ${OPENROUTER_API_KEY}" \
     -H 'anthropic-version: 2023-06-01' \
     -d "{\"model\":\"${m}\",\"max_tokens\":1,\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}")"
   case "$code" in
@@ -411,6 +442,46 @@ multi_fail_backend() { # multi_fail_backend <out> <reason> [log]
   fi
 }
 
+# A child `claude` writes its transcript to $MULTI_CHILD_HOME/projects/<cwd
+# slug>/<session id>.jsonl. Handing it the session id up front is the only way
+# to name that file afterwards without guessing: the directory name is derived
+# from the reviewed tree's path by rules that belong to Claude Code, and two
+# openrouter reviewers running at once land in the same directory, so "the
+# newest .jsonl" would point at the wrong run half the time. No uuid source
+# (neither uuidgen nor Linux's /proc) means no id, no --session-id flag, and a
+# diagnosis without turn counts — degraded, never wrong.
+multi_uuid() {
+  if command -v uuidgen >/dev/null 2>&1; then
+    uuidgen | tr 'A-Z' 'a-z'
+  elif [ -r /proc/sys/kernel/random/uuid ]; then
+    cat /proc/sys/kernel/random/uuid
+  fi
+}
+
+# multi_child_transcript <session id> — prints the transcript path, or nothing.
+# -quit rather than `| head -1`: a pipeline whose reader exits early kills find
+# with SIGPIPE, and under pipefail that reads as failure exactly when the file
+# was found.
+multi_child_transcript() {
+  [ -n "${1:-}" ] || return 0
+  [ -d "$MULTI_CHILD_HOME/projects" ] || return 0
+  find "$MULTI_CHILD_HOME/projects" -name "$1.jsonl" -print -quit 2>/dev/null
+}
+
+# How much work a killed child had actually done. Turn count only -- it answers
+# the one question the caller has: was the model working, or was it never
+# talking to the endpoint at all.
+multi_child_turns() {
+  [ -n "${1:-}" ] && [ -s "$1" ] || { echo 0; return 0; }
+  # `grep -c || echo 0` would print "0" twice on no match -- grep prints its
+  # zero AND exits 1 -- and the caller's [ "$turns" -gt 2 ] would then die on
+  # "integer expression expected". Normalise instead of trusting the status.
+  local n
+  n="$(grep -c '"type":"assistant"' "$1" 2>/dev/null)"
+  case "$n" in ''|*[!0-9]*) n=0 ;; esac
+  echo "$n"
+}
+
 # multi_run_openrouter <prompt> <outfile> [model]
 # One OpenRouter model driven through Claude Code itself. The agent loop, the
 # tools and the prompt handling are identical to a Claude reviewer — only the
@@ -427,7 +498,7 @@ multi_run_openrouter() {
   # No model pinned by the caller: pick one whose pool is actually up.
   if [ -z "$model" ]; then
     model="$(multi_pick_openrouter_model)" || {
-      multi_fail_backend "$out" "openrouter: ALL POOLS BUSY — tried $MULTI_OPENROUTER_MODELS. A 429 means either the pool is busy or this account's own quota is gone — check both; an HTTP 000 means the check itself timed out, the pool is slow, not necessarily dead. Retry in a minute or set MULTI_OPENROUTER_MODELS."
+      multi_fail_backend "$out" "openrouter: ALL POOLS BUSY — tried $MULTI_OPENROUTER_MODELS against $MULTI_OPENROUTER_BASE_URL. A 429 means either the pool is busy or this account's own quota is gone — check both; a 404 on a custom endpoint means it does not serve these model names — set MULTI_OPENROUTER_MODELS to models it hosts; an HTTP 000 means the check itself timed out, the pool is slow, not necessarily dead. Retry in a minute or set MULTI_OPENROUTER_MODELS."
       return 0
     }
   fi
@@ -438,24 +509,78 @@ multi_run_openrouter() {
   # ANTHROPIC_SMALL_FAST_MODEL matters: Claude Code fires background calls at a
   # small model, and the default name does not exist on OpenRouter. Left unset,
   # those calls 404 in the middle of an otherwise fine run.
+  # The sonnet/opus alias defaults need the same pin, not just the model name
+  # and the small/haiku ones above: a child that spawns its own Task subagents
+  # resolves "opus"/"sonnet" through ANTHROPIC_DEFAULT_SONNET_MODEL /
+  # ANTHROPIC_DEFAULT_OPUS_MODEL, and left unset those fall back to the
+  # account-default Anthropic models and get billed through OPENROUTER_API_KEY
+  # instead of run on this model. Measured 2026-08-31: a free-model parent's
+  # subagents burned $1.91 of anthropic/claude-opus-5 this way.
+  # --setting-sources user: this child cd's into the reviewed tree, and without
+  # the flag it loads that repo's .claude/settings.json — hooks and permission
+  # grants written by whoever authored the code under review. User settings
+  # come from CLAUDE_CONFIG_DIR, the empty child home, so nothing hostile loads.
+  local sid; sid="$(multi_uuid)"
   CLAUDE_CONFIG_DIR="$MULTI_CHILD_HOME" \
-  ANTHROPIC_BASE_URL="https://openrouter.ai/api" \
+  ANTHROPIC_BASE_URL="$MULTI_OPENROUTER_BASE_URL" \
   ANTHROPIC_AUTH_TOKEN="$OPENROUTER_API_KEY" \
   ANTHROPIC_MODEL="$model" \
   ANTHROPIC_SMALL_FAST_MODEL="$model" \
   ANTHROPIC_DEFAULT_HAIKU_MODEL="$model" \
+  ANTHROPIC_DEFAULT_SONNET_MODEL="$model" \
+  ANTHROPIC_DEFAULT_OPUS_MODEL="$model" \
     multi_timeout "$MULTI_BACKEND_TIMEOUT" claude -p "$prompt" \
       --strict-mcp-config --mcp-config '{"mcpServers":{}}' \
+      --setting-sources user \
+      ${sid:+--session-id "$sid"} \
       > "$out" 2> "$log"
   rc=$?
   if [ "$rc" -eq 124 ]; then
     # A timed-out run never reads as an answer, even if partial output landed
-    # in the file before the kill. A silent timeout is the signature of a
-    # rejected key: Claude Code retries auth failures instead of reporting
-    # them, so it dies on the timeout with an empty file.
-    multi_fail_backend "$out" "openrouter: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s — model=$model. A silent timeout usually means the key was rejected; check with scripts/setup.sh status." "$log"
+    # in the file before the kill.
+    #
+    # WHY the turn count is in the message: a timeout has two completely
+    # different causes that look identical from here, because either way the
+    # file is empty. Claude Code retries an auth failure instead of reporting
+    # it, so a rejected key dies silently on the clock -- and so does a model
+    # that was reviewing perfectly well and simply ran out of time. This
+    # message used to name only the first one. Measured 2026-09-02: it sent a
+    # reader hunting a key that was fine, while the transcript beside it held
+    # 36 productive turns and the real answer was one raised timeout away.
+    # The knob named here is ask.sh's --timeout, NOT MULTI_REVIEW_TIMEOUT: this
+    # runner also serves /multi:ask, /multi:adhd and /multi:check-if-done, and
+    # none of those reads MULTI_REVIEW_TIMEOUT -- only the review skill and the
+    # eval harness pass it through as --timeout. Naming the review variable
+    # would send an /ask user to set something that changes nothing, and they
+    # would hit the identical kill on the re-run.
+    local tr turns hint
+    tr="$(multi_child_transcript "$sid")"
+    turns="$(multi_child_turns "$tr")"
+    # Every branch below reports the count and NAMES THE TRANSCRIPT; none of
+    # them delivers a cause as settled fact. Zero turns in particular is not
+    # proof of a bad key: an unpinned run had the key verified by
+    # multi_pick_openrouter_model seconds earlier, and a `:free` pool can flip
+    # to 429 in the same second (see the model-list comment above) -- Claude
+    # Code then retries silently for the whole budget and writes a transcript
+    # with a user turn and no assistant turns, exactly like a rejected key. The
+    # count also reads 0 if Claude Code's transcript format ever moves away from
+    # `"type":"assistant"`, and a confident wrong cause is the failure this
+    # whole change exists to stop -- being wrong LOUDLY is worse than the old
+    # message, not better.
+    local tr turns hint
+    tr="$(multi_child_transcript "$sid")"
+    turns="$(multi_child_turns "$tr")"
+    if [ -z "$tr" ]; then
+      hint="No transcript was written at all, so there is nothing here to say what it did; check the key with scripts/setup.sh status."
+    elif [ "$turns" -gt 2 ]; then
+      hint="It made $turns model turns before the kill, so it was reaching the endpoint and the budget is the likely problem. Give it more time (ask.sh --timeout <seconds>; the review skill passes MULTI_REVIEW_TIMEOUT there) and re-run. If those turns are clustered at the very start of $tr, it stalled after them instead — read it and see."
+    else
+      hint="Only $turns model turns recorded in $tr. Read it before concluding anything: no turns at all fits a rejected key, a pool that went 429 after the probe passed, AND a transcript format this code no longer recognises; one or two turns also fits a single slow turn inside a short budget. Check scripts/setup.sh status too."
+    fi
+    multi_fail_backend "$out" "openrouter: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s — model=$model. $hint" "$log"
   elif [ ! -s "$out" ]; then
-    multi_fail_backend "$out" "openrouter: NO OUTPUT — model=$model exit=$rc (stderr in $log)" "$log"
+    local tr2; tr2="$(multi_child_transcript "$sid")"
+    multi_fail_backend "$out" "openrouter: NO OUTPUT — model=$model exit=$rc (stderr in $log)${tr2:+, transcript in $tr2}" "$log"
   else
     echo "[multi] answered by openrouter model $model" >> "$out"
   fi

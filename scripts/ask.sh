@@ -159,20 +159,23 @@ run_codex_one() {
   # A hung CLI used to block the `wait` below forever, and the caller — usually
   # Claude Code's own bash tool — killed the whole script instead, so every
   # other backend's answer died with it.
-  # codex has no --dir, so run it inside the target. -o/-log paths are absolute
-  # (the run dir), so the cd does not disturb where the capture lands.
+  # cwd is $REPO_DIR — the dispatch loop cd's every backend into the target.
+  # -c project_doc_max_bytes=0: codex otherwise absorbs the reviewed tree's
+  # AGENTS.md as trusted instructions; tree rules are untrusted data, and legit
+  # context arrives via collect-context instead.
   # --skip-git-repo-check: a review target is now an isolated snapshot copy
   # (scripts/snapshot.sh) with no .git, and codex otherwise refuses to start
   # outside a git repo ("Not inside a trusted directory"). It reads the files and
   # the copy's review.diff; it needs no git history. Harmless when the target IS
   # a repo (/ask, /adhd), so it is unconditional.
-  ( cd "$REPO_DIR" && multi_timeout "$timeout" codex exec \
+  multi_timeout "$timeout" codex exec \
     ${model:+-m "$model"} \
     -s read-only \
     --skip-git-repo-check \
     -c model_reasoning_effort="$EFFORT" \
+    -c project_doc_max_bytes=0 \
     -o "$out" \
-    "$QUESTION" >/dev/null 2>"${out}.log" )
+    "$QUESTION" >/dev/null 2>"${out}.log"
   rc=$?
   # stderr used to go to /dev/null, so a codex that failed left "NO OUTPUT" and
   # nothing to go on. The openrouter path keeps a .log for exactly this reason.
@@ -304,11 +307,23 @@ run_gemini_one()     { multi_run_gemini     "$QUESTION" "$1" "$2"; }
 pids=""
 for i in "${!NAMES[@]}"; do
   name="${NAMES[$i]}"; model="${MODELS[$i]}"; out="${PREFIX}-${SUFFIXES[$i]}.txt"
+  # A reused prefix (loop mode re-reviews with the same $RUN/review) must not
+  # let last round's answer stand in for a backend that dies before writing —
+  # a stale non-empty file with no .dead marker reads as a live result.
+  # The sidecars go too: .dead.log is only ever cleared inside
+  # multi_fail_backend, so a round that FAILS then SUCCEEDS leaves last round's
+  # stderr tail sitting next to a live answer — the same stale-file confusion
+  # this line exists to close, one filename over.
+  rm -f "$out" "${out}.dead" "${out}.dead.log" "${out}.log"
+  # ONE cd for every backend: each harness reads the tree from its cwd, and
+  # per-backend cwd handling is how openrouter/gemini shipped reviewing the
+  # caller's directory as an empty diff. A new backend inherits this for free.
+  # All -o/log/out paths are absolute (made so above), so nothing lands astray.
   case "$name" in
-    codex)      run_codex_one      "$out" "${model:-$CODEX_MODEL}"        & ;;
-    opencode)   run_opencode_one   "$out" "${model:-$MODEL}" "$FALLBACK"  & ;;
-    openrouter) run_openrouter_one "$out" "${model:-$OR_MODEL}"           & ;;
-    gemini)     run_gemini_one     "$out" "${model:-$MULTI_GEMINI_MODEL}" & ;;
+    codex)      ( cd "$REPO_DIR" && run_codex_one      "$out" "${model:-$CODEX_MODEL}"        ) & ;;
+    opencode)   ( cd "$REPO_DIR" && run_opencode_one   "$out" "${model:-$MODEL}" "$FALLBACK"  ) & ;;
+    openrouter) ( cd "$REPO_DIR" && run_openrouter_one "$out" "${model:-$OR_MODEL}"           ) & ;;
+    gemini)     ( cd "$REPO_DIR" && run_gemini_one     "$out" "${model:-$MULTI_GEMINI_MODEL}" ) & ;;
   esac
   pids="$pids $!:${SUFFIXES[$i]}"
 done

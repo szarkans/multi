@@ -237,5 +237,86 @@ else
   echo "FAIL opencode not read-only: every 'opencode run' needs --agent multi-readonly + OPENCODE_DISABLE_PROJECT_CONFIG=1 and no --auto (found $n_cmds cmd(s), $n_ro read-only)"; fail=1
 fi
 
+# --repo must set the cwd for EVERY harness that reads the tree from its cwd.
+# openrouter and gemini used to run in the caller's directory: a review of a
+# worktree copy saw an empty diff and reported clean. pwd -P on both sides —
+# on macOS $TMP goes through the /tmp symlink and a logical PWD never matches.
+mkdir -p "$TMP/repo" "$TMP/h"
+cat > "$TMP/bin/codex" <<'STUB'
+#!/usr/bin/env bash
+out=""
+while [ $# -gt 0 ]; do case "$1" in -o) out="$2"; shift 2 ;; *) shift ;; esac; done
+[ -n "$out" ] && echo "PWD=$(pwd -P)" > "$out"
+STUB
+cat > "$TMP/bin/claude" <<'STUB'
+#!/usr/bin/env bash
+echo "PWD=$(pwd -P)"
+echo "BASE=${ANTHROPIC_BASE_URL:-}"
+STUB
+cat > "$TMP/bin/gemini" <<'STUB'
+#!/usr/bin/env bash
+echo "PWD=$(pwd -P)"
+STUB
+chmod +x "$TMP/bin/claude" "$TMP/bin/gemini"
+repo_phys="$(cd "$TMP/repo" && pwd -P)"
+MULTI_HOME="$TMP/h" OPENROUTER_API_KEY=test-key GEMINI_API_KEY=test-key \
+MULTI_OPENROUTER_BASE_URL="https://example.test/api//" \
+  "$HERE/ask.sh" --question q --out-prefix "$TMP/repo-cd" \
+  --backend "codex,openrouter:pinned/model,gemini" --repo "$TMP/repo" >/dev/null 2>&1
+cd_fail=0
+for b in codex openrouter gemini; do
+  grep -qF "PWD=$repo_phys" "$TMP/repo-cd-$b.txt" \
+    || { echo "FAIL $b did not cd into --repo"; cd_fail=1; }
+done
+[ $cd_fail -eq 0 ] && echo "ok   --repo sets cwd for codex, openrouter and gemini" || fail=1
+
+# A custom endpoint must reach the harness: the openrouter backend is "any
+# Anthropic-compatible endpoint + key", not openrouter.ai hardwired. The value
+# above ends in "//" on purpose — ALL trailing slashes must be normalized away
+# (a paste carries doubles), or the runner requests //v1/messages, a silent 404
+# on stricter routers.
+if grep -qxF "BASE=https://example.test/api" "$TMP/repo-cd-openrouter.txt"; then
+  echo "ok   MULTI_OPENROUTER_BASE_URL reaches the harness, slash-normalized"
+else
+  echo "FAIL MULTI_OPENROUTER_BASE_URL not honored/normalized by openrouter runner"; fail=1
+fi
+
+# The openrouter child claude cd's into the reviewed tree: without
+# --setting-sources user it loads that repo's .claude/settings.json — hooks and
+# permission grants authored by whoever wrote the code under review. Source
+# guard, same style as the opencode read-only guard above: the stub ignores
+# flags, so only this catches a silent revert.
+if grep -q -- '--setting-sources user' "$HERE/providers.sh"; then
+  echo "ok   openrouter child claude keeps --setting-sources user"
+else
+  echo "FAIL openrouter child claude lost --setting-sources user (reviewed repo's settings/hooks would load)"; fail=1
+fi
+if grep -q -- 'project_doc_max_bytes=0' "$HERE/ask.sh"; then
+  echo "ok   codex keeps -c project_doc_max_bytes=0"
+else
+  echo "FAIL codex lost -c project_doc_max_bytes=0 (reviewed repo's AGENTS.md would load as instructions)"; fail=1
+fi
+
+# multi_run_openrouter must pin every alias Claude Code resolves, not just
+# the model/small-fast/haiku ones: a child that spawns its own Task subagents
+# otherwise resolves "opus"/"sonnet" through the ANTHROPIC_DEFAULT_SONNET_MODEL
+# / ANTHROPIC_DEFAULT_OPUS_MODEL account defaults and bills them through
+# OPENROUTER_API_KEY (2026-08-31: $1.91 of Opus 5 from a free-model parent's
+# subagents). Source guard, same shape as the ones above: scope the grep to
+# the function body via awk, then count with a herestring (no grep -q in a
+# pipe under pipefail).
+or_fn="$(awk '/^multi_run_openrouter\(\) \{/,/^\}/' "$HERE/providers.sh")"
+or_pins="$(grep -c '="$model"' <<<"$or_fn")"
+if [ "$or_pins" -eq 5 ] \
+  && grep -q 'ANTHROPIC_MODEL="$model"' <<<"$or_fn" \
+  && grep -q 'ANTHROPIC_SMALL_FAST_MODEL="$model"' <<<"$or_fn" \
+  && grep -q 'ANTHROPIC_DEFAULT_HAIKU_MODEL="$model"' <<<"$or_fn" \
+  && grep -q 'ANTHROPIC_DEFAULT_SONNET_MODEL="$model"' <<<"$or_fn" \
+  && grep -q 'ANTHROPIC_DEFAULT_OPUS_MODEL="$model"' <<<"$or_fn"; then
+  echo "ok   multi_run_openrouter pins all 5 model aliases (MODEL, SMALL_FAST, HAIKU, SONNET, OPUS)"
+else
+  echo "FAIL multi_run_openrouter missing a model alias pin (found $or_pins/5)"; fail=1
+fi
+
 [ $fail -eq 0 ] && echo "ALL PASS" || echo "FAILURES"
 exit $fail

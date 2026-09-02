@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.8.0 — 2026-09-02
+
+- A slow reviewer is no longer killed and thrown away: the review budget went from 900s to 2400s. Measured on a real review — the OpenRouter reviewer worked for 36 model turns over 890s and was killed 5 seconds before writing its report, discarding 1.05M paid input tokens and leaving a 0-byte file. `claude -p` prints nothing until it finishes, so any kill costs the whole run.
+- A failed OpenRouter reviewer now says what actually happened instead of guessing. It used to claim "the key was probably rejected" every time; now it counts the model turns the child really made and names its transcript, and no branch states a cause as settled — zero turns fits a rejected key, a pool that went 429, or a transcript format this code stopped recognising, and the message says so.
+- OpenCode reviews code again: it runs as a plugin-owned read-only agent instead of `--agent plan`, which had been silently refusing its own grep calls and returning an "I'll review…" stub. It also closes the hole where a reviewed repo's own opencode config could re-enable write and bash (#12).
+- OpenRouter and Gemini count as real reviewers, so a setup with either satisfies the multi-model gate. The probe stops printing OK for a key it never checked — a dead Gemini key used to show up green.
+- Every backend now runs in the directory `--repo` names. OpenRouter and Gemini used to run wherever the caller stood, which meant reviewing a worktree copy could report an empty diff as clean.
+- The isolated copy handed to reviewers is stripped of the reviewed repo's `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, `.claude/` and `.gemini/`, so a hostile repository cannot load its own hooks or instructions into a reviewer. They stay visible inside the diff, where they are inert text a reviewer should see.
+- Model pinning moved to `~/.claude/multi/models`, next to everything else this plugin owns. The old `~/.config/multi/models` is still read for one release and setup offers the one-line move.
+- A custom endpoint (9router, z.ai, self-hosted) must be `https://` — plain `http://` is refused except on localhost — and setting one says out loud that your API key will be sent there. The endpoint decides where the key goes, so it is as sensitive as the key.
+- The probe reports an available paid OpenCode channel even when you already pin your own models. It only did so for users without a config, which excluded exactly the people the offer was written for.
+- Reviewers are told the diff is where their reading starts, not where it ends — open the changed files, their tests and their callers before judging.
+- `/multi:setup` rewritten, with per-backend reference pages it loads only when needed.
+- Russian and Chinese READMEs match the rewritten English one.
+
 ## 2.7.0 — 2026-08-28
 
 - Reviewers run on an isolated copy of your work tree, and the Claude reviewer sub-agents lost their shell entirely — a hostile-config opencode or a stray `git checkout -- .` can no longer wipe uncommitted edits, it hits the copy, not your work (#14, real fix; 2.5.0 was prompt-only).

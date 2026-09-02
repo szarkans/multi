@@ -26,6 +26,10 @@ cmd_status() {
 
   printf 'openrouter: '
   if [ -n "${OPENROUTER_API_KEY:-}" ]; then
+    # A custom endpoint changes what every check below actually talks to —
+    # say so, or a 9router/z.ai user reads "openrouter" and doubts their key.
+    [ "$MULTI_OPENROUTER_BASE_URL" = "https://openrouter.ai/api" ] \
+      || printf 'endpoint %s — ' "$MULTI_OPENROUTER_BASE_URL"
     printf '%s — ' "$(mask "$OPENROUTER_API_KEY")"
     # Report the model that will actually be used, not the one we hoped for:
     # a free pool returning 429 is normal and the runner moves on to the next.
@@ -51,7 +55,7 @@ cmd_status() {
 cmd_set() {
   local name="$1" value="${2:-}"
   case "$name" in
-    OPENROUTER_API_KEY|GEMINI_API_KEY|MULTI_OPENROUTER_MODEL|MULTI_OPENROUTER_MODELS|MULTI_GEMINI_MODEL|MULTI_OPENCODE_MODEL) ;;
+    OPENROUTER_API_KEY|GEMINI_API_KEY|MULTI_OPENROUTER_MODEL|MULTI_OPENROUTER_MODELS|MULTI_OPENROUTER_BASE_URL|MULTI_GEMINI_MODEL|MULTI_OPENCODE_MODEL) ;;
     *) echo "refusing to set unknown variable: $name" >&2; exit 2 ;;
   esac
 
@@ -62,6 +66,23 @@ cmd_set() {
     *_API_KEY) ;;
     *) [ -n "$value" ] || { echo "usage: $(basename "$0") set $name <value>" >&2; exit 2; } ;;
   esac
+
+  # The endpoint decides where OPENROUTER_API_KEY is sent: multi_check_openrouter
+  # curls it with an `authorization: Bearer` header and every review run hands it
+  # to the child as ANTHROPIC_AUTH_TOKEN. So this one value is as security-
+  # relevant as the key itself, and it is the one an injected web page would go
+  # for -- the setup skill has WebFetch and researches provider docs. TLS is
+  # therefore mandatory, except on the loopback, where a self-hosted router over
+  # plain http is a normal setup and nothing leaves the machine.
+  if [ "$name" = "MULTI_OPENROUTER_BASE_URL" ]; then
+    case "$value" in
+      https://*) ;;
+      http://localhost|http://localhost/*|http://localhost:*) ;;
+      http://127.0.0.1|http://127.0.0.1/*|http://127.0.0.1:*) ;;
+      *) echo "refusing $name='$value': must be https:// (http:// only on localhost). Your API key is sent to this host as a Bearer token." >&2; exit 2 ;;
+    esac
+    echo "note: every OpenRouter call — the key check and every review — will now send OPENROUTER_API_KEY to $value" >&2
+  fi
 
   # Without a value on the command line the key is read from stdin -- typed
   # without echo, or piped in. This is the way to do it: a key in argv is in

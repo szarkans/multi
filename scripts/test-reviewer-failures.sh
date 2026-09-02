@@ -157,5 +157,69 @@ d=$((SECONDS-s))
 say "killed within grace" "$([ $d -le 15 ] && echo yes || echo "no(${d}s)")" "yes"
 say "reported as a timeout" "$(grep -c 'TIMEOUT' "$TMP/k-opencode.txt")" "1"
 
+
+# A timed-out openrouter reviewer has two causes that look identical from the
+# outside -- both leave an empty file -- and the message used to name only one
+# of them ("the key was probably rejected"). Measured 2026-09-02: that sent a
+# reader hunting a healthy key while the model had done 36 real turns and only
+# needed more time. The stub `claude` writes a transcript at the session id it
+# was handed, so the two cases are told apart here with no network and no key.
+echo "== openrouter timeout distinguishes a working model from a dead key =="
+cat > "$TMP/bin/claude" <<'STUB'
+#!/usr/bin/env bash
+# Find --session-id and write TURNS assistant lines where the runner looks.
+sid=""
+while [ $# -gt 0 ]; do
+  [ "$1" = "--session-id" ] && { sid="$2"; shift 2; continue; }
+  shift
+done
+# STUB_TURNS unset => write no transcript at all (the "child never started"
+# shape). STUB_TURNS set, even to 0, => a transcript that always opens with the
+# user turn, because that is what a real rejected key leaves behind: the prompt
+# went in, nothing came back. Without that line a 0-turn run would take the
+# no-transcript branch and the zero-assistant branch would go untested.
+if [ -n "$sid" ] && [ -n "${CLAUDE_CONFIG_DIR:-}" ] && [ -n "${STUB_TURNS:-}" ]; then
+  mkdir -p "$CLAUDE_CONFIG_DIR/projects/stub"
+  f="$CLAUDE_CONFIG_DIR/projects/stub/$sid.jsonl"
+  echo '{"type":"user"}' > "$f"
+  n=0
+  while [ "$n" -lt "$STUB_TURNS" ]; do
+    echo '{"type":"assistant"}' >> "$f"
+    n=$((n+1))
+  done
+fi
+sleep 300
+STUB
+chmod +x "$TMP/bin/claude"
+export OPENROUTER_API_KEY=stub-key-not-used-by-the-stub
+
+STUB_TURNS=9 bash "$TREE/scripts/ask.sh" --question q --backend openrouter:m --out-prefix "$TMP/or" >/dev/null 2>&1
+echo "   busy says: $(head -c 160 "$TMP/or-openrouter.txt" 2>/dev/null)"
+say "busy model: counts its turns" "$(grep -c 'made 9 model turns' "$TMP/or-openrouter.txt")" "1"
+say "busy model: blames the timeout" "$(grep -c 'MULTI_REVIEW_TIMEOUT' "$TMP/or-openrouter.txt")" "1"
+say "busy model: does NOT blame the key" "$(grep -qi 'rejected key' "$TMP/or-openrouter.txt" && echo no || echo yes)" "yes"
+say "busy model: points at the transcript" "$(grep -c '\.jsonl' "$TMP/or-openrouter.txt")" "1"
+
+# One turn is the ambiguous middle -- a slow single turn inside a short budget
+# looks the same as a key dying mid-retry -- and must be reported as ambiguous.
+STUB_TURNS=1 bash "$TREE/scripts/ask.sh" --question q --backend openrouter:m --out-prefix "$TMP/oa" >/dev/null 2>&1
+say "one turn: names the count, not a cause" "$(grep -c 'Only 1 model turns recorded' "$TMP/oa-openrouter.txt")" "1"
+say "one turn: does NOT blame the timeout" "$(grep -q 'MULTI_REVIEW_TIMEOUT' "$TMP/oa-openrouter.txt" && echo no || echo yes)" "yes"
+
+# A transcript that exists and holds zero assistant turns: the shape a really
+# rejected key leaves. It must offer the key AND the alternatives (a pool that
+# went 429 after the probe passed, a transcript format this code stopped
+# recognising) -- never one cause stated as settled.
+STUB_TURNS=0 bash "$TREE/scripts/ask.sh" --question q --backend openrouter:m --out-prefix "$TMP/od" >/dev/null 2>&1
+echo "   zero says: $(head -c 200 "$TMP/od-openrouter.txt" 2>/dev/null)"
+say "zero turns: transcript branch, not no-transcript" "$(grep -c 'Only 0 model turns recorded' "$TMP/od-openrouter.txt")" "1"
+say "zero turns: offers the key" "$(grep -ci 'rejected key' "$TMP/od-openrouter.txt")" "1"
+say "zero turns: offers a busy pool too" "$(grep -c '429' "$TMP/od-openrouter.txt")" "1"
+say "zero turns: offers format drift too" "$(grep -c 'format this code no longer recognises' "$TMP/od-openrouter.txt")" "1"
+
+# No transcript at all is a different case from an empty one, and says so.
+bash "$TREE/scripts/ask.sh" --question q --backend openrouter:m --out-prefix "$TMP/on" >/dev/null 2>&1
+say "no transcript: says exactly that" "$(grep -c 'No transcript was written at all' "$TMP/on-openrouter.txt")" "1"
+
 [ $fail -eq 0 ] && echo "ALL PASS" || echo "FAILURES"
 exit $fail
