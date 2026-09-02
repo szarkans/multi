@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.8.1 — 2026-09-02
+
+- The honest timeout diagnosis now works on macOS too. 2.8.0 located the child's transcript with `find -print -quit`, and `-quit` is a GNU extension that stock macOS `find` does not have — there it failed silently, the transcript came back empty, and every timed-out OpenRouter reviewer was blamed on a rejected key again, which is the exact misdiagnosis 2.8.0 was written to end. It is a plain glob now, with no external command in the path at all.
+- The usage example at the top of `ask.sh` still said `--timeout 900` after the default moved to 2400.
+
 ## 2.8.0 — 2026-09-02
 
 - A slow reviewer is no longer killed and thrown away: the review budget went from 900s to 2400s. Measured on a real review — the OpenRouter reviewer worked for 36 model turns over 890s and was killed 5 seconds before writing its report, discarding 1.05M paid input tokens and leaving a 0-byte file. `claude -p` prints nothing until it finishes, so any kill costs the whole run.

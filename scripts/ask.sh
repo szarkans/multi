@@ -5,7 +5,7 @@
 #
 #   ask.sh --question "is a channel or a mutex better here?" --out-prefix "$RUN/ask"
 #   ask.sh --question-file "$RUN/prompt.md" --out-prefix "$RUN/done" --effort high
-#   ask.sh --question-file "$RUN/review.md" --out-prefix "$RUN/review" --timeout 900
+#   ask.sh --question-file "$RUN/review.md" --out-prefix "$RUN/review" --timeout 2400
 #   ask.sh --question "..." --out-prefix /tmp/f2 --backend codex
 #   ask.sh --question "..." --out-prefix /tmp/f4 --backend openrouter:x-ai/grok-4.5
 #   ask.sh --question "..." --out-prefix /tmp/all --backend all

@@ -459,13 +459,23 @@ multi_uuid() {
 }
 
 # multi_child_transcript <session id> — prints the transcript path, or nothing.
-# -quit rather than `| head -1`: a pipeline whose reader exits early kills find
-# with SIGPIPE, and under pipefail that reads as failure exactly when the file
-# was found.
+# A glob, not `find`. The obvious `find -name … -print -quit` is wrong twice
+# over: `-quit` is a GNU extension that stock macOS BSD find does not have, and
+# with stderr swallowed it fails SILENTLY there -- no path, zero turns, and
+# every timeout back to "your key was probably rejected", which is the exact
+# misdiagnosis this code exists to prevent, reintroduced on the platform the
+# project targets. `| head -1` is not the fix either: the reader exits first,
+# find dies of SIGPIPE, and pipefail reports failure precisely when the file WAS
+# found. The transcript sits exactly one directory below projects/, so a plain
+# glob answers it with no external command at all. An unmatched glob stays
+# literal and simply fails the -f test.
 multi_child_transcript() {
   [ -n "${1:-}" ] || return 0
-  [ -d "$MULTI_CHILD_HOME/projects" ] || return 0
-  find "$MULTI_CHILD_HOME/projects" -name "$1.jsonl" -print -quit 2>/dev/null
+  local d
+  for d in "$MULTI_CHILD_HOME"/projects/*/; do
+    if [ -f "$d$1.jsonl" ]; then printf '%s' "$d$1.jsonl"; return 0; fi
+  done
+  return 0
 }
 
 # How much work a killed child had actually done. Turn count only -- it answers
