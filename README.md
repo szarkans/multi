@@ -15,7 +15,7 @@ currently supports:
 - codex
 - opencode
 - gemini
-- headless claude code with any API key you provide (e.g. openrouter)
+- headless claude code with any API key or base URL you provide (e.g. [openrouter api key](https://openrouter.ai/), [9router url](https://9router.com/), etc)
 
 <h2 align="center">what's the point?</h2>
 
