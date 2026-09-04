@@ -18,7 +18,13 @@ for n in codex opencode; do
 done
 export PATH="$TMP/bin:$PATH"
 export MULTI_HOME="$TMP/home"; mkdir -p "$MULTI_HOME"
-export MULTI_BACKEND_TIMEOUT=3 MULTI_CODEX_TIMEOUT=3 MULTI_REVIEW_TIMEOUT=3
+export MULTI_REVIEW_TIMEOUT=3
+# Timeouts and the opencode stall live in config.toml now, per backend.
+# knobs <timeout> <stall> rewrites it for the next run.
+knobs() {
+  printf 'default_profile = "p"\n[backends.codex]\ntype = "codex"\ntimeout = %s\n[backends.opencode]\ntype = "opencode"\ntimeout = %s\nstall = %s\n[backends.openrouter]\ntype = "claude-headless"\nbase_url = "https://openrouter.ai/api"\nmodels = ["m"]\ntimeout = %s\n[profiles]\np = ["codex", "opencode"]\n' "$1" "$1" "$2" "$1" > "$MULTI_HOME/config.toml"
+}
+knobs 3 180
 echo "bash $BASH_VERSION | timeout: $(command -v timeout || echo none)"
 
 fail=0
@@ -112,7 +118,8 @@ exec sleep 300
 STUB
 chmod +x "$TMP/bin/opencode"
 s=$SECONDS
-STUB_PIDFILE="$TMP/os.pid" MULTI_OPENCODE_STALL=2 MULTI_BACKEND_TIMEOUT=30 bash "$TREE/scripts/ask.sh" --question q --backend opencode --model m --out-prefix "$TMP/os" >/dev/null 2>&1
+knobs 30 2
+STUB_PIDFILE="$TMP/os.pid" bash "$TREE/scripts/ask.sh" --question q --backend opencode --model m --out-prefix "$TMP/os" >/dev/null 2>&1
 d=$((SECONDS-s))
 say "silent stall returns well before timeout" "$([ $d -le 10 ] && echo yes || echo "no(${d}s)")" "yes"
 say "silent stall has a one-line marker" "$([ -s "$TMP/os-opencode.txt.dead" ] && [ "$(wc -l < "$TMP/os-opencode.txt.dead")" -eq 1 ] && echo yes || echo no)" "yes"
@@ -130,7 +137,8 @@ exec sleep 300
 STUB
 chmod +x "$TMP/bin/opencode"
 s=$SECONDS
-STUB_PIDFILE="$TMP/ow.pid" MULTI_OPENCODE_STALL=2 MULTI_BACKEND_TIMEOUT=30 bash "$TREE/scripts/ask.sh" --question q --backend opencode --model m --out-prefix "$TMP/ow" >/dev/null 2>&1
+knobs 30 2
+STUB_PIDFILE="$TMP/ow.pid" bash "$TREE/scripts/ask.sh" --question q --backend opencode --model m --out-prefix "$TMP/ow" >/dev/null 2>&1
 d=$((SECONDS-s))
 say "stderr-only stall returns well before timeout" "$([ $d -le 10 ] && echo yes || echo "no(${d}s)")" "yes"
 say "stderr-only stall says SILENT" "$(grep -q 'SILENT' "$TMP/ow-opencode.txt.dead" && echo yes || echo no)" "yes"
@@ -156,7 +164,8 @@ esac
 STUB
 chmod +x "$TMP/bin/opencode"
 s=$SECONDS
-STUB_PIDFILE="$TMP/fs.pid" MULTI_OPENCODE_STALL=2 MULTI_BACKEND_TIMEOUT=30 bash "$TREE/scripts/ask.sh" --question q --backend opencode --model primary --fallback backup --out-prefix "$TMP/fs" >/dev/null 2>&1
+knobs 30 2
+STUB_PIDFILE="$TMP/fs.pid" bash "$TREE/scripts/ask.sh" --question q --backend opencode --model primary --fallback backup --out-prefix "$TMP/fs" >/dev/null 2>&1
 d=$((SECONDS-s))
 say "silent fallback returns well before timeout" "$([ $d -le 10 ] && echo yes || echo "no(${d}s)")" "yes"
 say "silent fallback is reported SILENT" "$(grep -q 'SILENT' "$TMP/fs-opencode.txt.dead" && echo yes || echo no)" "yes"
@@ -172,15 +181,18 @@ exec sleep 300
 STUB
 chmod +x "$TMP/bin/opencode"
 s=$SECONDS
-MULTI_OPENCODE_STALL=5 MULTI_BACKEND_TIMEOUT=3 bash "$TREE/scripts/ask.sh" --question q --backend opencode --model m --out-prefix "$TMP/sd" >/dev/null 2>&1
+knobs 3 5
+bash "$TREE/scripts/ask.sh" --question q --backend opencode --model m --out-prefix "$TMP/sd" >/dev/null 2>&1
 d=$((SECONDS-s))
 say "disabled stall reaches normal timeout" "$([ $d -ge 3 ] && [ $d -le 10 ] && echo yes || echo "no(${d}s)")" "yes"
 say "disabled stall says TIMEOUT" "$(grep -q 'TIMEOUT' "$TMP/sd-opencode.txt.dead" && echo yes || echo no)" "yes"
 say "disabled stall does not say SILENT" "$(grep -q 'SILENT' "$TMP/sd-opencode.txt.dead" && echo no || echo yes)" "yes"
 
-MULTI_OPENCODE_STALL=bad MULTI_BACKEND_TIMEOUT=3 bash "$TREE/scripts/ask.sh" --question q --backend opencode --model m --out-prefix "$TMP/sv" >"$TMP/sv.stdout" 2>"$TMP/sv.stderr"
-say "invalid stall falls back without integer errors" "$(grep -q 'integer expression' "$TMP/sv.stderr" && echo no || echo yes)" "yes"
-say "invalid stall reaches TIMEOUT" "$(grep -q 'TIMEOUT' "$TMP/sv-opencode.txt.dead" && echo yes || echo no)" "yes"
+knobs 3 '"bad"'
+bash "$TREE/scripts/ask.sh" --question q --backend opencode --model m --out-prefix "$TMP/sv" >"$TMP/sv.stdout" 2>"$TMP/sv.stderr"
+say "invalid stall is refused before launch" "$?" "2"
+say "and the reason names the key" "$(grep -c 'stall must be a positive integer' "$TMP/sv.stderr")" "1"
+say "nothing was launched" "$([ -e "$TMP/sv-opencode.txt" ] && echo launched || echo no)" "no"
 
 echo "== an initial opencode event disables the stall watchdog =="
 cat > "$TMP/bin/opencode" <<'STUB'
@@ -190,7 +202,8 @@ exec sleep 300
 STUB
 chmod +x "$TMP/bin/opencode"
 s=$SECONDS
-MULTI_OPENCODE_STALL=1 MULTI_BACKEND_TIMEOUT=3 bash "$TREE/scripts/ask.sh" --question q --backend opencode --model m --out-prefix "$TMP/oe" >/dev/null 2>&1
+knobs 3 1
+bash "$TREE/scripts/ask.sh" --question q --backend opencode --model m --out-prefix "$TMP/oe" >/dev/null 2>&1
 d=$((SECONDS-s))
 say "eventful run reaches normal timeout" "$([ $d -ge 3 ] && [ $d -le 10 ] && echo yes || echo "no(${d}s)")" "yes"
 say "eventful timeout says TIMEOUT" "$(grep -q 'TIMEOUT' "$TMP/oe-opencode.txt.dead" && echo yes || echo no)" "yes"
@@ -212,7 +225,8 @@ case "$model" in
 esac
 STUB
 chmod +x "$TMP/bin/opencode"
-STUB_PIDFILE="$TMP/sf.pid" MULTI_OPENCODE_STALL=2 MULTI_BACKEND_TIMEOUT=30 bash "$TREE/scripts/ask.sh" --question q --backend opencode --model primary --fallback backup --out-prefix "$TMP/sf" >/dev/null 2>&1
+knobs 30 2
+STUB_PIDFILE="$TMP/sf.pid" bash "$TREE/scripts/ask.sh" --question q --backend opencode --model primary --fallback backup --out-prefix "$TMP/sf" >/dev/null 2>&1
 say "silent fallback answer kept" "$(grep -c 'silent fallback answer' "$TMP/sf-opencode.txt")" "1"
 say "silent fallback stays live" "$([ ! -e "$TMP/sf-opencode.txt.dead" ] && echo yes || echo no)" "yes"
 say "silent fallback banner is loud" "$(sed -n 1p "$TMP/sf-opencode.txt")" "opencode: primary emitted nothing for 2s — fell back to backup"
@@ -232,8 +246,8 @@ echo "$$" > "$OPENCODE_STUB_PIDFILE"
 exec sleep 300
 STUB
 chmod +x "$TMP/bin/codex" "$TMP/bin/opencode"
+knobs 30 30
 CODEX_STUB_PIDFILE="$TMP/kt-codex.pid" OPENCODE_STUB_PIDFILE="$TMP/kt-opencode.pid" \
-  MULTI_CODEX_TIMEOUT=30 MULTI_BACKEND_TIMEOUT=30 MULTI_OPENCODE_STALL=30 \
   bash "$TREE/scripts/ask.sh" --question q --backend both --model m --timeout 30 --out-prefix "$TMP/kt" >/dev/null 2>&1 &
 ask_pid=$!
 n=0
@@ -272,7 +286,8 @@ echo "$$" > "$OPENCODE_STUB_PIDFILE"
 exec sleep 300
 STUB
 chmod +x "$TMP/bin/codex" "$TMP/bin/opencode"
-OPENCODE_STUB_PIDFILE="$TMP/kf-opencode.pid" MULTI_CODEX_TIMEOUT=30 MULTI_BACKEND_TIMEOUT=30 MULTI_OPENCODE_STALL=29 \
+knobs 30 29
+OPENCODE_STUB_PIDFILE="$TMP/kf-opencode.pid" \
   bash "$TREE/scripts/ask.sh" --question q --backend both --model m --timeout 30 --out-prefix "$TMP/kf" >/dev/null 2>&1 &
 ask_pid=$!
 n=0
@@ -287,6 +302,7 @@ pid="$(cat "$TMP/kf-opencode.pid")"; n=0
 while kill -0 "$pid" 2>/dev/null && [ "$n" -lt 3 ]; do sleep 1; n=$((n+1)); done
 say "mixed termination opencode process is gone" "$(kill -0 "$pid" 2>/dev/null && echo no || echo yes)" "yes"
 
+knobs 3 180
 echo "== opencode walks the fallback list until a later model answers =="
 cat > "$TMP/bin/opencode" <<'STUB'
 #!/usr/bin/env bash
@@ -323,7 +339,7 @@ say "intermediate partial marked TIMEOUT" "$(grep -c '^opencode: TIMEOUT after .
 say "intermediate partial stays live" "$([ ! -e "$TMP/fp-opencode.txt.dead" ] && echo yes || echo no)" "yes"
 
 bash "$TREE/scripts/ask.sh" --question q --backend opencode --model timeoutpartial --fallback backup2 --out-prefix "$TMP/fb" >/dev/null 2>&1
-say "timeout fallback banner names timeout" "$(sed -n 1p "$TMP/fb-opencode.txt")" "opencode: timeoutpartial timed out after ${MULTI_BACKEND_TIMEOUT}s — fell back to backup2"
+say "timeout fallback banner names timeout" "$(sed -n 1p "$TMP/fb-opencode.txt")" "opencode: timeoutpartial timed out after 3s — fell back to backup2"
 
 echo "== an opencode too old for --format json still reaches the judge =="
 cat > "$TMP/bin/opencode" <<'STUB'

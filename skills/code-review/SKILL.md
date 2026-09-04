@@ -37,8 +37,10 @@ From the probe lines above — they are already there, do not re-run it.
 least one non-Claude reviewer there is nothing here that a single-model review
 does not already do. The pipeline runs four as reviewers: Codex, OpenCode,
 OpenRouter (Claude Code driving a non-Claude model) and Gemini — any one of
-them satisfies the gate, so include whichever the probe shows configured. If
-none is, say so and point at `/multi:setup`. Do not quietly deliver a one-model
+them satisfies the gate — but only if it is in the profile that will run
+(the default profile, or the one the user named): a configured backend the
+profile leaves out reviews nothing. If the profile has no configured
+non-Claude backend, say so and point at `/multi:setup`. Do not quietly deliver a one-model
 review wearing a multi-model label.
 
 Anything else missing is a note, not a stop: no OpenCode, no ponytail, not a
@@ -88,6 +90,16 @@ Running now: Codex <effort> · OpenCode <model> · ponytail          <— or why
 Then: <what decides the Claude spend>
 ```
 
+When the probe printed `config: built-in default`, add one line the user can
+act on — this is the first time most people learn the lineup is theirs:
+
+```
+Reviewers come from the default profile (no config file yet) — `/multi:setup` shows the file and how to change who reviews.
+```
+
+When a config file exists, name the profile instead: *"profile `normal` from
+your config.toml"*. Say it once per session, not on every round.
+
 If they wanted something else they will say so, and interrupting is cheaper
 than an interrogation.
 
@@ -136,9 +148,12 @@ $SCRIPTS/collect-context.sh --repo "$REPO" [--diff <spec>] [--paths "<paths>"] >
 $SCRIPTS/review-prompt.sh --repo "$COPY" --target "<in words>" [--diff <spec> --diff-artifact review.diff] [--paths "<paths>"] \
                           [--focus "<user text>"] --context "$RUN/ctx.md" > "$RUN/review.prompt.md"
 $SCRIPTS/ask.sh --repo "$COPY" --question-file "$RUN/review.prompt.md" --out-prefix "$RUN/review" \
-                --backend "codex,opencode:<model from probe>,openrouter" --fallback <from probe> \
                 --effort <low|medium|high|xhigh|max> --timeout "${MULTI_REVIEW_TIMEOUT:-2400}"
 ```
+
+No `--backend`: who reviews is the default profile in the user's `config.toml`
+(the probe printed its backends and profiles). Pass `--backend <profile>` or an
+explicit list only when the user asked for a specific set for this review.
 
 `run-dir.sh` prints this session's own directory, `/tmp/multi/<session>--<slug>`,
 and creates it. Two sessions reviewing at once used to share fixed `/tmp` names

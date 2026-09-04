@@ -17,6 +17,8 @@
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+# Own MULTI_HOME: the machine's real config.toml and providers.env must not shape this test.
+export MULTI_HOME="$TMP/h"; mkdir -p "$MULTI_HOME"
 mkdir -p "$TMP/bin"
 export PATH="$TMP/bin:$PATH"
 

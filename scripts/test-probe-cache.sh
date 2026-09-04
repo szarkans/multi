@@ -17,9 +17,13 @@ echo "opencode/other-free"
 STUB
 printf '#!/usr/bin/env bash\necho "Logged in using ChatGPT"\n' > "$TMP/bin/codex"
 chmod +x "$TMP/bin/"*
-unset MULTI_OPENCODE_MODEL MULTI_OPENCODE_CANDIDATES MULTI_PROBE_CACHE_MIN
-export PATH="$TMP/bin:$PATH" MULTI_HOME="$TMP/h" MARKER="$TMP/calls" \
-  MULTI_MODELS_CONFIG="$TMP/models"
+unset MULTI_OPENCODE_CANDIDATES MULTI_PROBE_CACHE_MIN
+export PATH="$TMP/bin:$PATH" MULTI_HOME="$TMP/h" MARKER="$TMP/calls"
+mkdir -p "$MULTI_HOME"
+CONFIG="$MULTI_HOME/config.toml"
+oc_config() { # oc_config '"a", "b"' -> a config whose opencode backend lists those models
+  printf 'default_profile = "p"\n[backends.opencode]\ntype = "opencode"\nmodels = [%s]\n[profiles]\np = ["opencode"]\n' "$1" > "$CONFIG"
+}
 : > "$MARKER"
 fail=0
 say(){ if [ "$2" = "$3" ]; then echo "  ok   $1"; else echo "  FAIL $1: got '$2' want '$3'"; fail=1; fi; }
@@ -34,25 +38,32 @@ MULTI_PROBE_CACHE_MIN=0 bash "$TREE/scripts/probe.sh" >/dev/null 2>&1
 say "cache can be turned off" "$(grep -c CALLED "$MARKER")" "1"
 
 echo "== a configured model list overrides auto-detection =="
-printf '%s\n' 'opencode: opencode-go/glm-5.3-flash, opencode-go/deepseek-v4-flash' > "$MULTI_MODELS_CONFIG"
+oc_config '"opencode-go/glm-5.3-flash", "opencode-go/deepseek-v4-flash"'
 rm -f "$MULTI_HOME/opencode-models.cache"
 : > "$MARKER"
 configured="$(bash "$TREE/scripts/probe.sh" 2>/dev/null | grep '^opencode:')"
-say "comma-separated primary and fallback are used" "$configured" "opencode: OK — opencode-go/glm-5.3-flash (fallback: opencode-go/deepseek-v4-flash) (from config)"
+say "primary and fallback are used in order" "$configured" "opencode: OK — opencode-go/glm-5.3-flash (fallback: opencode-go/deepseek-v4-flash) (from config)"
 say "config bypasses model catalogue" "$(grep -c CALLED "$MARKER")" "0"
 
-echo "== a commas-only config falls through to auto-detection =="
-printf '%s\n' 'opencode: ,,,' > "$MULTI_MODELS_CONFIG"
+echo "== an empty models list falls through to auto-detection =="
+oc_config ''
 rm -f "$MULTI_HOME/opencode-models.cache"
 : > "$MARKER"
 commas_only="$(bash "$TREE/scripts/probe.sh" 2>/dev/null | grep '^opencode:')"
-say "commas-only config uses auto-detection" "$commas_only" "opencode: OK — opencode/deepseek-v4-flash-free (fallback: opencode/other-free)"
-say "commas-only config reads the catalogue" "$(grep -c CALLED "$MARKER")" "1"
+say "empty list uses auto-detection" "$commas_only" "opencode: OK — opencode/deepseek-v4-flash-free (fallback: opencode/other-free)"
+say "empty list reads the catalogue" "$(grep -c CALLED "$MARKER")" "1"
 
-rm -f "$MULTI_MODELS_CONFIG"
+rm -f "$CONFIG"
 automatic="$(bash "$TREE/scripts/probe.sh" 2>/dev/null | grep '^opencode:')"
 say "missing config restores auto-detection" "$automatic" "opencode: OK — opencode/deepseek-v4-flash-free (fallback: opencode/other-free)"
 say "auto-detection reads the catalogue" "$(grep -c CALLED "$MARKER")" "1"
+
+echo "== the pre-config models file is reported, not read =="
+printf 'opencode: opencode-go/old-list\n' > "$MULTI_HOME/models"
+legacy="$(bash "$TREE/scripts/probe.sh" 2>/dev/null)"
+say "legacy line printed" "$(grep -c '^models-config: LEGACY' <<<"$legacy")" "1"
+say "its list is not used" "$(grep -c 'old-list' <<<"$(grep '^opencode:' <<<"$legacy")")" "0"
+rm -f "$MULTI_HOME/models"
 
 echo "== a listing that failed halfway is not cached =="
 rm -f "$MULTI_HOME/opencode-models.cache"

@@ -38,6 +38,30 @@ Returning users with a working lineup skip straight to fixing gaps.
 > Claude is already connected; each backend below adds an independent
 > reviewer, most at no extra cost.
 
+## Show them the one file, before anything else
+
+Right after first contact (and for a returning user, whenever they ask to
+change models, endpoints or who reviews), put the config in front of them. It
+is theirs to edit, and the whole point is that they can. In words, then the
+file:
+
+> Everything multi does is set in one file, `~/.claude/multi/config.toml`:
+> which reviewers exist, which models each one tries in order, and which set
+> runs by default. Keys are the one thing kept out of it, in
+> `providers.env`, so you can share the config without sharing a key.
+
+If the probe printed `config: built-in default`, there is no file yet. Run
+`$SCRIPTS/setup.sh init` — it writes the default with a comment on every
+field — and **show the user the file it wrote** (`cat` it, trimmed to the
+backends and profiles, without the long comment header). Then say in one
+sentence what the default does: *"right now a review runs Codex, OpenCode and
+OpenRouter — the last one only once it has a key."* If a file already exists,
+show that one instead.
+
+They keep the default or change it; either way they now know where the knob
+is. Every later step in this skill that "writes a model" or "adds an
+endpoint" is an edit to this file, and you say so each time.
+
 ## One question, only about what the probe can't see
 
 The probe knows what's installed. It cannot know what accounts the user has
@@ -68,8 +92,13 @@ For each backend, read its reference file first and follow it:
 - **OpenRouter / 9router / z.ai / any compatible endpoint** — `references/openrouter.md`
 - **Gemini** — `references/gemini.md`
 
-If the probe printed a `models-config: LEGACY PATH` line, offer the one-line
-`mv` it shows — everything of this plugin lives under `~/.claude/multi/`.
+Everything of this plugin lives under `~/.claude/multi/`: `config.toml` for
+backends, models, endpoints, profiles and timeouts (read `references/config.md`
+before editing it), `providers.env` for keys only. If the probe printed
+`models-config: LEGACY`, the old opencode list file is no longer read — carry
+its models into `[backends.opencode]` in `config.toml` and delete the file.
+If the probe printed `config: BROKEN`, fix that first: nothing runs on a broken
+config, and it names the key and the reason.
 
 If the probe listed `other-ai-clis`, you may mention them in one sentence as
 detected-but-not-yet-supported. Do not improvise support for them.
@@ -84,7 +113,7 @@ use" — offer the fork:
    is and what it costs (usually: free, weaker, can flake).
 2. **"Research it for me"** — read `references/model-research.md` and follow
    it: live catalogue + web search (your own model knowledge is stale),
-   propose a pick, write the config only after the user approves.
+   propose a pick, write it into `config.toml` only after the user approves.
 
 ## Keys never touch this chat
 

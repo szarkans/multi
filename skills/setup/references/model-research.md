@@ -16,9 +16,9 @@ every claim in a live source**: the CLI's own catalogue and the web.
 3. Propose **one primary + an ordered fallback chain** (2–4 models), with a
    one-line reason each ("solid coder, free", "paid but stable"). Free
    models flake, so a chain matters more than the perfect single pick.
-4. Only after the user approves: write the `opencode:` line to
-   `~/.claude/multi/models` (space-separated, preserve other lines — format
-   details in `opencode.md`).
+4. Only after the user approves: write the `models` list of
+   `[backends.opencode]` in `~/.claude/multi/config.toml` (preserve everything
+   else — format in `opencode.md` and `config.md`).
 
 ## For OpenRouter (or a compatible endpoint)
 
@@ -29,10 +29,8 @@ every claim in a live source**: the CLI's own catalogue and the web.
    `:free` pools do. Suggest `:free` only to a user who explicitly won't pay.
 3. Propose 2–3 models (first = preferred, rest = fallbacks), each with price
    per million and a one-line reason.
-4. After approval, the user sets them (their terminal):
-   ```
-   $SCRIPTS/setup.sh set MULTI_OPENROUTER_MODELS
-   ```
+4. After approval, write them as the `models` list of `[backends.openrouter]`
+   in `~/.claude/multi/config.toml` (or the custom endpoint's own table).
    Remind them of the cost fuse: a low spending limit on the key (the backend
    is agentic — a review costs several times the raw prompt).
 

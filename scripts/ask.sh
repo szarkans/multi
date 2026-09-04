@@ -11,21 +11,24 @@
 #   ask.sh --question "..." --out-prefix /tmp/all --backend all
 #   ask.sh --question "..." --out-prefix /tmp/two --backend "openrouter:z-ai/glm-5.2:free,openrouter:x-ai/grok-4.5"
 #
-# --backend picks who answers: both (the two CLIs, default), all (everything
-# configured on this machine), or a comma-separated list of entries. Each
-# entry is a backend name — codex, opencode, openrouter, gemini — optionally
-# followed by :model. Split on the FIRST colon only, because model names can
-# contain colons themselves (z-ai/glm-5.2:free); no colon means the backend's
-# usual default (openrouter picks a live free model, opencode uses
-# MULTI_OPENCODE_MODEL, ...). The same backend can appear more than once with
-# a different model — comparing two OpenRouter models does not need two runs.
+# --backend picks who answers. Backends and profiles live in
+# $MULTI_HOME/config.toml (scripts/config.py reads it; no file = the built-in
+# default: codex, opencode, openrouter). The value is a profile name from that
+# file, `all` (every configured backend), `both` (codex + opencode), or a
+# comma-separated list of entries. An entry is a backend name — its whole
+# configured model chain, walked in order — or name:model, which runs exactly
+# that model with no fallback. Split on the FIRST colon only, because model
+# names can contain colons themselves (z-ai/glm-5.2:free). The same backend
+# can appear more than once with a different model — comparing two OpenRouter
+# models does not need two runs. No --backend at all runs default_profile.
 # One backend at a time is what lets a caller send a DIFFERENT question to
 # each model in parallel instead of the same one to all.
 #
-# The old per-provider flags (--model, --fallback, --codex-model, --or-model,
-# --gemini-model) still work: they set the default model for a bare backend
-# name, same as before name:model existed. --fallback accepts a comma-separated
-# model list for opencode and tries it in order; other backends ignore it.
+# --model/--fallback (opencode) and --codex-model set the model for a bare
+# (no-colon) entry of that type for this run only, over the config's chain.
+# --fallback is a comma-separated model list for opencode, tried in order.
+# Anything else is pinned as name:model. --timeout N raises every backend to
+# at least N for this run; a backend configured higher keeps its own.
 #
 # openrouter runs Claude Code itself against OpenRouter's Anthropic endpoint —
 # same agent loop, different weights. gemini runs the Google CLI, because
@@ -58,11 +61,7 @@ SELF_DIR="$(cd -- "$(dirname -- "$0")" && pwd)"
 # shellcheck source=providers.sh
 . "$SELF_DIR/providers.sh"
 
-QUESTION=""; QFILE=""; PREFIX=""; EFFORT=medium; MODEL="${MULTI_OPENCODE_MODEL:-}"; FALLBACK=""; CODEX_MODEL=""; BACKEND=both; REPO=""
-# Empty on purpose: an unset OpenRouter model lets the runner pick one whose
-# free pool is actually up. Pinning it here sent every run at the same model,
-# and a busy upstream pool then became a silent timeout instead of a fallback.
-OR_MODEL=""
+QUESTION=""; QFILE=""; PREFIX=""; EFFORT=medium; MODEL=""; FALLBACK=""; CODEX_MODEL=""; BACKEND=""; REPO=""; TIMEOUT=""
 need() { [ "$1" -ge 2 ] || { echo "missing value for $2" >&2; exit 2; }; }
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -74,11 +73,9 @@ while [ $# -gt 0 ]; do
     --fallback)      need $# "$1"; FALLBACK="$2"; shift 2 ;;
     --timeout)       need $# "$1"
                      case "$2" in ''|*[!0-9]*|0) echo "--timeout must be a positive integer: $2" >&2; exit 2 ;; esac
-                     MULTI_BACKEND_TIMEOUT="$2"; shift 2 ;;
+                     TIMEOUT="$2"; shift 2 ;;
     --codex-model)   need $# "$1"; CODEX_MODEL="$2"; shift 2 ;;
     --backend)       need $# "$1"; BACKEND="$2"; shift 2 ;;
-    --or-model)      need $# "$1"; OR_MODEL="$2"; shift 2 ;;
-    --gemini-model)  need $# "$1"; MULTI_GEMINI_MODEL="$2"; shift 2 ;;
     # Where the CLI reviewers run git and read files: the review target, not the
     # process cwd. Default cwd, so /ask and /adhd (no repo) are unaffected.
     --repo)          need $# "$1"; REPO="$2"; shift 2 ;;
@@ -101,43 +98,27 @@ if [ -n "$QFILE" ]; then
   QUESTION="$(cat "$QFILE")"
 fi
 [ -n "$QUESTION" ] || { echo "--question or --question-file is required" >&2; exit 2; }
-# `both` is the historical default (the two CLIs). `all` is everything this
-# machine is set up for. Anything else is a comma-separated list of
-# name[:model] entries, so a caller can send a DIFFERENT question — or a
-# DIFFERENT model on the same backend — to each in parallel.
-case "$BACKEND" in
-  both) ENTRIES="codex opencode" ;;
-  all)  ENTRIES="codex opencode"
-        multi_have_openrouter && ENTRIES="$ENTRIES openrouter"
-        multi_have_gemini     && ENTRIES="$ENTRIES gemini" ;;
-  *)    ENTRIES="$(printf '%s' "$BACKEND" | tr ',' ' ')" ;;
-esac
 
-# Parse each entry into (backend name, model). Split on the FIRST colon only,
-# and only when the prefix is a known backend — a model name can contain
-# colons itself (z-ai/glm-5.2:free), a bare model name cannot look like one.
-NAMES=(); MODELS=(); SUFFIXES=()
-for entry in $ENTRIES; do
-  case "$entry" in
-    codex:*|opencode:*|openrouter:*|gemini:*) name="${entry%%:*}"; model="${entry#*:}" ;;
-    *) name="$entry"; model="" ;;
-  esac
-  case "$name" in
-    codex|opencode|openrouter|gemini) ;;
-    *) echo "--backend: unknown backend '$name' (codex, opencode, openrouter, gemini, both, all)" >&2; exit 2 ;;
-  esac
-  # A backend repeated with a different model must not collide on one file.
-  # Counted by walking what is already collected. An associative array reads
-  # better, but bash 3.2 -- the /bin/bash every stock macOS ships -- has none,
-  # and `declare -A` fails there at run time, mid-script, with exit 0: ask.sh
-  # printed "declare: -A: invalid option" and the caller saw success.
-  seen=0
-  for prev in ${NAMES[@]+"${NAMES[@]}"}; do
-    [ "$prev" = "$name" ] && seen=$((seen+1))
-  done
-  suffix="$name"; [ "$seen" -gt 0 ] && suffix="${name}-$((seen+1))"
-  NAMES+=("$name"); MODELS+=("$model"); SUFFIXES+=("$suffix")
-done
+# Who runs, from the config: one tab-separated line per participant, a typo
+# or a broken config stops everything here, before anything is launched.
+# Empty fields come as "-" so a whitespace IFS cannot collapse them.
+RESOLVED="$(multi_config resolve ${BACKEND:+--backend "$BACKEND"} ${TIMEOUT:+--timeout "$TIMEOUT"})" || exit 2
+# Parallel arrays rather than one associative one: bash 3.2 -- the /bin/bash
+# every stock macOS ships -- has no `declare -A`, and it fails there at run
+# time, mid-script, with exit 0: ask.sh printed "declare: -A: invalid option"
+# and the caller saw success.
+NAMES=(); MODELS=(); SUFFIXES=(); TYPES=(); CHAINS=(); URLS=(); KEYENVS=(); TIMEOUTS=(); STALLS=()
+dash() { [ "$1" = "-" ] && printf '' || printf '%s' "$1"; }
+while IFS="$(printf '\t')" read -r suffix name type pinned chain url keyenv timeout stall; do
+  [ -n "$suffix" ] || continue
+  # Nine columns; a shape change in config.py must fail here, not misroute.
+  [ -n "$stall" ] || { echo "config.py resolve: unexpected line shape: $suffix ..." >&2; exit 2; }
+  SUFFIXES+=("$suffix"); NAMES+=("$name"); TYPES+=("$type"); MODELS+=("$(dash "$pinned")")
+  CHAINS+=("$(dash "$chain")"); URLS+=("$(dash "$url")"); KEYENVS+=("$keyenv"); TIMEOUTS+=("$timeout"); STALLS+=("$stall")
+done <<EOF
+$RESOLVED
+EOF
+[ "${#NAMES[@]}" -gt 0 ] || { echo "--backend: nothing to run" >&2; exit 2; }
 
 # 0 = there is an answer, 3 = the model said nothing, 2 = the capture is not
 # JSON (an opencode older than --format json), 4 = no python3 to read it with.
@@ -148,10 +129,7 @@ render_opencode() { # render_opencode <raw> <out> <model>
 }
 
 run_codex_one() {
-  local out="$1" model="$2" rc=0 timeout="$MULTI_CODEX_TIMEOUT"
-  if [ "$MULTI_CODEX_TIMEOUT_EXPLICIT" -eq 0 ] && [ "$MULTI_BACKEND_TIMEOUT" -gt "$timeout" ]; then
-    timeout="$MULTI_BACKEND_TIMEOUT"
-  fi
+  local out="$1" model="$2" rc=0 timeout="$MULTI_BACKEND_TIMEOUT"
   # A stale marker from a previous run with the same prefix must not condemn
   # this run: the sidecar describes one invocation, not the file forever.
   rm -f "${out}.dead"
@@ -190,7 +168,7 @@ run_opencode_one() {
   local raw="${out}.jsonl"
   rm -f "${out}.dead" "${raw}.first" "${out}.partial" "${out}.partial.calls"
   command -v opencode >/dev/null 2>&1 || { multi_fail_backend "$out" "opencode: MISSING"; return 0; }
-  [ -n "$model" ] || { multi_fail_backend "$out" "opencode: NO MODEL (set --model or MULTI_OPENCODE_MODEL)"; return 0; }
+  [ -n "$model" ] || { multi_fail_backend "$out" "opencode: NO MODEL — none of [$MULTI_OPENCODE_CANDIDATES] is in \`opencode models\`; list models under this backend's table in config.toml, or pass --model"; return 0; }
   # --format json rather than the terminal transcript: the transcript mixes the
   # model's answer with every file it opened, and the reader downstream cannot
   # tell those apart. The JSON events can. opencode-report.py turns them into
@@ -338,8 +316,9 @@ run_opencode_one() {
   rm -f "${out}.partial" "${out}.partial.calls"
 }
 
-run_openrouter_one() { multi_run_openrouter "$QUESTION" "$1" "$2"; }
-run_gemini_one()     { multi_run_gemini     "$QUESTION" "$1" "$2"; }
+# first_of "a b c" -> a ; rest_csv "a b c" -> b,c
+first_of() { set -- $1; printf '%s' "${1:-}"; }
+rest_csv() { set -- $1; shift 2>/dev/null; printf '%s' "$*" | tr ' ' ','; }
 
 multi_ask_terminated() {
   local signal="$1" pb pid suffix i name f
@@ -383,11 +362,35 @@ for i in "${!NAMES[@]}"; do
   # per-backend cwd handling is how openrouter/gemini shipped reviewing the
   # caller's directory as an empty diff. A new backend inherits this for free.
   # All -o/log/out paths are absolute (made so above), so nothing lands astray.
-  case "$name" in
-    codex)      ( cd "$REPO_DIR" && run_codex_one      "$out" "${model:-$CODEX_MODEL}";        rm -f "${out}.running" ) & ;;
-    opencode)   ( cd "$REPO_DIR" && run_opencode_one   "$out" "${model:-$MODEL}" "$FALLBACK"; rm -f "${out}.running" ) & ;;
-    openrouter) ( cd "$REPO_DIR" && run_openrouter_one "$out" "${model:-$OR_MODEL}";           rm -f "${out}.running" ) & ;;
-    gemini)     ( cd "$REPO_DIR" && run_gemini_one     "$out" "${model:-$MULTI_GEMINI_MODEL}"; rm -f "${out}.running" ) & ;;
+  # The runner's timeout and stall come from the config, per backend, and
+  # live in the same two variables the runners always read -- set in this
+  # backend's own subshell, so one slow codex does not stretch the others.
+  type="${TYPES[$i]}"; chain="${CHAINS[$i]}"
+  case "$type" in
+    codex)
+      ( MULTI_BACKEND_TIMEOUT="${TIMEOUTS[$i]}"; cd "$REPO_DIR" \
+        && run_codex_one "$out" "${model:-${CODEX_MODEL:-$(first_of "$chain")}}"; rm -f "${out}.running" ) & ;;
+    opencode)
+      # Pinned: exactly that model. --model/--fallback: this run's chain.
+      # Otherwise the config chain, or, when it is empty, a free model from the
+      # catalogue with every other free one as fallback.
+      if [ -n "$model" ]; then oc_model="$model"; oc_fallback=""
+      elif [ -n "$MODEL" ]; then oc_model="$MODEL"; oc_fallback="$FALLBACK"
+      elif [ -n "$chain" ]; then oc_model="$(first_of "$chain")"; oc_fallback="${FALLBACK:-$(rest_csv "$chain")}"
+      else
+        auto="$(multi_opencode_autodetect 2>/dev/null)" || auto=""
+        oc_model="${auto%% *}"; oc_fallback="${auto#* }"; [ "$oc_fallback" != "$auto" ] || oc_fallback=""
+        [ -z "$FALLBACK" ] || oc_fallback="$FALLBACK"
+      fi
+      ( MULTI_BACKEND_TIMEOUT="${TIMEOUTS[$i]}"; MULTI_OPENCODE_STALL="${STALLS[$i]}"; cd "$REPO_DIR" \
+        && run_opencode_one "$out" "$oc_model" "$oc_fallback"; rm -f "${out}.running" ) & ;;
+    claude-headless)
+      ( MULTI_BACKEND_TIMEOUT="${TIMEOUTS[$i]}"; cd "$REPO_DIR" \
+        && multi_run_headless "$name" "$QUESTION" "$out" "$model" "$chain" "${URLS[$i]}" "${KEYENVS[$i]}"; rm -f "${out}.running" ) & ;;
+    gemini)
+      ( MULTI_BACKEND_TIMEOUT="${TIMEOUTS[$i]}"; cd "$REPO_DIR" \
+        && multi_run_gemini "$name" "$QUESTION" "$out" "${model:-$(first_of "$chain")}" "${KEYENVS[$i]}"; rm -f "${out}.running" ) & ;;
+    *) multi_fail_backend "$out" "$name: unknown backend type '$type'"; rm -f "${out}.running" ;;
   esac
   pids="$pids $!:${SUFFIXES[$i]}"
 done

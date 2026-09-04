@@ -60,7 +60,7 @@ RUN="$($SCRIPTS/run-dir.sh --slug <two-to-four words: the project and the job, e
 $SCRIPTS/ask.sh --question-file "$RUN/adhd-f2.md" --out-prefix "$RUN/adhd-f2" \
                 --backend codex --effort medium &
 $SCRIPTS/ask.sh --question-file "$RUN/adhd-f3.md" --out-prefix "$RUN/adhd-f3" \
-                --backend "opencode:<model from probe>" --fallback <fallback model from probe> &
+                --backend opencode &
 wait
 ```
 

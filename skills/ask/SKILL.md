@@ -33,15 +33,15 @@ most of a minute just waking up. Answer the question yourself while they run.
 RUN="$($SCRIPTS/run-dir.sh --slug <two-to-four words: the project and the job, e.g. skills-fixing-multi>)"
 
 $SCRIPTS/ask.sh --question "<the user's question, verbatim>" \
-                --out-prefix "$RUN/ask" \
-                --backend "codex,opencode:<model from probe>,openrouter" \
-                [--fallback <fallback model from probe>] [--effort <low|medium|high|xhigh|max>]
+                --out-prefix "$RUN/ask" [--effort <low|medium|high|xhigh|max>]
 ```
 
-`--backend` lists who answers: `codex` and `opencode:<model from probe>`, plus
-`openrouter` (and `,gemini`) for whichever the probe shows configured — drop any
-it shows missing. Bare `openrouter`/`gemini` use the model from your config, so
-nothing is pinned here.
+Who answers comes from the user's `config.toml` (the probe printed its
+backends and profiles): no `--backend` runs the default profile. Pass
+`--backend` only when the user asked for a specific set — a profile name, or
+`codex,openrouter:<model>` — never to re-list what the config already says.
+Backends without a key answer with a marker saying so; that is a finding, not
+something to route around.
 
 Pass the question **as the user asked it**. Do not rewrite it into a better
 prompt: the point is what different models do with the same words. Add context
@@ -57,7 +57,7 @@ a plain answer. Point them at `/multi:setup` to connect one.
 
 ## Report
 
-Your own answer is one of the three, not the frame around the other two. Write
+Your own answer is one of the answers, not the frame around the others. Write
 it before you read theirs — otherwise it is not an independent answer.
 
 ```
@@ -65,9 +65,7 @@ it before you read theirs — otherwise it is not an independent answer.
 
 **Claude** — <your answer>
 
-**Codex** — <its answer>   ← or one line: `Codex FAILED: <reason>` from `<run>/*-codex.txt.dead` (the one-line marker text)
-
-**OpenCode (<model>)** — <its answer>   ← or one line saying it did not run, e.g. `OpenCode FAILED: <reason>` from the one-line text in `<run>/*-opencode.txt.dead`
+**<backend> (<model>)** — <its answer>   ← one block per `<run>/ask-*.txt` the run wrote, in that order; a backend that did not run gets one line, `<backend> FAILED: <reason>`, from the one-line text in its `.dead` marker
 
 ### Where they differ
 <the real disagreements, one line each — not a summary of all three>

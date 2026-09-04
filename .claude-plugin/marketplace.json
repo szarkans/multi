@@ -10,7 +10,7 @@
       "name": "multi",
       "source": "./",
       "description": "Several models on the same question at once — Claude sub-agents, OpenAI Codex and a cheap third via OpenCode. Review code, check whether the work is actually finished, brainstorm wide with a different model per cognitive frame, or just ask all of them something.",
-      "version": "1.9.0",
+      "version": "1.10.0",
       "author": {
         "name": "szarkans",
         "url": "https://github.com/szarkans"

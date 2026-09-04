@@ -28,7 +28,7 @@
 #
 # So: real timeout if there is one, otherwise run it ourselves. The fallback
 # is not "skip the timeout" — providers below rely on it, and the note under
-# multi_run_openrouter is exactly why: Claude Code does not fail fast on a bad
+# multi_run_headless is exactly why: Claude Code does not fail fast on a bad
 # key, it retries silently, and without a hard limit that call never returns.
 # -k: SIGKILL a few seconds after SIGTERM. Without it a CLI that ignores TERM
 # survives its own timeout, and both branches below must behave the same way --
@@ -52,7 +52,7 @@ else
   multi_timeout() {
     local secs="$1"; shift
     # The watchdog leaves a marker before it kills, because the caller has to
-    # tell "timed out" from "died on its own": multi_run_openrouter keys its
+    # tell "timed out" from "died on its own": multi_run_headless keys its
     # "the key was probably rejected" message on exit 124, which is what GNU
     # timeout returns and what a bare `wait` after a SIGTERM does not (143).
     # In a private directory, not a guessable name in /tmp: the marker is
@@ -336,55 +336,19 @@ MULTI_PROVIDERS_ENV="${MULTI_PROVIDERS_ENV:-$MULTI_HOME/providers.env}"
 # has nothing to do with the question.
 MULTI_CHILD_HOME="${MULTI_CHILD_HOME:-$MULTI_HOME/child-home}"
 
-# The "openrouter" backend is really "any Anthropic-compatible endpoint + API
-# key": point it at 9router, z.ai, Moonshot or a self-hosted router by setting
-# this. The health check and the runner share it, so a pool probe always tests
-# the endpoint the review will actually use.
-# A custom endpoint serves its own model list: set MULTI_OPENROUTER_MODELS too,
-# or the pool probe walks OpenRouter-specific :free names, 404s on all of them
-# and reports ALL POOLS BUSY. Trailing slashes (any number — pastes carry
-# doubles) are stripped: "…/api/" would request //v1/messages, a silent 404
-# on stricter routers.
-MULTI_OPENROUTER_BASE_URL="${MULTI_OPENROUTER_BASE_URL:-https://openrouter.ai/api}"
-while [ "${MULTI_OPENROUTER_BASE_URL%/}" != "$MULTI_OPENROUTER_BASE_URL" ]; do
-  MULTI_OPENROUTER_BASE_URL="${MULTI_OPENROUTER_BASE_URL%/}"
-done
-MULTI_OPENROUTER_MODEL="${MULTI_OPENROUTER_MODEL:-z-ai/glm-5.2:free}"
-# A `:free` model is not a queue you are in — it is a shared upstream pool, and
-# when it is busy every key gets HTTP 429 regardless of credit. Measured
-# 2026-08-20: the default model was 429 while five other free models answered
-# in the same second. So the model is CHOSEN at run time, not assumed, and one
-# dead pool costs a second instead of the whole backend.
-MULTI_OPENROUTER_FALLBACKS="${MULTI_OPENROUTER_FALLBACKS:-poolside/laguna-s-2.1:free nvidia/nemotron-3-super-120b-a12b:free cohere/north-mini-code:free openai/gpt-oss-20b:free}"
-# The one list callers and this file actually walk, preferred model first.
-# MULTI_OPENROUTER_MODEL and MULTI_OPENROUTER_FALLBACKS above still work as
-# overrides — if providers.env sets either, this list is built from them, same
-# as before this variable existed. Set MULTI_OPENROUTER_MODELS directly to
-# skip that and pin the exact order.
-MULTI_OPENROUTER_MODELS="${MULTI_OPENROUTER_MODELS:-$MULTI_OPENROUTER_MODEL $MULTI_OPENROUTER_FALLBACKS}"
-MULTI_GEMINI_MODEL="${MULTI_GEMINI_MODEL:-}"   # empty = whatever the CLI defaults to
-# MULTI_CODEX_TIMEOUT gives slower Codex runs 600s unless explicitly overridden.
-if [ -n "${MULTI_CODEX_TIMEOUT:-}" ]; then
-  MULTI_CODEX_TIMEOUT_EXPLICIT=1
-else
-  MULTI_CODEX_TIMEOUT_EXPLICIT=0
-  MULTI_CODEX_TIMEOUT=600
-fi
+# Backends, models, endpoints and timeouts live in $MULTI_HOME/config.toml,
+# read by scripts/config.py. ask.sh resolves it once per run and sets the two
+# variables below per backend before calling a runner; the defaults here only
+# cover a runner called directly.
 MULTI_BACKEND_TIMEOUT="${MULTI_BACKEND_TIMEOUT:-300}"
 # A healthy OpenCode run writes its first JSON event within seconds. Give slow
 # startup 180s, but do not spend the full backend timeout on a zero-byte stream.
 MULTI_OPENCODE_STALL="${MULTI_OPENCODE_STALL:-180}"
-case "$MULTI_OPENCODE_STALL" in
-  ''|*[!0-9]*|0) MULTI_OPENCODE_STALL=180 ;;
-esac
-# THE REVIEW TIMEOUT IS NOT SET HERE, deliberately, and this comment is all that
-# is left of a line that used to be. `MULTI_REVIEW_TIMEOUT="${…:-2400}"` sat
-# here and nothing downstream ever read it: ask.sh only knows MULTI_BACKEND_TIMEOUT
-# (set by --timeout), and skills/code-review/SKILL.md is markdown that cannot
-# source this file -- it evaluates its own `${MULTI_REVIEW_TIMEOUT:-2400}` in the
-# agent's shell and passes the result as --timeout. So an edit here would have
-# looked like it changed the review budget and changed nothing. The real
-# defaults live at the three call sites: SKILL.md (twice) and evals/run.sh.
+# THE REVIEW TIMEOUT IS NOT SET HERE, deliberately. skills/code-review/SKILL.md
+# is markdown that cannot source this file -- it evaluates its own
+# `${MULTI_REVIEW_TIMEOUT:-2400}` in the agent's shell and passes the result as
+# --timeout, which overrides every backend's configured timeout for that run.
+# The defaults live at the call sites: SKILL.md (twice) and evals/run.sh.
 #
 # Why 2400 there. Measured 2026-09-02 on a real review: the openrouter reviewer
 # (z-ai/glm-5.3-flash) took 36 model turns over 890s -- median 13.6s per turn,
@@ -397,12 +361,80 @@ esac
 # 100% of the paid work. The real fix is incremental capture
 # (--output-format stream-json, keep what arrived), and it is not done.
 
+# multi_config <subcommand> [args] -- scripts/config.py, with the python that
+# actually runs. Exit 2 and a message on stderr when the config is broken or
+# there is no python: bash cannot read TOML, so there is no config without it.
+multi_config() {
+  # A providers.env that still carries the pre-config knobs is a hard stop, not
+  # a note: those lines used to choose the endpoint, and a config that ignores
+  # them would send this key to openrouter.ai when it was set for another host.
+  # Only the file is checked -- the process environment is not a config.
+  # `init` and `path` are how the user gets out of that state, so they pass.
+  # Any assignment form the old `.`-sourcing honoured counts: with or without
+  # `export`, `declare -x`, leading whitespace. A `#` comment does not.
+  local stale=""
+  case "${1:-}" in init|path) ;; *)
+  stale="$(grep -o '^[[:space:]]*\(export[[:space:]]\{1,\}\|declare[[:space:]]\{1,\}-x[[:space:]]\{1,\}\)\{0,1\}MULTI_\(OPENROUTER_[A-Z_]*\|OPENCODE_MODEL\|GEMINI_MODEL\|BACKEND_TIMEOUT\|CODEX_TIMEOUT\|OPENCODE_STALL\)=' "$MULTI_PROVIDERS_ENV" 2>/dev/null | sed 's/.*MULTI_/MULTI_/; s/=$//' | sort -u | tr '\n' ' ')"
+  if [ -n "$stale" ]; then
+    echo "multi config: $MULTI_PROVIDERS_ENV still sets ${stale} -- these are no longer read. Move the values into $MULTI_HOME/config.toml ([backends.openrouter] base_url / models, [backends.opencode] models / stall, [backends.gemini] models, timeout per backend; 'setup.sh init' writes a template) and delete or comment out those lines. Nothing runs until then: a key set for a custom endpoint must not be sent to the default one." >&2
+    return 2
+  fi ;;
+  esac
+  local py; py="$(multi_python)" || { echo "multi config: no working python3 (needed to read config.toml)" >&2; return 2; }
+  "$py" "$MULTI_SCRIPTS_DIR/config.py" "$@"
+}
+MULTI_SCRIPTS_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
-# --- availability -------------------------------------------------------
-# Cheap and local: is there a key and a binary at all. Says nothing about
-# whether the key still works — that is what the checks below are for.
-multi_have_openrouter() { [ -n "${OPENROUTER_API_KEY:-}" ] && command -v claude >/dev/null 2>&1; }
-multi_have_gemini()     { [ -n "${GEMINI_API_KEY:-}" ]     && command -v gemini >/dev/null 2>&1; }
+# --- opencode model autodetect -----------------------------------------
+# An opencode backend with an empty models list gets its chain from the
+# catalogue: first candidate below that `opencode models` lists, then every
+# free (opencode/*) model in catalogue order as fallbacks. Prints
+# "<picked> <fallback,csv>" (second word may be empty), or nothing.
+MULTI_OPENCODE_CANDIDATES="${MULTI_OPENCODE_CANDIDATES:-opencode/deepseek-v4-flash-free opencode-go/deepseek-v4-flash}"
+# `opencode --pure models` is the whole cost: 2.9s against 49ms for the codex
+# check, measured 2026-08-20 -- and the probe runs before every single skill
+# invocation. The list is a catalogue, not a live state, so it is cached; a
+# model that disappeared mid-hour is already handled, since the runner falls
+# back when its first choice dies. Delete the file or set MULTI_PROBE_CACHE_MIN=0
+# to force a fresh read.
+multi_opencode_catalogue() {
+  local models_cache="$MULTI_HOME/opencode-models.cache" cache_min="${MULTI_PROBE_CACHE_MIN:-60}" available="" models_rc cache_tmp
+  # `find -mmin` rather than stat: stat's flags differ between GNU and BSD.
+  [ "$cache_min" != "0" ] && [ -s "$models_cache" ] \
+    && [ -n "$(find "$models_cache" -mmin "-${cache_min}" 2>/dev/null)" ] \
+    && available="$(cat "$models_cache")"
+  if [ -z "$available" ]; then
+    available="$(multi_timeout 20 opencode --pure models 2>/dev/null)"; models_rc=$?
+    # Only a run that finished cleanly may be cached. A listing that printed
+    # half its models and then timed out is non-empty, and caching it would
+    # pin a truncated catalogue for the next hour -- long enough to make the
+    # probe report "no usable model" on a machine where the model exists.
+    if [ "$models_rc" -eq 0 ] && [ -n "$available" ]; then
+      mkdir -p "$MULTI_HOME" 2>/dev/null
+      # Written elsewhere and renamed: a reader in another session must never
+      # catch this file mid-write and cache-hit on half a list for an hour.
+      cache_tmp="${models_cache}.$$"
+      if printf '%s\n' "$available" > "$cache_tmp" 2>/dev/null; then
+        mv -f "$cache_tmp" "$models_cache" 2>/dev/null || rm -f "$cache_tmp"
+      fi
+    fi
+  fi
+  printf '%s\n' "$available"
+}
+multi_opencode_autodetect() {
+  local available picked="" fallback="" m
+  available="$(multi_opencode_catalogue)"
+  for m in $MULTI_OPENCODE_CANDIDATES; do
+    printf '%s\n' "$available" | grep -qxF "$m" && { picked="$m"; break; }
+  done
+  [ -n "$picked" ] || return 1
+  # `opencode/` is the free channel; `opencode-go/` is not. Keep every free
+  # model in the catalogue's order, except the already-selected primary.
+  for m in $(printf '%s\n' "$available" | grep '^opencode/'); do
+    [ "$m" = "$picked" ] || fallback="${fallback}${fallback:+,}${m}"
+  done
+  printf '%s %s\n' "$picked" "$fallback"
+}
 
 # --- key checks ---------------------------------------------------------
 # Both print one word: OK, BAD KEY, or an HTTP code. This is the only honest
@@ -412,18 +444,18 @@ multi_have_gemini()     { [ -n "${GEMINI_API_KEY:-}" ]     && command -v gemini 
 # pool is actually up in one request. --max-time 10: a candidate list of five
 # must not become 100 silent seconds, but a slow healthy pool must not read as
 # dead either.
-# multi_check_openrouter [model] — one word about one model.
+# multi_check_headless <base_url> <key> <model> — one word about one model.
 # Bearer ONLY, mirroring the runner: the child claude authenticates with
 # ANTHROPIC_AUTH_TOKEN (Bearer) and nothing else, so the probe must send the
 # same header or its verdict describes a different request than the run —
 # an x-api-key-only endpoint would probe OK and then 401 on every review.
-multi_check_openrouter() {
-  [ -n "${OPENROUTER_API_KEY:-}" ] || { echo "NO KEY"; return 1; }
-  local m="${1:-$MULTI_OPENROUTER_MODEL}" code
+multi_check_headless() {
+  local base_url="$1" key="$2" m="$3" code
+  [ -n "$key" ] || { echo "NO KEY"; return 1; }
   code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
-    "${MULTI_OPENROUTER_BASE_URL}/v1/messages" \
+    "${base_url}/v1/messages" \
     -H 'content-type: application/json' \
-    -H "authorization: Bearer ${OPENROUTER_API_KEY}" \
+    -H "authorization: Bearer ${key}" \
     -H 'anthropic-version: 2023-06-01' \
     -d "{\"model\":\"${m}\",\"max_tokens\":1,\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}")"
   case "$code" in
@@ -435,11 +467,11 @@ multi_check_openrouter() {
   esac
 }
 
-multi_check_gemini() {
-  [ -n "${GEMINI_API_KEY:-}" ] || { echo "NO KEY"; return 1; }
-  local code
+multi_check_gemini() { # multi_check_gemini <key>
+  local key="${1:-}" code
+  [ -n "$key" ] || { echo "NO KEY"; return 1; }
   code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
-    "https://generativelanguage.googleapis.com/v1beta/models?key=${GEMINI_API_KEY}")"
+    "https://generativelanguage.googleapis.com/v1beta/models?key=${key}")"
   case "$code" in
     200) echo "OK" ;;
     400|401|403) echo "BAD KEY (HTTP $code)"; return 1 ;;
@@ -448,14 +480,14 @@ multi_check_gemini() {
   esac
 }
 
-# multi_pick_openrouter_model — first model whose pool answers right now.
-# Prints the model name, or nothing if every candidate is down. Costs one
-# 1-token request per candidate (~0.3s each), which is far cheaper than
-# discovering a dead pool through a 300s agent timeout.
-multi_pick_openrouter_model() {
-  local m
-  for m in $MULTI_OPENROUTER_MODELS; do
-    if [ "$(multi_check_openrouter "$m")" = "OK" ]; then printf '%s' "$m"; return 0; fi
+# multi_pick_live_model <base_url> <key> <model...> — first model whose pool
+# answers right now. Prints the model name, or nothing if every candidate is
+# down. Costs one 1-token request per candidate (~0.3s each), which is far
+# cheaper than discovering a dead pool through a 300s agent timeout.
+multi_pick_live_model() {
+  local base_url="$1" key="$2" m; shift 2
+  for m in "$@"; do
+    if [ "$(multi_check_headless "$base_url" "$key" "$m")" = "OK" ]; then printf '%s' "$m"; return 0; fi
   done
   return 1
 }
@@ -530,23 +562,27 @@ multi_child_turns() {
   echo "$n"
 }
 
-# multi_run_openrouter <prompt> <outfile> [model]
-# One OpenRouter model driven through Claude Code itself. The agent loop, the
-# tools and the prompt handling are identical to a Claude reviewer — only the
-# weights differ, which is the entire point.
-multi_run_openrouter() {
-  local prompt="$1" out="$2" model="${3:-}" rc=0
-  local log="${out}.log"
+# multi_run_headless <name> <prompt> <out> <pinned-model> <chain> <base_url> <key_env>
+# Claude Code itself against an Anthropic-compatible endpoint: same agent loop,
+# different weights. <name> is the backend's config name (openrouter, zcode,
+# 9router...) and prefixes every status line. A pinned model runs exactly; an
+# empty pin walks <chain> (space-separated) for the first pool that is up.
+multi_run_headless() {
+  local name="$1" prompt="$2" out="$3" model="${4:-}" chain="${5:-}" base_url="$6" key_env="$7" rc=0
+  local log="${out}.log" key
   # A stale marker from a previous run with the same prefix must not condemn
   # this run: the sidecar describes one invocation, not the file forever.
   rm -f "${out}.dead"
-  if [ -z "${OPENROUTER_API_KEY:-}" ]; then
-    multi_fail_backend "$out" "openrouter: NO KEY — ask the user to run scripts/setup.sh set OPENROUTER_API_KEY in their own terminal (it prompts for the key)"; return 0
+  eval "key=\${$key_env:-}"
+  if [ -z "$key" ]; then
+    multi_fail_backend "$out" "$name: NO KEY — ask the user to run scripts/setup.sh set $key_env in their own terminal (it prompts for the key)"; return 0
   fi
+  command -v claude >/dev/null 2>&1 || { multi_fail_backend "$out" "$name: claude CLI MISSING"; return 0; }
   # No model pinned by the caller: pick one whose pool is actually up.
   if [ -z "$model" ]; then
-    model="$(multi_pick_openrouter_model)" || {
-      multi_fail_backend "$out" "openrouter: ALL POOLS BUSY — tried $MULTI_OPENROUTER_MODELS against $MULTI_OPENROUTER_BASE_URL. A 429 means either the pool is busy or this account's own quota is gone — check both; a 404 on a custom endpoint means it does not serve these model names — set MULTI_OPENROUTER_MODELS to models it hosts; an HTTP 000 means the check itself timed out, the pool is slow, not necessarily dead. Retry in a minute or set MULTI_OPENROUTER_MODELS."
+    # shellcheck disable=SC2086
+    model="$(multi_pick_live_model "$base_url" "$key" $chain)" || {
+      multi_fail_backend "$out" "$name: ALL POOLS BUSY — tried $chain against $base_url. A 429 means either the pool is busy or this account's own quota is gone — check both; a 404 on a custom endpoint means it does not serve these model names — list models it hosts under [backends.$name] in config.toml; an HTTP 000 means the check itself timed out, the pool is slow, not necessarily dead. Retry in a minute or change the models list."
       return 0
     }
   fi
@@ -570,8 +606,8 @@ multi_run_openrouter() {
   # come from CLAUDE_CONFIG_DIR, the empty child home, so nothing hostile loads.
   local sid; sid="$(multi_uuid)"
   CLAUDE_CONFIG_DIR="$MULTI_CHILD_HOME" \
-  ANTHROPIC_BASE_URL="$MULTI_OPENROUTER_BASE_URL" \
-  ANTHROPIC_AUTH_TOKEN="$OPENROUTER_API_KEY" \
+  ANTHROPIC_BASE_URL="$base_url" \
+  ANTHROPIC_AUTH_TOKEN="$key" \
   ANTHROPIC_MODEL="$model" \
   ANTHROPIC_SMALL_FAST_MODEL="$model" \
   ANTHROPIC_DEFAULT_HAIKU_MODEL="$model" \
@@ -607,7 +643,7 @@ multi_run_openrouter() {
     # Every branch below reports the count and NAMES THE TRANSCRIPT; none of
     # them delivers a cause as settled fact. Zero turns in particular is not
     # proof of a bad key: an unpinned run had the key verified by
-    # multi_pick_openrouter_model seconds earlier, and a `:free` pool can flip
+    # multi_pick_live_model seconds earlier, and a `:free` pool can flip
     # to 429 in the same second (see the model-list comment above) -- Claude
     # Code then retries silently for the whole budget and writes a transcript
     # with a user turn and no assistant turns, exactly like a rejected key. The
@@ -622,40 +658,41 @@ multi_run_openrouter() {
     else
       hint="Only $turns model turns recorded in $tr. Read it before concluding anything: no turns at all fits a rejected key, a pool that went 429 after the probe passed, AND a transcript format this code no longer recognises; one or two turns also fits a single slow turn inside a short budget. Check scripts/setup.sh status too."
     fi
-    multi_fail_backend "$out" "openrouter: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s — model=$model. $hint" "$log"
+    multi_fail_backend "$out" "$name: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s — model=$model. $hint" "$log"
   elif [ ! -s "$out" ]; then
     local tr2; tr2="$(multi_child_transcript "$sid")"
-    multi_fail_backend "$out" "openrouter: NO OUTPUT — model=$model exit=$rc (stderr in $log)${tr2:+, transcript in $tr2}" "$log"
+    multi_fail_backend "$out" "$name: NO OUTPUT — model=$model exit=$rc (stderr in $log)${tr2:+, transcript in $tr2}" "$log"
   else
-    echo "[multi] answered by openrouter model $model" >> "$out"
+    echo "[multi] answered by $name model $model" >> "$out"
   fi
   return "$rc"
 }
 
-# multi_run_gemini <prompt> <outfile> [model]
+# multi_run_gemini <name> <prompt> <outfile> <model> <key_env>
 # Google has no Anthropic-compatible endpoint, so Gemini is not driven through
 # Claude Code — it runs in its own CLI, which also keeps the free daily quota
 # on the key instead of paying a router for the same model.
 multi_run_gemini() {
-  local prompt="$1" out="$2" model="${3:-$MULTI_GEMINI_MODEL}" rc=0
-  local log="${out}.log"
+  local name="$1" prompt="$2" out="$3" model="${4:-}" key_env="${5:-GEMINI_API_KEY}" rc=0
+  local log="${out}.log" key
   rm -f "${out}.dead"
-  if [ -z "${GEMINI_API_KEY:-}" ]; then
-    multi_fail_backend "$out" "gemini: NO KEY — ask the user to run scripts/setup.sh set GEMINI_API_KEY in their own terminal (it prompts for the key)"; return 0
+  eval "key=\${$key_env:-}"
+  if [ -z "$key" ]; then
+    multi_fail_backend "$out" "$name: NO KEY — ask the user to run scripts/setup.sh set $key_env in their own terminal (it prompts for the key)"; return 0
   fi
-  command -v gemini >/dev/null 2>&1 || { multi_fail_backend "$out" "gemini: MISSING (npm i -g @google/gemini-cli)"; return 0; }
-  GEMINI_API_KEY="$GEMINI_API_KEY" \
+  command -v gemini >/dev/null 2>&1 || { multi_fail_backend "$out" "$name: MISSING (npm i -g @google/gemini-cli)"; return 0; }
+  GEMINI_API_KEY="$key" \
     multi_timeout "$MULTI_BACKEND_TIMEOUT" gemini -p "$prompt" \
       ${model:+-m "$model"} --approval-mode plan \
       > "$out" 2> "$log"
   rc=$?
   if [ "$rc" -eq 124 ]; then
     # A timed-out run never reads as an answer, even with partial output.
-    multi_fail_backend "$out" "gemini: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s${model:+ — model=$model}" "$log"
+    multi_fail_backend "$out" "$name: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s${model:+ — model=$model}" "$log"
   elif [ ! -s "$out" ]; then
-    multi_fail_backend "$out" "gemini: NO OUTPUT${model:+ — model=$model} exit=$rc (stderr in $log)" "$log"
+    multi_fail_backend "$out" "$name: NO OUTPUT${model:+ — model=$model} exit=$rc (stderr in $log)" "$log"
   elif [ "$rc" -ne 0 ]; then
-    multi_fail_backend "$out" "gemini: FAILED${model:+ — model=$model} exit=$rc (stderr in $log)" "$log"
+    multi_fail_backend "$out" "$name: FAILED${model:+ — model=$model} exit=$rc (stderr in $log)" "$log"
   fi
   return "$rc"
 }

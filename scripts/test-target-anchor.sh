@@ -10,6 +10,8 @@
 set -uo pipefail
 HERE="$(cd -- "$(dirname -- "$0")" && pwd)"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+# Own MULTI_HOME: the machine's real config.toml and providers.env must not shape this test.
+export MULTI_HOME="$TMP/h"; mkdir -p "$MULTI_HOME"
 fail=0
 ok(){ if [ "$2" = "$3" ]; then echo "  ok   $1"; else echo "  FAIL $1: got '$2' want '$3'"; fail=1; fi; }
 # Substring test via case, not `printf | grep`: under pipefail a grep that
@@ -77,8 +79,8 @@ printf '{"parts":[{"type":"text","text":"No issues found."}]}\n'
 EOF
 chmod +x "$STUB/opencode"
 RUN="$TMP/run"; mkdir -p "$RUN"
-PATH="$STUB:$PATH" MULTI_OPENCODE_MODEL=stub-model \
-  bash "$HERE/ask.sh" --backend opencode --repo "$B" \
+PATH="$STUB:$PATH" \
+  bash "$HERE/ask.sh" --backend opencode --model stub-model --repo "$B" \
        --question "hi" --out-prefix "$RUN/o" >/dev/null 2>&1 || true
 dirlog="$( [ -f "$TMP/opencode-dir.log" ] && cat "$TMP/opencode-dir.log" || echo MISSING )"
 ok "opencode was pointed at the target dir" "$dirlog" "DIR=$B"

@@ -1,0 +1,58 @@
+# multi — example config with every backend type and every field.
+# Real file: ~/.claude/multi/config.toml. `scripts/setup.sh init` writes a
+# smaller default there; copy sections from here as you need them.
+# Keys are never in this file — see providers.example.env.
+
+default_profile = "normal"
+
+# ---- backends: a name, a type, and what that type needs -------------------
+
+[backends.codex]                     # type "codex": the Codex CLI, read-only sandbox
+type = "codex"
+models = []                          # empty = the CLI's default; at most one model here
+timeout = 600                        # seconds for one run; default 300 everywhere
+
+[backends.opencode]                  # type "opencode": OpenCode CLI, plugin's read-only agent
+type = "opencode"
+models = []                          # empty = a free model from `opencode models`, others as fallback
+stall = 180                          # opencode only: seconds of silence before it counts as dead
+
+[backends.opencode-paid]             # the same type twice, under another name
+type = "opencode"
+models = ["opencode-go/deepseek-v4-flash", "opencode-go/qwen3.8-flash"]   # first is tried first
+
+[backends.openrouter]                # type "claude-headless": claude -p against an
+type = "claude-headless"             # Anthropic-compatible endpoint. OpenRouter is one.
+base_url = "https://openrouter.ai/api"
+models = ["qwen/qwen3.8-flash", "deepseek/deepseek-v4-flash-0731", "z-ai/glm-5.2:free"]
+# api_key_env not set = OPENROUTER_API_KEY (backend name upper-cased + _API_KEY)
+
+[backends.glm]                       # a second endpoint: z.ai, 9router, Moonshot, self-hosted
+type = "claude-headless"
+base_url = "https://api.z.ai/api/anthropic"   # https required; plain http only on localhost
+models = ["GLM-5.3-Flash"]
+api_key_env = "ZAI_API_KEY"          # this backend reads its key from that variable
+
+[backends.local]                     # a router on this machine, like 9router or omnirouter
+type = "claude-headless"
+base_url = "http://localhost:4000/api"
+models = ["local/coder"]
+api_key_env = "LOCAL_ROUTER_KEY"
+timeout = 1200
+
+[backends.gemini]                    # type "gemini": the Gemini CLI, key GEMINI_API_KEY
+type = "gemini"
+models = []                          # empty = CLI default; at most one model here
+
+# ---- profiles: who runs, in parallel --------------------------------------
+# An entry is a backend name (its whole models list, in order) or name:model
+# (exactly that model, no fallback). The same entry twice runs twice.
+# ask.sh --backend <profile> picks one; no --backend = default_profile;
+# --backend a,b:model is a one-off; `all` = every backend above.
+
+[profiles]
+normal  = ["codex", "glm", "openrouter"]
+free    = ["opencode", "openrouter:z-ai/glm-5.2:free"]
+paid    = ["codex", "opencode-paid", "openrouter:deepseek/deepseek-v4-flash-0731"]
+compare = ["openrouter:qwen/qwen3.8-flash", "openrouter:deepseek/deepseek-v4-flash-0731", "glm"]
+solo    = ["codex"]

@@ -26,7 +26,10 @@ cat > "$TMP/bin/opencode" <<'STUB'
 echo "OPENCODE ANSWER"
 STUB
 chmod +x "$TMP/bin/codex" "$TMP/bin/opencode"
-export PATH="$TMP/bin:$PATH"
+# Own MULTI_HOME: the user's real config.toml and providers.env must not shape
+# what this test sees. No file there = the built-in default config.
+mkdir -p "$TMP/h"
+export PATH="$TMP/bin:$PATH" MULTI_HOME="$TMP/h"
 
 fail=0
 check() { # name expect_codex expect_opencode
@@ -186,36 +189,46 @@ shift 3
 STUB
 chmod +x "$TMP/bin/timeout"
 : > "$TMP/timeouts"
-MULTI_TIMEOUT_TRACE="$TMP/timeouts" MULTI_CODEX_TIMEOUT=17 MULTI_BACKEND_TIMEOUT=9 \
+cat > "$TMP/h/config.toml" <<'EOF'
+default_profile = "p"
+[backends.codex]
+type = "codex"
+timeout = 17
+[backends.opencode]
+type = "opencode"
+timeout = 9
+[profiles]
+p = ["codex", "opencode"]
+EOF
+MULTI_TIMEOUT_TRACE="$TMP/timeouts" \
   "$HERE/ask.sh" --question q --out-prefix "$TMP/timeouts-explicit" --backend codex,opencode --model m >/dev/null
 codex_timeout_count="$(grep -c $'^17\tcodex$' "$TMP/timeouts")"
 opencode_timeout_count="$(grep -c $'^9\topencode$' "$TMP/timeouts")"
 if [ "$codex_timeout_count" -eq 1 ] && [ "$opencode_timeout_count" -eq 1 ]; then
-  echo "ok   codex timeout knob overrides only codex (codex=17 opencode=9)"
+  echo "ok   per-backend timeout from config.toml (codex=17 opencode=9)"
 else
-  echo "FAIL timeout split not applied (codex=$codex_timeout_count opencode=$opencode_timeout_count)"; fail=1
+  echo "FAIL per-backend timeout not applied (codex=$codex_timeout_count opencode=$opencode_timeout_count)"; fail=1
 fi
+rm -f "$TMP/h/config.toml"
 
+# The old MULTI_BACKEND_TIMEOUT / MULTI_CODEX_TIMEOUT environment is not a
+# third config: it must change nothing now that the timeout lives in the file.
 : > "$TMP/default-timeout"
-( unset MULTI_CODEX_TIMEOUT
-  MULTI_TIMEOUT_TRACE="$TMP/default-timeout" MULTI_BACKEND_TIMEOUT=9 \
-    "$HERE/ask.sh" --question q --out-prefix "$TMP/timeouts-default" --backend codex >/dev/null
-)
-if [ "$(grep -c $'^600\tcodex$' "$TMP/default-timeout")" -eq 1 ]; then
-  echo "ok   codex keeps its 600s default above a shorter shared timeout"
+MULTI_TIMEOUT_TRACE="$TMP/default-timeout" MULTI_BACKEND_TIMEOUT=9 MULTI_CODEX_TIMEOUT=11 \
+  "$HERE/ask.sh" --question q --out-prefix "$TMP/timeouts-default" --backend codex,opencode --model m >/dev/null
+if [ "$(grep -c $'^600\tcodex$' "$TMP/default-timeout")" -eq 1 ] && [ "$(grep -c $'^300\topencode$' "$TMP/default-timeout")" -eq 1 ]; then
+  echo "ok   built-in defaults (codex 600, opencode 300); old env knobs change nothing"
 else
-  echo "FAIL shorter shared timeout replaced codex 600s default"; fail=1
+  echo "FAIL default timeouts wrong or old env knobs still read: $(cat "$TMP/default-timeout" | tr '\n' ' ')"; fail=1
 fi
 
 : > "$TMP/review-timeout"
-( unset MULTI_CODEX_TIMEOUT MULTI_BACKEND_TIMEOUT
-  MULTI_TIMEOUT_TRACE="$TMP/review-timeout" "$HERE/ask.sh" --question q \
-    --out-prefix "$TMP/timeouts-review" --backend codex --timeout 901 >/dev/null
-)
-if [ "$(grep -c $'^901\tcodex$' "$TMP/review-timeout")" -eq 1 ]; then
-  echo "ok   shared review timeout raises default codex timeout"
+MULTI_TIMEOUT_TRACE="$TMP/review-timeout" "$HERE/ask.sh" --question q \
+  --out-prefix "$TMP/timeouts-review" --backend codex,opencode --model m --timeout 450 >/dev/null
+if [ "$(grep -c $'^600\tcodex$' "$TMP/review-timeout")" -eq 1 ] && [ "$(grep -c $'^450\topencode$' "$TMP/review-timeout")" -eq 1 ]; then
+  echo "ok   --timeout is a floor: raises opencode to 450, leaves codex at its configured 600"
 else
-  echo "FAIL review --timeout did not govern default codex timeout"; fail=1
+  echo "FAIL --timeout floor semantics broken: $(tr '\n' ' ' < "$TMP/review-timeout")"; fail=1
 fi
 
 # The opencode reviewer must stay read-only. Every real `opencode run` in ask.sh
@@ -259,8 +272,20 @@ echo "PWD=$(pwd -P)"
 STUB
 chmod +x "$TMP/bin/claude" "$TMP/bin/gemini"
 repo_phys="$(cd "$TMP/repo" && pwd -P)"
-MULTI_HOME="$TMP/h" OPENROUTER_API_KEY=test-key GEMINI_API_KEY=test-key \
-MULTI_OPENROUTER_BASE_URL="https://example.test/api//" \
+cat > "$TMP/h/config.toml" <<'EOF'
+default_profile = "p"
+[backends.codex]
+type = "codex"
+[backends.openrouter]
+type = "claude-headless"
+base_url = "https://example.test/api//"
+models = ["free/one"]
+[backends.gemini]
+type = "gemini"
+[profiles]
+p = ["codex"]
+EOF
+OPENROUTER_API_KEY=test-key GEMINI_API_KEY=test-key \
   "$HERE/ask.sh" --question q --out-prefix "$TMP/repo-cd" \
   --backend "codex,openrouter:pinned/model,gemini" --repo "$TMP/repo" >/dev/null 2>&1
 cd_fail=0
@@ -276,9 +301,9 @@ done
 # (a paste carries doubles), or the runner requests //v1/messages, a silent 404
 # on stricter routers.
 if grep -qxF "BASE=https://example.test/api" "$TMP/repo-cd-openrouter.txt"; then
-  echo "ok   MULTI_OPENROUTER_BASE_URL reaches the harness, slash-normalized"
+  echo "ok   base_url from config.toml reaches the harness, slash-normalized"
 else
-  echo "FAIL MULTI_OPENROUTER_BASE_URL not honored/normalized by openrouter runner"; fail=1
+  echo "FAIL base_url not honored/normalized by the headless runner"; fail=1
 fi
 
 # The openrouter child claude cd's into the reviewed tree: without
@@ -297,7 +322,7 @@ else
   echo "FAIL codex lost -c project_doc_max_bytes=0 (reviewed repo's AGENTS.md would load as instructions)"; fail=1
 fi
 
-# multi_run_openrouter must pin every alias Claude Code resolves, not just
+# multi_run_headless must pin every alias Claude Code resolves, not just
 # the model/small-fast/haiku ones: a child that spawns its own Task subagents
 # otherwise resolves "opus"/"sonnet" through the ANTHROPIC_DEFAULT_SONNET_MODEL
 # / ANTHROPIC_DEFAULT_OPUS_MODEL account defaults and bills them through
@@ -305,7 +330,7 @@ fi
 # subagents). Source guard, same shape as the ones above: scope the grep to
 # the function body via awk, then count with a herestring (no grep -q in a
 # pipe under pipefail).
-or_fn="$(awk '/^multi_run_openrouter\(\) \{/,/^\}/' "$HERE/providers.sh")"
+or_fn="$(awk '/^multi_run_headless\(\) \{/,/^\}/' "$HERE/providers.sh")"
 or_pins="$(grep -c '="$model"' <<<"$or_fn")"
 if [ "$or_pins" -eq 5 ] \
   && grep -q 'ANTHROPIC_MODEL="$model"' <<<"$or_fn" \
@@ -313,9 +338,9 @@ if [ "$or_pins" -eq 5 ] \
   && grep -q 'ANTHROPIC_DEFAULT_HAIKU_MODEL="$model"' <<<"$or_fn" \
   && grep -q 'ANTHROPIC_DEFAULT_SONNET_MODEL="$model"' <<<"$or_fn" \
   && grep -q 'ANTHROPIC_DEFAULT_OPUS_MODEL="$model"' <<<"$or_fn"; then
-  echo "ok   multi_run_openrouter pins all 5 model aliases (MODEL, SMALL_FAST, HAIKU, SONNET, OPUS)"
+  echo "ok   multi_run_headless pins all 5 model aliases (MODEL, SMALL_FAST, HAIKU, SONNET, OPUS)"
 else
-  echo "FAIL multi_run_openrouter missing a model alias pin (found $or_pins/5)"; fail=1
+  echo "FAIL multi_run_headless missing a model alias pin (found $or_pins/5)"; fail=1
 fi
 
 [ $fail -eq 0 ] && echo "ALL PASS" || echo "FAILURES"

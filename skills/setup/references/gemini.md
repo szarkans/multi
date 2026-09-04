@@ -20,8 +20,8 @@ is free, with a daily quota — enough for regular reviews.
 
 ## Notes
 
-- Model choice is optional: empty means the CLI's default, or pin with
-  `$SCRIPTS/setup.sh set MULTI_GEMINI_MODEL`.
+- Model choice is optional: an empty `models` list under `[backends.gemini]`
+  in `config.toml` means the CLI's default; put one name there to pin it.
 - Honest caveat if asked why Gemini is "extra": its CLI offers no way to stop
   reading instruction files from the reviewed tree, so the plugin strips
   those files from review copies instead — built in, nothing to configure.

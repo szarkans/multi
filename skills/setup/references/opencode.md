@@ -32,25 +32,26 @@ When the effective primary model is free (`opencode/*`), say this loudly:
 Then offer the research fork from SKILL.md ("sane default" vs "research it
 for me" → `model-research.md`).
 
-## The models config
+## The models list
 
-`~/.claude/multi/models` (override: `MULTI_MODELS_CONFIG`). Hand-editable:
-`key: value1 value2 ...` lines, `#` comments, commas also accepted. The only
-key today is `opencode:` — first model is primary, the rest are fallbacks in
-order:
+`[backends.opencode]` in `~/.claude/multi/config.toml` (`references/config.md`):
 
+```toml
+[backends.opencode]
+type = "opencode"
+models = ["opencode-go/deepseek-v4-flash", "opencode/deepseek-v4-flash-free"]
 ```
-opencode: opencode-go/deepseek-v4-flash opencode/deepseek-v4-flash-free
-```
 
-Write space-separated, preserve every other line already in the file. Remind
-the user this file is deliberately theirs to hand-edit later, no agent needed.
+First model is primary, the rest are fallbacks in order. Preserve everything
+else in the file. Remind the user the file is deliberately theirs to hand-edit
+later, no agent needed. If it does not exist yet, `$SCRIPTS/setup.sh init`
+writes the commented default to start from.
 
-If the probe printed `models-config: LEGACY PATH`, the file still lives at the
-old `~/.config/multi/models` — offer the exact `mv` command the probe showed.
+If the probe printed `models-config: LEGACY`, the old `models` file is no
+longer read: carry its list into the table above and delete the file.
 
 ## How the effective primary is decided (for correct warnings)
 
-`MULTI_OPENCODE_MODEL` env if set → else first model on the config's
-`opencode:` line → else the probe's auto-pick. Warn about free **only** based
-on the effective primary's prefix, not on the config file's existence.
+First model of the config's list → else (empty list) the probe's auto-pick.
+Warn about free **only** based on the effective primary's prefix, not on
+whether a config file exists.

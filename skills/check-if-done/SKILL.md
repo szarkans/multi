@@ -87,16 +87,13 @@ here — do not run git." Without --diff: what changed, in words.>
 EOF
 
 $SCRIPTS/ask.sh --repo "$COPY" --question-file "$RUN/done-prompt.md" \
-                --out-prefix "$RUN/done" \
-                --backend "codex,opencode:<model from probe>,openrouter" \
-                [--fallback <fallback model from probe>] --effort high
+                --out-prefix "$RUN/done" --effort high
 ```
 
-`--backend` lists who answers, the same way `code-review` and `ask` do: `codex`,
-`opencode:<model>`, plus `openrouter` (and `,gemini`) for whichever the probe
-shows configured — drop any it shows missing. The OpenCode model is the one
-after `opencode: OK —` in the probe; `reviewer-model:` is a different knob (the
-Claude sub-agent model) and OpenCode has no model by that name.
+No `--backend`: who answers is the default profile in the user's `config.toml`,
+the same as `code-review` and `ask`. Pass `--backend` only for a set the user
+asked for. `reviewer-model:` in the probe is a different knob (the Claude
+sub-agent model) and has nothing to do with `ask.sh`.
 
 `$RUN` is this session's own directory. Shell variables do not survive between
 commands, so repeat `RUN=` and `REPO=` in later blocks. `COPY` is snapshotted

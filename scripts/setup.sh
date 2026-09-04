@@ -5,6 +5,11 @@
 #   setup.sh set OPENROUTER_API_KEY   reads the key from stdin, never echoed
 #   setup.sh set GEMINI_API_KEY       same; or pipe it: printf %s "$k" | ...
 #   setup.sh unset GEMINI_API_KEY
+#   setup.sh init                     write the default config.toml to edit
+#
+# Which names `set` accepts: the api_key_env of every backend in config.toml
+# (OPENROUTER_API_KEY for [backends.openrouter] unless it says otherwise).
+# Models, endpoints and timeouts are not keys — they are edited in the file.
 #
 # `status` is the only command that touches the network. It uses curl rather
 # than launching an agent, because both agents retry an auth failure silently:
@@ -17,72 +22,70 @@ SELF_DIR="$(cd -- "$(dirname -- "$0")" && pwd)"
 
 usage() { sed -n '2,12p' "$0"; exit 2; }
 
+
 # Never echoed in full anywhere: a key in a transcript is a leaked key.
 mask() { local v="$1"; [ ${#v} -gt 12 ] && printf '%s…%s' "${v:0:8}" "${v: -4}" || printf '****'; }
 
 cmd_status() {
   echo "keys file: $MULTI_PROVIDERS_ENV"
   [ -r "$MULTI_PROVIDERS_ENV" ] || echo "  (does not exist yet — nothing configured)"
-
-  printf 'openrouter: '
-  if [ -n "${OPENROUTER_API_KEY:-}" ]; then
-    # A custom endpoint changes what every check below actually talks to —
-    # say so, or a 9router/z.ai user reads "openrouter" and doubts their key.
-    [ "$MULTI_OPENROUTER_BASE_URL" = "https://openrouter.ai/api" ] \
-      || printf 'endpoint %s — ' "$MULTI_OPENROUTER_BASE_URL"
-    printf '%s — ' "$(mask "$OPENROUTER_API_KEY")"
-    # Report the model that will actually be used, not the one we hoped for:
-    # a free pool returning 429 is normal and the runner moves on to the next.
-    live="$(multi_pick_openrouter_model)" \
-      && echo "OK — will use $live" \
-      || echo "ALL POOLS BUSY (429 upstream, not your quota): $MULTI_OPENROUTER_MODELS"
-  else
-    echo "not configured"
+  echo "config:    $(multi_config path)"
+  if ! multi_config check >/dev/null 2>"$TMPERR"; then
+    echo "  BROKEN — $(cat "$TMPERR")"; echo "  fix it, or delete it to get the built-in default"; return 2
   fi
+  [ -f "$(multi_config path)" ] || echo "  (does not exist — built-in default; 'setup.sh init' writes it out to edit)"
 
-  printf 'gemini:     '
-  if [ -n "${GEMINI_API_KEY:-}" ]; then
-    printf '%s — ' "$(mask "$GEMINI_API_KEY")"; multi_check_gemini
-  else
-    echo "not configured"
-  fi
-
-  printf 'codex CLI:    '; command -v codex    >/dev/null 2>&1 && codex --version 2>/dev/null | head -1 || echo "MISSING"
-  printf 'opencode CLI: '; command -v opencode >/dev/null 2>&1 && echo present || echo "MISSING"
+  local name type chain url keyenv timeout stall key live
+  while IFS="$(printf '\t')" read -r name type chain url keyenv timeout stall; do
+    [ -n "$name" ] || continue
+    [ -n "$stall" ] || { echo "config.py backends: unexpected line shape" >&2; break; }
+    [ "$chain" != "-" ] || chain=""
+    eval "key=\${$keyenv:-}"
+    printf '%-12s' "$name:"
+    case "$type" in
+      claude-headless)
+        if [ -n "$key" ]; then
+          # A custom endpoint changes what the check below actually talks to —
+          # say so, or a 9router/z.ai user reads the name and doubts their key.
+          [ "$url" = "https://openrouter.ai/api" ] || printf 'endpoint %s — ' "$url"
+          printf '%s — ' "$(mask "$key")"
+          # Report the model that will actually be used, not the one we hoped for:
+          # a free pool returning 429 is normal and the runner moves on to the next.
+          # shellcheck disable=SC2086
+          live="$(multi_pick_live_model "$url" "$key" $chain)" \
+            && echo "OK — will use $live" \
+            || echo "ALL POOLS BUSY or BAD KEY — none of [$chain] answered at $url"
+        else
+          echo "not configured (setup.sh set $keyenv)"
+        fi ;;
+      gemini)
+        if [ -n "$key" ]; then printf '%s — ' "$(mask "$key")"; multi_check_gemini "$key"
+        else echo "not configured (setup.sh set $keyenv)"; fi ;;
+      codex)    command -v codex >/dev/null 2>&1 && codex --version 2>/dev/null | head -1 || echo "CLI MISSING" ;;
+      opencode) command -v opencode >/dev/null 2>&1 && echo "CLI present${chain:+ — $chain}" || echo "CLI MISSING" ;;
+    esac
+  done <<EOF
+$(multi_config backends)
+EOF
   printf 'gemini CLI:   '; command -v gemini   >/dev/null 2>&1 && echo present || echo "MISSING"
 }
 
+# The variables a backend reads its key from, per config.toml — the only names
+# `set` accepts, so a typo cannot store a key nothing will ever read.
+# Only the types that read a key: a stored CODEX_API_KEY would be a secret
+# nothing ever uses.
+key_names() { multi_config backends | awk -F'\t' '$2=="claude-headless"||$2=="gemini"{print $5}' | sort -u | tr '\n' ' '; }
+
 cmd_set() {
   local name="$1" value="${2:-}"
-  case "$name" in
-    OPENROUTER_API_KEY|GEMINI_API_KEY|MULTI_OPENROUTER_MODEL|MULTI_OPENROUTER_MODELS|MULTI_OPENROUTER_BASE_URL|MULTI_GEMINI_MODEL|MULTI_OPENCODE_MODEL) ;;
-    *) echo "refusing to set unknown variable: $name" >&2; exit 2 ;;
+  local known; known=" $(key_names)"
+  case "$known" in
+    *" $name "*) ;;
+    *) case "$name" in
+         MULTI_*) echo "refusing to set $name: models, endpoints and timeouts live in $(multi_config path) now — edit the file" >&2 ;;
+         *) echo "refusing to set unknown variable: $name (a backend in config.toml reads one of:$known)" >&2 ;;
+       esac; exit 2 ;;
   esac
-
-  # Only secrets are worth this dance. A model name is not a secret, and
-  # prompting "paste ... (not echoed)" for MULTI_OPENROUTER_MODEL turned a
-  # clear usage error into a hidden input.
-  case "$name" in
-    *_API_KEY) ;;
-    *) [ -n "$value" ] || { echo "usage: $(basename "$0") set $name <value>" >&2; exit 2; } ;;
-  esac
-
-  # The endpoint decides where OPENROUTER_API_KEY is sent: multi_check_openrouter
-  # curls it with an `authorization: Bearer` header and every review run hands it
-  # to the child as ANTHROPIC_AUTH_TOKEN. So this one value is as security-
-  # relevant as the key itself, and it is the one an injected web page would go
-  # for -- the setup skill has WebFetch and researches provider docs. TLS is
-  # therefore mandatory, except on the loopback, where a self-hosted router over
-  # plain http is a normal setup and nothing leaves the machine.
-  if [ "$name" = "MULTI_OPENROUTER_BASE_URL" ]; then
-    case "$value" in
-      https://*) ;;
-      http://localhost|http://localhost/*|http://localhost:*) ;;
-      http://127.0.0.1|http://127.0.0.1/*|http://127.0.0.1:*) ;;
-      *) echo "refusing $name='$value': must be https:// (http:// only on localhost). Your API key is sent to this host as a Bearer token." >&2; exit 2 ;;
-    esac
-    echo "note: every OpenRouter call — the key check and every review — will now send OPENROUTER_API_KEY to $value" >&2
-  fi
 
   # Without a value on the command line the key is read from stdin -- typed
   # without echo, or piped in. This is the way to do it: a key in argv is in
@@ -143,8 +146,10 @@ cmd_unset() {
   echo "removed $name"
 }
 
+TMPERR="$(mktemp)"; trap 'rm -f "$TMPERR"' EXIT
 case "${1:-}" in
   status) cmd_status ;;
+  init)   multi_config init ;;
   set)    [ $# -ge 2 ] || usage; cmd_set "$2" "${3:-}" ;;
   unset)  [ $# -ge 2 ] || usage; cmd_unset "$2" ;;
   *) usage ;;
