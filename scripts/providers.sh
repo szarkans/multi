@@ -484,11 +484,21 @@ multi_check_gemini() { # multi_check_gemini <key>
 # answers right now. Prints the model name, or nothing if every candidate is
 # down. Costs one 1-token request per candidate (~0.3s each), which is far
 # cheaper than discovering a dead pool through a 300s agent timeout.
+# Prints the first model whose pool answered, and -- on a second line, when
+# any were passed over -- the ones before it with what they said: "qwen (HTTP
+# 429), deepseek (HTTP 000)". A silent fallback read as "the config is wrong":
+# the review ran on the second model and nothing said the first was busy.
+# Returns 1 with only the skipped line when none answered.
 multi_pick_live_model() {
-  local base_url="$1" key="$2" m; shift 2
+  local base_url="$1" key="$2" m r skipped=""; shift 2
   for m in "$@"; do
-    if [ "$(multi_check_headless "$base_url" "$key" "$m")" = "OK" ]; then printf '%s' "$m"; return 0; fi
+    r="$(multi_check_headless "$base_url" "$key" "$m")"
+    if [ "$r" = "OK" ]; then
+      printf '%s' "$m"; [ -z "$skipped" ] || printf '\n%s' "$skipped"; return 0
+    fi
+    skipped="${skipped}${skipped:+, }$m ($r)"
   done
+  printf '\n%s' "$skipped"
   return 1
 }
 
@@ -591,12 +601,20 @@ multi_run_headless() {
   fi
   command -v claude >/dev/null 2>&1 || { multi_fail_backend "$out" "$name: claude CLI MISSING"; return 0; }
   # No model pinned by the caller: pick one whose pool is actually up.
+  local picked skipped=""
   if [ -z "$model" ]; then
     # shellcheck disable=SC2086
-    model="$(multi_pick_live_model "$base_url" "$key" $chain)" || {
-      multi_fail_backend "$out" "$name: ALL POOLS BUSY — tried $chain against $base_url. A 429 means either the pool is busy or this account's own quota is gone — check both; a 404 on a custom endpoint means it does not serve these model names — list models it hosts under [backends.$name] in config.toml; an HTTP 000 means the check itself timed out, the pool is slow, not necessarily dead. Retry in a minute or change the models list."
+    picked="$(multi_pick_live_model "$base_url" "$key" $chain)" || {
+      multi_fail_backend "$out" "$name: ALL POOLS BUSY — tried ${picked#?} against $base_url. A 429 means either the pool is busy or this account's own quota is gone — check both; a 404 on a custom endpoint means it does not serve these model names — list models it hosts under [backends.$name] in config.toml; an HTTP 000 means the check itself timed out, the pool is slow, not necessarily dead. Retry in a minute or change the models list."
       return 0
     }
+    # First line the model, second (if any) the pools passed over. The newline
+    # lives in a variable: a literal one inside ${...} splits the function body
+    # across a line that starts with "}", which the alias-pin test reads as the end.
+    local nl='
+'
+    model="${picked%%"$nl"*}"
+    skipped="${picked#*"$nl"}"; [ "$skipped" != "$picked" ] || skipped=""
   fi
   mkdir -p "$MULTI_CHILD_HOME"
   # stderr goes to its own file, never into the answer. Claude Code prints an
@@ -677,6 +695,7 @@ multi_run_headless() {
     multi_fail_backend "$out" "$name: NO OUTPUT — model=$model exit=$rc (stderr in $log)${tr2:+, transcript in $tr2}$(multi_headless_banner_note "$log")" "$log"
   else
     echo "[multi] answered by $name model $model" >> "$out"
+    [ -z "$skipped" ] || echo "[multi] $name pools skipped before it: $skipped" >> "$out"
   fi
   return "$rc"
 }

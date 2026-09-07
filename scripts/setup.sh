@@ -56,16 +56,18 @@ cmd_status() {
           # eighty turns. Nothing else measures this before the run (#28).
           # Timed per model, so a first pool that timed out does not get
           # charged to the fallback that answered.
-          local t0 took m; live=""
+          local t0 took m r skipped=""; live=""
           for m in $chain; do
             t0="$(date +%s)"
-            [ "$(multi_check_headless "$url" "$key" "$m")" = "OK" ] || continue
+            r="$(multi_check_headless "$url" "$key" "$m")"
+            [ "$r" = "OK" ] || { skipped="${skipped}${skipped:+, }$m ($r)"; continue; }
             live="$m"; took=$(( $(date +%s) - t0 )); break
           done
           if [ -n "$live" ]; then
             printf 'OK — will use %s (%ss to answer one token right now' "$live" "$took"
-            [ "$took" -lt 5 ] && echo ')' \
-              || echo '; SLOW — expect a review here to take tens of minutes; a bad choice for the default profile)'
+            [ "$took" -lt 5 ] && printf ')' \
+              || printf '; SLOW — expect a review here to take tens of minutes; a bad choice for the default profile)'
+            [ -z "$skipped" ] && echo || echo " — skipped before it: $skipped"
           else
             echo "ALL POOLS BUSY or BAD KEY — none of [$chain] answered at $url"
           fi

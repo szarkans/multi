@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.11.1 — 2026-09-07
+
+- A pool passed over is named. `claude-headless` backends probe each model in the list with one token and run on the first that answers; the answer's trailer now says which ones were skipped and what they said — `[multi] openrouter pools skipped before it: qwen/qwen3.8-flash (RATE LIMITED (HTTP 429))` — and `setup.sh status` prints the same after `will use`. The review used to run on the second model with nothing saying the first was busy, which read as "the config order is wrong" (measured 2026-09-07: qwen first in the list, GLM ran). `ALL POOLS BUSY` carries the per-pool codes too.
+
 ## 1.11.0 — 2026-09-07
 
 - A run no longer starts on top of one that is still going. `ask.sh` clears every answer file before launching, and a `claude`/`codex` from an earlier run on the same `--out-prefix` then finished into a deleted inode: its runner found an empty path and marked it `NO OUTPUT` with exit 0 while the transcript held a full review. Measured 2026-09-07: four branches reviewed in one session, all on `$RUN/review`, and three sets of GLM and OpenRouter answers went that way — that is what "OpenRouter and GLM don't work" was. `ask.sh` now takes a lock (bash's own `noclobber` open — not `mkdir`: the uutils coreutils that Ubuntu 25.10+ ships answer 0 to both of two racing `mkdir`s, measured 17 of 30 races on tmpfs), reads the previous run's roster, and refuses the prefix while any of its markers belongs to a live process, saying what to do instead; a marker whose pid is gone is a leftover, not a block. Markers are written whole and renamed into place, so a reader never sees a half-written one as "nobody here".

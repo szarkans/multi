@@ -457,5 +457,32 @@ say "zero turns: offers format drift too" "$(grep -c 'format this code no longer
 bash "$TREE/scripts/ask.sh" --question q --backend openrouter:m --out-prefix "$TMP/on" >/dev/null 2>&1
 say "no transcript: says exactly that" "$(grep -c 'No transcript was written at all' "$TMP/on-openrouter.txt")" "1"
 
+# A pool passed over is named, with what it said. The review used to run on
+# the second model with nothing saying the first was busy, and that read as
+# "the config order is wrong" (2026-09-07: qwen first in the list, GLM ran).
+echo "== a busy first pool is named in the answer, not skipped in silence =="
+cat > "$TMP/bin/curl" <<'STUB'
+#!/usr/bin/env bash
+# The one-token pool check: -d '{"model":"<m>",...}'. busy -> 429, else 200.
+d=""; while [ $# -gt 0 ]; do [ "$1" = "-d" ] && d="$2"; shift; done
+case "$d" in *'"model":"busy"'*) printf 429 ;; *) printf 200 ;; esac
+STUB
+cat > "$TMP/bin/claude" <<'STUB'
+#!/usr/bin/env bash
+echo "a review"
+STUB
+chmod +x "$TMP/bin/curl" "$TMP/bin/claude"
+printf 'default_profile = "p"\n[backends.openrouter]\ntype = "claude-headless"\nbase_url = "https://openrouter.ai/api"\nmodels = ["busy", "ok", "later"]\n[profiles]\np = ["openrouter"]\n' > "$MULTI_HOME/config.toml"
+bash "$TREE/scripts/ask.sh" --question q --backend openrouter --out-prefix "$TMP/sk" >/dev/null 2>&1
+say "ran on the second pool" "$(grep -c 'answered by openrouter model ok$' "$TMP/sk-openrouter.txt")" "1"
+say "names the pool it passed over, with its code" "$(grep -c 'pools skipped before it: busy (RATE LIMITED (HTTP 429))$' "$TMP/sk-openrouter.txt")" "1"
+say "does not name the pool it never reached" "$(grep -c 'later' "$TMP/sk-openrouter.txt")" "0"
+bash "$TREE/scripts/ask.sh" --question q --backend openrouter:ok --out-prefix "$TMP/sp" >/dev/null 2>&1
+say "a pinned model has no skipped line" "$(grep -c 'skipped' "$TMP/sp-openrouter.txt")" "0"
+say "setup.sh status says it too" "$(bash "$TREE/scripts/setup.sh" status 2>/dev/null | grep -c 'will use ok .*skipped before it: busy (RATE LIMITED (HTTP 429))')" "1"
+sed -i.bak 's/"busy", "ok", "later"/"busy"/' "$MULTI_HOME/config.toml"
+bash "$TREE/scripts/ask.sh" --question q --backend openrouter --out-prefix "$TMP/sb" >/dev/null 2>&1
+say "all busy: the marker carries the codes" "$(grep -c 'ALL POOLS BUSY — tried busy (RATE LIMITED (HTTP 429))' "$TMP/sb-openrouter.txt.dead")" "1"
+
 [ $fail -eq 0 ] && echo "ALL PASS" || echo "FAILURES"
 exit $fail
