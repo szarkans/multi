@@ -50,9 +50,12 @@ models = []                          # empty = CLI default; at most one model he
 # ask.sh --backend <profile> picks one; no --backend = default_profile;
 # --backend a,b:model is a one-off; `all` = every backend above.
 
+# OpenRouter's free and flash pools queue: measured 2026-09-06, 25–40 minutes
+# for one review while the same model on a direct key took 5. They belong in a
+# profile you pick on purpose, not in the one every review runs with.
 [profiles]
-normal  = ["codex", "glm", "openrouter"]
-free    = ["opencode", "openrouter:z-ai/glm-5.2:free"]
+normal  = ["codex", "glm"]
+free    = ["opencode", "openrouter:z-ai/glm-5.2:free"]   # pinned: the bare backend walks its paid models first
 paid    = ["codex", "opencode-paid", "openrouter:deepseek/deepseek-v4-flash-0731"]
 compare = ["openrouter:qwen/qwen3.8-flash", "openrouter:deepseek/deepseek-v4-flash-0731", "glm"]
 solo    = ["codex"]

@@ -567,6 +567,18 @@ multi_child_turns() {
 # different weights. <name> is the backend's config name (openrouter, zcode,
 # 9router...) and prefixes every status line. A pinned model runs exactly; an
 # empty pin walks <chain> (space-separated) for the first pool that is up.
+# Claude Code prints a paragraph for every model name it does not know --
+# "isn't described by this version's model catalog ... auto-compact keeps this
+# session within 200k tokens". It is a context-window notice, and on a
+# non-Anthropic endpoint every model name triggers it; but it is the only
+# thing in the stderr log of a run that died silently, so it reads as the
+# cause (#28). Name it for what it is, in the marker, next to the log path.
+multi_headless_banner_note() { # multi_headless_banner_note <log> -> "" or a sentence
+  [ -n "${1:-}" ] && [ -s "$1" ] || return 0
+  grep -q "isn't described by this version's model catalog" "$1" 2>/dev/null \
+    && printf ' The "isn'"'"'t described by this version'"'"'s model catalog" paragraph in the log is Claude Code'"'"'s context-window notice for a model name it does not know, printed on every run — not the cause.'
+  return 0
+}
 multi_run_headless() {
   local name="$1" prompt="$2" out="$3" model="${4:-}" chain="${5:-}" base_url="$6" key_env="$7" rc=0
   local log="${out}.log" key
@@ -658,10 +670,11 @@ multi_run_headless() {
     else
       hint="Only $turns model turns recorded in $tr. Read it before concluding anything: no turns at all fits a rejected key, a pool that went 429 after the probe passed, AND a transcript format this code no longer recognises; one or two turns also fits a single slow turn inside a short budget. Check scripts/setup.sh status too."
     fi
+    hint="$hint$(multi_headless_banner_note "$log")"
     multi_fail_backend "$out" "$name: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s — model=$model. $hint" "$log"
   elif [ ! -s "$out" ]; then
     local tr2; tr2="$(multi_child_transcript "$sid")"
-    multi_fail_backend "$out" "$name: NO OUTPUT — model=$model exit=$rc (stderr in $log)${tr2:+, transcript in $tr2}" "$log"
+    multi_fail_backend "$out" "$name: NO OUTPUT — model=$model exit=$rc (stderr in $log)${tr2:+, transcript in $tr2}$(multi_headless_banner_note "$log")" "$log"
   else
     echo "[multi] answered by $name model $model" >> "$out"
   fi

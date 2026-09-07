@@ -10,6 +10,14 @@
 #   COPY="$(snapshot.sh --repo "$REPO" --diff uncommitted --dest "$RUN/snapshot")"
 #   COPY="$(snapshot.sh --repo "$REPO" --diff "main...HEAD" --dest "$RUN/snapshot")"
 #   COPY="$(snapshot.sh --repo "$REPO" --dest "$RUN/snapshot")"   # no diff: read the code
+#   COPY="$(snapshot.sh --repo "$REPO" --paths "docs/item-map src" --dest "$RUN/snapshot")"
+#
+# --paths names what the review is about; after the copy each one must be in
+# it, or this fails (exit 2, no path on stdout) and says why -- usually the path
+# is ignored, and `git check-ignore -v` names the file and line that does it.
+# ls-files --exclude-standard honours .git/info/exclude too, so a `docs/` line
+# there silently dropped the very folder under review, and every reviewer then
+# agreed there was nothing to review (#29).
 #
 # What travels into the copy: tracked files plus untracked-not-ignored ones, WITH
 # their uncommitted content — the reviewer must see exactly what the user is
@@ -38,7 +46,7 @@ SELF_DIR="$(cd -- "$(dirname -- "$0")" && pwd)"
 # shellcheck source=providers.sh
 . "$SELF_DIR/providers.sh"   # multi_deny_rule: the untracked-secret filter, shared with collect-context
 
-REPO=""; DIFF=""; DEST=""
+REPO=""; DIFF=""; DEST=""; PATHS=""
 MAX_FILE_BYTES="${MULTI_SNAPSHOT_MAX_FILE_BYTES:-2097152}"   # 2 MiB
 # A non-integer override (a typo, `abc`) would make every `-gt` comparison error
 # out and silently disable the cap. Fall back to the default rather than trust it.
@@ -52,12 +60,14 @@ while [ $# -gt 0 ]; do
     --repo) need $# "$1"; REPO="$2"; shift 2 ;;
     --diff) need $# "$1"; DIFF="$2"; shift 2 ;;
     --dest) need $# "$1"; DEST="$2"; shift 2 ;;
+    --paths) need $# "$1"; PATHS="$2"; shift 2 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
 [ -n "$REPO" ] || { echo "--repo is required" >&2; exit 2; }
 [ -d "$REPO" ] || { echo "--repo is not a directory: $REPO" >&2; exit 2; }
 [ -n "$DEST" ] || { echo "--dest is required" >&2; exit 2; }
+[ -z "$PATHS" ] || multi_check_paths "$PATHS" || exit 2
 # A revision starting with "-" is an option to git, not a revision: `--diff
 # --output=/etc/passwd` would make `git diff` write there. Refuse it. (uncommitted
 # is the one non-revision keyword we accept.)
@@ -107,6 +117,22 @@ snap_is_secret() { # snap_is_secret <path> -> 0 if a real secret to withhold
     *) SECRET_RULE="$r"; return 0 ;;
   esac
 }
+snap_is_stripped() { # snap_is_stripped <path> -> 0 for a harness rule/config file the copy never carries
+  # Case-insensitive, like the find -iname purge below that actually empties
+  # the copy: on a case-insensitive macOS FS a tracked agents.md IS AGENTS.md.
+  local r=1
+  shopt -s nocasematch
+  case "$1" in
+    .opencode|.opencode/*|opencode.json|*/.opencode|*/.opencode/*|*/opencode.json) r=0 ;;
+    opencode.jsonc|*/opencode.jsonc|opencode.config.*|*/opencode.config.*|.mcp.json|*/.mcp.json) r=0 ;;
+    .claude|.claude/*|*/.claude|*/.claude/*|.gemini|.gemini/*|*/.gemini|*/.gemini/*) r=0 ;;
+    CLAUDE.md|CLAUDE.local.md|AGENTS.md|AGENTS.override.md|GEMINI.md) r=0 ;;
+    */CLAUDE.md|*/CLAUDE.local.md|*/AGENTS.md|*/AGENTS.override.md|*/GEMINI.md) r=0 ;;
+    .gitignore|*/.gitignore|.geminiignore|*/.geminiignore) r=0 ;;
+  esac
+  shopt -u nocasematch
+  return "$r"
+}
 copy_one() { # copy_one <path>
   local f="$1" src="$ROOT/$1" dst="$DEST/$1" sz
   # Strip the reviewed repo's own opencode config from the copy (#12), any depth.
@@ -124,12 +150,7 @@ copy_one() { # copy_one <path>
   # .gitignore/.geminiignore go too: the copy holds no ignored files and no
   # .git, so they serve nothing — but gemini's read/search tools honor them,
   # and a hostile one blinds the reviewer to the tree while looking successful.
-  case "$f" in
-    .claude/*|*/.claude/*|.gemini/*|*/.gemini/*) return ;;
-    CLAUDE.md|CLAUDE.local.md|AGENTS.md|AGENTS.override.md|GEMINI.md) return ;;
-    */CLAUDE.md|*/CLAUDE.local.md|*/AGENTS.md|*/AGENTS.override.md|*/GEMINI.md) return ;;
-    .gitignore|*/.gitignore|.geminiignore|*/.geminiignore) return ;;
-  esac
+  snap_is_stripped "$f" && return
   # A control character (newline/tab) in a name is attacker-controlled; the diff
   # loop already refuses to list such a file, so do not copy it either, or the
   # manifest's "not copied" note becomes a lie (the file would be in the tree).
@@ -171,7 +192,8 @@ find "$DEST" \( -iname '.opencode' -o -iname 'opencode.json' -o -iname 'opencode
   -exec rm -rf -- {} + 2>/dev/null || true
 
 # --- write the change as files the reviewers read directly ------------------
-[ -n "$DIFF" ] || { printf '%s' "$DEST"; exit 0; }
+MANOUT="$DEST/review.manifest"
+if [ -n "$DIFF" ]; then
 
 # ponytail: review.manifest is line-oriented "STATUS<TAB>path", but a rename from
 # `git diff --name-status` is 3-column (R100<TAB>old<TAB>new) and a filename with
@@ -179,7 +201,6 @@ find "$DEST" \( -iname '.opencode' -o -iname 'opencode.json' -o -iname 'opencode
 # change; the manifest is an index. Switch to a -z/NUL format if a parser ever
 # depends on it.
 DIFFOUT="$DEST/review.diff"
-MANOUT="$DEST/review.manifest"
 # Remove anything the copy may have left at these exact paths before writing — a
 # repo that tracks its own review.diff must not have our write land on a copied
 # file (a symlink is already skipped in the copy, closing the out-of-tree case).
@@ -301,6 +322,57 @@ else
   fi
 fi
 
+fi
+
+# Every --paths entry must be in the FINAL copy -- after the config purge above
+# and after the diff is written, so a name the purge removes is caught and a
+# deleted file that the diff carries is not. A glob is left alone (set -f: it
+# names a shape, not a place, and must not expand against OUR cwd), a harness
+# rule file is stripped from the copy on purpose and its change still travels
+# in review.diff, and anything else the copy lacks is a hard stop: the
+# reviewers would read a tree without the code under review in it.
+missing=0
+set -f
+for p in $PATHS; do
+  p="${p#./}"; p="${p%/}"
+  case "$p" in
+    '') continue ;;
+    *[*?[]*) echo "snapshot: --paths glob not checked for presence: $p" >&2; continue ;;
+  esac
+  [ -e "$DEST/$p" ] && continue
+  if [ ! -e "$ROOT/$p" ]; then
+    if [ -n "$DIFF" ] && awk -F'\t' -v p="$p" '$2==p || $3==p || index($2, p "/")==1 || index($3, p "/")==1 {f=1} END {exit !f}' "$MANOUT" 2>/dev/null; then
+      continue   # gone from the tree because the change removed or renamed it, or everything under it: that is the review
+    fi
+    why="does not exist in $ROOT"
+    printf '%s (requested via --paths, NOT in the copy: %s)\n' "$p" "$why" >> "$skipped"
+    echo "snapshot: $p is not in the copy: $why" >&2; missing=1; continue
+  fi
+  case "$p" in
+    .opencode|.opencode/*|opencode.json*|opencode.config.*|*/.opencode|*/.opencode/*|*/opencode.json*|*/opencode.config.*)
+      # Held out of the copy AND of review.diff (#12): there is nothing of it
+      # for a reviewer to read, so naming it is a stop, not a note.
+      why="opencode config is withheld from reviewers on purpose, from the copy and from review.diff (#12)"
+      printf '%s (requested via --paths, NOT in the copy: %s)\n' "$p" "$why" >> "$skipped"
+      echo "snapshot: $p is not in the copy: $why" >&2; missing=1; continue ;;
+  esac
+  if snap_is_stripped "$p"; then
+    printf '%s (requested via --paths; a harness rule file, stripped from the copy on purpose -- its change is in review.diff)\n' "$p" >> "$skipped"; continue
+  fi
+  why="$(git -C "$ROOT" check-ignore -v -- "$p" 2>/dev/null | head -1)"
+  if [ -n "$why" ]; then
+    # source:line:pattern<TAB>path -- keep only source:line; the pattern is
+    # text from the reviewed repo and this line lands in review.manifest.
+    why="ignored via $(printf '%s' "$why" | cut -f1 | cut -d: -f1,2)"
+  else
+    why="not copied (a secret, symlink, submodule or over-cap file: see .snapshot-skipped.txt in the copy)"
+  fi
+  printf '%s (requested via --paths, NOT in the copy: %s)\n' "$p" "$why" >> "$skipped"
+  echo "snapshot: $p is not in the copy: $why" >&2
+  missing=1
+done
+set +f
+
 # Tell the reviewers, in the manifest, about anything left out of the copy (too
 # large, or a symlink). Its change still shows in review.diff, but "the file is in
 # the tree" would otherwise be a silent lie — the same visibility the untracked
@@ -312,4 +384,5 @@ if [ -s "$skipped" ]; then
   } >> "$MANOUT" 2>/dev/null || true
 fi
 
+[ "$missing" -eq 0 ] || { echo "snapshot: the code under review is missing from the copy — not reviewing a tree without it (the partial copy is at $DEST)" >&2; exit 2; }
 printf '%s' "$DEST"

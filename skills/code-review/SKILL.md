@@ -12,7 +12,7 @@ argument-hint: "[what to review, in words] [lite|normal|ultra] [haiku|sonnet|opu
 
 # Multi-model code review
 
-!`sh -c 'for p in "$CLAUDE_PLUGIN_ROOT/scripts" "$HOME/.claude/skills/multi/scripts" "./.claude/skills/multi/scripts"; do [ -x "$p/probe.sh" ] && { "$p/probe.sh"; echo "scripts-dir: $p"; exit 0; }; done; echo "probe: NOT FOUND — locate scripts/probe.sh in this plugin and run it yourself"'`
+!`"$CLAUDE_PLUGIN_ROOT/scripts/probe.sh" 2>/dev/null || "$HOME/.claude/skills/multi/scripts/probe.sh" 2>/dev/null || ./.claude/skills/multi/scripts/probe.sh`
 
 Several models read the same code, and you decide what reaches the user. That
 is the whole idea: one model invents problems and walks past real ones, and you
@@ -28,6 +28,14 @@ comes next. Act like it: the question is "is this ready", not "here are some
 observations".
 
 `$SCRIPTS` below is whatever the probe printed as `scripts-dir:`.
+
+If the line above reads `Shell substitution failed` instead of probe output,
+the session is in a git worktree and its shell gate refused the header — the
+plugin is fine and so are the backends. Run the probe yourself, as one plain
+command with nothing but the path: `"$HOME/.claude/skills/multi/scripts/probe.sh"`
+(or the same under `$CLAUDE_PLUGIN_ROOT`), and read `scripts-dir:` from that.
+The gate also refuses `sh -c`, `bash <file>`, `${VAR:-default}` and loops, so
+keep every later command in that shape too.
 
 ## The gate
 
@@ -128,10 +136,15 @@ REPO="$(git -C "${REVIEW_DIR:-.}" rev-parse --show-toplevel)"
 # file (review.diff) so nobody needs git in it — the copy has no .git. Pass the
 # SAME --diff spec you review with; drop it for a
 # whole-code (non-diff) review.
-COPY="$($SCRIPTS/snapshot.sh --repo "$REPO" [--diff <spec>] --dest "$RUN/snapshot")"
-# If the snapshot failed (a typo'd --diff, a permission error), $COPY is empty and
-# every reviewer would fall back to cwd — the live tree. STOP instead: that is the
-# data-loss path this exists to close. Fix the target and re-run, don't review.
+COPY="$($SCRIPTS/snapshot.sh --repo "$REPO" [--diff <spec>] [--paths "<paths>"] --dest "$RUN/snapshot")"
+# If the snapshot failed (a typo'd --diff, a permission error, a --paths entry
+# that is not in the copy), $COPY is empty and every reviewer would fall back to
+# cwd — the live tree. STOP instead: that is the data-loss path this exists to
+# close. Fix the target and re-run, don't review. Pass --paths whenever the
+# target is named paths: the copy skips whatever git ignores, .git/info/exclude
+# included, and the failure names the ignore rule — without --paths a folder
+# hidden that way is simply absent and every reviewer agrees there is nothing
+# to review.
 [ -n "$COPY" ] || { echo "snapshot failed — not reviewing the live tree"; exit 1; }
 # Snapshot ONCE. Persist the path so later blocks reuse this copy instead of
 # re-running snapshot — a re-run rm -rf's and rebuilds the dir while the
@@ -148,8 +161,37 @@ $SCRIPTS/collect-context.sh --repo "$REPO" [--diff <spec>] [--paths "<paths>"] >
 $SCRIPTS/review-prompt.sh --repo "$COPY" --target "<in words>" [--diff <spec> --diff-artifact review.diff] [--paths "<paths>"] \
                           [--focus "<user text>"] --context "$RUN/ctx.md" > "$RUN/review.prompt.md"
 $SCRIPTS/ask.sh --repo "$COPY" --question-file "$RUN/review.prompt.md" --out-prefix "$RUN/review" \
-                --effort <low|medium|high|xhigh|max> --timeout "${MULTI_REVIEW_TIMEOUT:-2400}"
+                --effort <low|medium|high|xhigh|max> --timeout "${MULTI_REVIEW_TIMEOUT:-2400}" \
+                > "$RUN/ask.log" 2>&1
 ```
+
+Run that last command **as a background task** (the Bash tool's
+`run_in_background`) — never in the foreground: a Bash call is capped at ten
+minutes, the review budget is forty, and a killed `ask.sh` takes every backend
+with it and marks them all `KILLED`.
+
+One `--out-prefix` per target. A second review in the same session — another
+branch, a re-run with a different focus — gets its own (`$RUN/review-2`,
+`$RUN/review-<branch>`); `ask.sh` refuses a prefix whose backends are still
+running, because launching over them deletes the answers they are writing.
+
+**Waiting.** A backend that has written nothing yet is not absent. Beside each
+answer file, `<file>.running` says `<pid of its runner> <start epoch> <timeout>`
+while the backend runs, and disappears when it is done; `$RUN/review.run` is
+the roster of the run. An empty `.txt` next to a live `.running` is a reviewer
+still writing — never report it as missing. Do not poll files by hand: block
+on them, and let a Bash call run up to its cap:
+
+```bash
+$SCRIPTS/wait.sh --prefix "$RUN/review" --max 540
+```
+
+It prints one line per backend — `codex 5m12s ok`, `glm 23m04s ok`,
+`openrouter 9m30s still running (timeout 2400s)`, `… FAILED: <the .dead text>`
+— and exits 1 while something is still running: call it again. Exit 0 means
+everything has ended one way or the other, and the lines are the reviewer
+roster for the report. A free pool can take twenty minutes and still come
+back with the one finding nobody else had.
 
 No `--backend`: who reviews is the default profile in the user's `config.toml`
 (the probe printed its backends and profiles). Pass `--backend <profile>` or an
@@ -271,10 +313,12 @@ goes in `Dropped`. `(none — this reviewer answered without opening anything)`
 means the whole report is guesswork. `NO ANSWER` means it ran and said
 nothing: that reviewer was absent, say so as `Codex/Opencode FAILED: <reason>`
 from the one-line text in `*.dead` rather than reading silence as agreement.
-No answer file and no `.dead` at all means the transport itself was killed
-before writing anything (`KILLED` is what a caught signal writes; a SIGKILL
-writes nothing, and leaves a stale `<file>.running` sidecar behind) — that
-reviewer was absent too, say so.
+No answer file and no `.dead` at all, with nothing running, means the
+transport itself was killed before writing anything (`KILLED` is what a caught
+signal writes; a SIGKILL writes nothing, and leaves a stale `<file>.running`
+whose pid is gone) — that reviewer was absent too, say so. `wait.sh` tells
+these apart; an empty file beside a live `.running` is none of them, it is a
+reviewer still writing.
 
 Bucket by *the underlying problem*, not by wording — the same bug gets three
 different descriptions:
@@ -361,7 +405,8 @@ changed as `file:line` one-liners. If the cap is hit with findings open, say so.
   backend, and a failed run writes the reason as the one-line `.dead` text, so
   a hang arrives as `... FAILED: ...`, never as an empty file.
   Treat that reviewer as absent and name it in the report. A reviewer still
-  writing is alive, however long it takes. Never block the whole review on one
-  backend.
+  writing is alive, however long it takes — `wait.sh` shows how long it has
+  been going and how much budget is left. Never block the whole review on one
+  backend, but never write it off before its `.running` is gone either.
 - **OpenCode falls back to its free model** — its output says so. Repeat it in
   the reviewer line; the user is entitled to know which model actually ran.

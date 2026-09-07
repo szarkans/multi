@@ -51,10 +51,24 @@ cmd_status() {
           printf '%s — ' "$(mask "$key")"
           # Report the model that will actually be used, not the one we hoped for:
           # a free pool returning 429 is normal and the runner moves on to the next.
-          # shellcheck disable=SC2086
-          live="$(multi_pick_live_model "$url" "$key" $chain)" \
-            && echo "OK — will use $live" \
-            || echo "ALL POOLS BUSY or BAD KEY — none of [$chain] answered at $url"
+          # And how long that one-token call took: a pool that needs seconds
+          # for one token needs minutes for every review turn, and a review is
+          # eighty turns. Nothing else measures this before the run (#28).
+          # Timed per model, so a first pool that timed out does not get
+          # charged to the fallback that answered.
+          local t0 took m; live=""
+          for m in $chain; do
+            t0="$(date +%s)"
+            [ "$(multi_check_headless "$url" "$key" "$m")" = "OK" ] || continue
+            live="$m"; took=$(( $(date +%s) - t0 )); break
+          done
+          if [ -n "$live" ]; then
+            printf 'OK — will use %s (%ss to answer one token right now' "$live" "$took"
+            [ "$took" -lt 5 ] && echo ')' \
+              || echo '; SLOW — expect a review here to take tens of minutes; a bad choice for the default profile)'
+          else
+            echo "ALL POOLS BUSY or BAD KEY — none of [$chain] answered at $url"
+          fi
         else
           echo "not configured (setup.sh set $keyenv)"
         fi ;;

@@ -32,6 +32,12 @@ while [ $# -gt 0 ]; do
 done
 [ -z "$REPO" ] || cd "$REPO" 2>/dev/null || { echo "--repo is not a directory: $REPO" >&2; exit 2; }
 
+# Where the scripts are: the skills reference every other script through this
+# line. It used to be printed by a shell loop in each SKILL.md header, and a
+# worktree session's shell gate refuses that loop (#26); a plain path here is
+# one less thing the header has to do.
+say "scripts-dir: $SELF_DIR"
+
 # --- config -------------------------------------------------------------
 # Backends, models, endpoints and timeouts come from config.toml; a broken
 # file is reported here, before any skill acts on it, and is a hard stop.

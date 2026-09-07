@@ -13,13 +13,19 @@ argument-hint: "[nothing needed — just run it]"
 
 # Connect the judges
 
-!`sh -c 'for p in "$CLAUDE_PLUGIN_ROOT/scripts" "$HOME/.claude/skills/multi/scripts" "./.claude/skills/multi/scripts"; do [ -x "$p/probe.sh" ] && { "$p/probe.sh"; echo "scripts-dir: $p"; exit 0; }; done; echo "probe: NOT FOUND — locate scripts/probe.sh in this plugin and run it yourself"'`
+!`"$CLAUDE_PLUGIN_ROOT/scripts/probe.sh" 2>/dev/null || "$HOME/.claude/skills/multi/scripts/probe.sh" 2>/dev/null || ./.claude/skills/multi/scripts/probe.sh`
 
 `$SCRIPTS` is whatever the probe printed as `scripts-dir:`. The probe already
 ran above — read it, do not run it again. It detected everything detectable:
 which CLIs are installed, who is logged in, which keys exist, whether the
 OpenCode paid channel is available, and what other AI CLIs live on this
 machine. **Never ask the user about anything the probe already answered.**
+
+If the line above reads `Shell substitution failed` instead of probe output,
+the session is in a git worktree whose shell gate refused the header; the
+plugin is fine. Run `"$HOME/.claude/skills/multi/scripts/probe.sh"` (or the
+same under `$CLAUDE_PLUGIN_ROOT`) yourself, as one plain command, and read
+`scripts-dir:` from that.
 
 The user here is not assumed technical. No jargon, no walls of text, one step
 at a time, and never make them feel behind for not having done this already.

@@ -12,7 +12,7 @@ argument-hint: "[the question, in words]"
 
 # Ask several models
 
-!`sh -c 'for p in "$CLAUDE_PLUGIN_ROOT/scripts" "$HOME/.claude/skills/multi/scripts" "./.claude/skills/multi/scripts"; do [ -x "$p/probe.sh" ] && { "$p/probe.sh"; echo "scripts-dir: $p"; exit 0; }; done; echo "probe: NOT FOUND — locate scripts/probe.sh in this plugin and run it yourself"'`
+!`"$CLAUDE_PLUGIN_ROOT/scripts/probe.sh" 2>/dev/null || "$HOME/.claude/skills/multi/scripts/probe.sh" 2>/dev/null || ./.claude/skills/multi/scripts/probe.sh`
 
 One model's answer is one model's priors. Three answers from different families
 show you where the question is actually settled and where it only looked
@@ -23,6 +23,12 @@ merge them into one answer** — that throws away the only thing the user came
 for. Show what each said, then say where they differ.
 
 `$SCRIPTS` is whatever the probe printed as `scripts-dir:`.
+
+If the line above reads `Shell substitution failed` instead of probe output,
+the session is in a git worktree whose shell gate refused the header; the
+plugin is fine. Run `"$HOME/.claude/skills/multi/scripts/probe.sh"` (or the
+same under `$CLAUDE_PLUGIN_ROOT`) yourself, as one plain command, and read
+`scripts-dir:` from that.
 
 ## Run it
 

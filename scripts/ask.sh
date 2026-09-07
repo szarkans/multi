@@ -40,6 +40,16 @@
 #                                        line saying why it did not run
 #   <prefix>-<backend>-2.txt, -3.txt...  second and later instance of the same
 #                                        backend (e.g. two openrouter entries)
+#   <prefix>-<backend>.txt.running      while that backend runs: "<pid of its
+#                                        runner> <start epoch> <timeout s>", so
+#                                        an `ls` says how long it has been going
+#   <prefix>-<backend>.txt.dead         one line saying why it failed
+#   <prefix>.run                        the roster: one "<backend>" line per
+#                                        participant at launch, then a
+#                                        "<backend> <seconds>" line as each ends
+# scripts/wait.sh --prefix <prefix> blocks on the .running files and prints
+# one status line per backend. A prefix whose roster still has a live
+# .running is refused: starting over it deletes the running one's answer.
 #
 # Both READ the repository to answer; neither is meant to change it. But
 # "read-only" here is two different, unequal mechanisms, and one has a hole worth
@@ -327,7 +337,11 @@ multi_ask_terminated() {
     pid="${pb%%:*}"
     suffix="${pb#*:}"
     f="${PREFIX}-${suffix}.txt"
-    [ -e "${f}.running" ] || continue
+    # Ours only: the marker names the runner (or, before started(), this
+    # ask.sh). A prefix that a newer run has since taken must not get KILLED
+    # written over its answer by a parent that outlived its own children.
+    read -r mpid _ 2>/dev/null < "${f}.running" || continue
+    [ "$mpid" = "$pid" ] || [ "$mpid" = "$$" ] || continue
     multi_kill_tree "$pid"
     wait "$pid" 2>/dev/null
     name="$suffix"
@@ -341,6 +355,110 @@ multi_ask_terminated() {
   exit $((128+signal))
 }
 
+# Refuse to start over a run that is still going. The loop below rm -f's every
+# answer file before launching, and a claude/codex that is still writing to the
+# old inode finishes into a deleted file: its runner then finds an empty path
+# and marks it NO OUTPUT with exit 0, while the transcript holds a full answer.
+# Measured 2026-09-07: four reviews in one session, all on $RUN/review, and
+# three sets of glm/openrouter answers went that way. The previous run's
+# roster ($PREFIX.run) says which markers to look at -- every one of them, not
+# only the backends this run happens to share with it. The pid in a marker is
+# the backend's own runner, which outlives a SIGKILLed ask.sh; a pid that is
+# gone means a leftover from a killed run -- not a reason to wait.
+ROSTER="${PREFIX}.run"
+# The check below and the marker writes after it are not one step; two ask.sh
+# started within the same second (two sub-agents on one $RUN) would both pass
+# and both launch. mkdir is atomic: whoever gets the directory does the check
+# and the writes, the other waits. Held for milliseconds, so a lock older than
+# a minute belongs to a crash, not a run. NOT mkdir: the uutils (Rust) coreutils
+# that Ubuntu 25.10+ ships answer 0 to BOTH of two racing mkdirs -- measured
+# 2026-09-07, 17 of 30 races on tmpfs, 30 of 30 on ext4; only the sequential
+# case fails. bash's own noclobber open is O_EXCL and needs no binary.
+LOCK="${PREFIX}.lock"; n=0
+until ( set -o noclobber; echo "$$" > "$LOCK" ) 2>/dev/null; do
+  # The holder's pid is in the file; a holder that is gone (SIGKILLed inside
+  # these few milliseconds) must not cost every later run a minute and a
+  # hand-deleted file. Take over.
+  read -r lpid < "$LOCK" 2>/dev/null || lpid=""
+  case "$lpid" in ''|*[!0-9]*) ;; *) kill -0 "$lpid" 2>/dev/null || rm -f "$LOCK" ;; esac
+  n=$((n+1))
+  [ "$n" -lt 60 ] || { echo "ask.sh: $LOCK held for a minute by pid ${lpid:-?} — remove it and retry" >&2; exit 2; }
+  sleep 1
+done
+trap 'rm -f "$LOCK"' EXIT
+# After the lock, not before: a wait for it would otherwise be counted into
+# every backend's start and duration.
+now="$(date +%s)"
+{ [ -s "$ROSTER" ] && cut -d' ' -f1 "$ROSTER"; printf '%s\n' "${SUFFIXES[@]}"; } | sort -u | while read -r sfx; do
+  r="${PREFIX}-${sfx}.txt.running"
+  [ -s "$r" ] || continue
+  read -r rpid rstart rtimeout < "$r" || continue
+  case "$rpid" in ''|*[!0-9]*) continue ;; esac
+  kill -0 "$rpid" 2>/dev/null || continue
+  case "$rstart" in ''|*[!0-9]*) rstart="$now" ;; esac
+  echo "ask.sh: a run with this prefix is still going: $sfx (pid $rpid, started $((now-rstart))s ago, timeout ${rtimeout:-?}s). Starting now would delete its answer. Wait for it: scripts/wait.sh --prefix \"$PREFIX\" -- or pass another --out-prefix." >&2
+  exit 2
+done || exit 2
+
+# The roster, then every marker, THEN the launches: a reader that arrives
+# mid-launch must see the whole run, not the backends started so far -- a
+# fast first backend used to finish and drop its marker before the next one
+# was even created, and wait.sh returned "all done" on a half-launched run.
+# A reused prefix (loop mode re-reviews with the same $RUN/review) must not
+# let last round's answer stand in for a backend that dies before writing --
+# a stale non-empty file with no .dead marker reads as a live result.
+# The sidecars go too: .dead.log is only ever cleared inside
+# multi_fail_backend, so a round that FAILS then SUCCEEDS leaves last round's
+# stderr tail sitting next to a live answer -- the same stale-file confusion
+# this line exists to close, one filename over.
+# Written whole, then renamed: `>` truncates first, and a guard reading the
+# marker in between sees an empty file -- "nobody here" -- and launches over a
+# live run. Measured: two ask.sh started in the same second, once in twenty.
+mark() { # mark <running-file> <pid> <start> <timeout>
+  local t="${1}.tmp.$RANDOM$RANDOM"
+  printf '%s %s %s\n' "$2" "$3" "$4" > "$t" && mv -f "$t" "$1"
+}
+# Each backend's subshell, first thing: put ITS pid in the marker. It is the
+# process that outlives a SIGKILLed ask.sh and keeps writing the answer, so it
+# is the one liveness has to mean. bash 3.2 has no $BASHPID; the parent of a
+# fresh sh is this subshell.
+# Only if the marker still says the parent: a SIGKILL that hit ask.sh between
+# the fork and this line left a marker with a dead pid, another ask.sh may have
+# taken the prefix since, and this orphan must then stand down rather than
+# write over the new run. $$ in a subshell is still the parent's pid.
+started() { # started <out> -> 0 to go on, 1 to stand down
+  local cur
+  read -r cur _ 2>/dev/null < "${1}.running" && [ "$cur" = "$$" ] || return 1
+  mark "${1}.running" "$(sh -c 'echo $PPID')" "$(date +%s)" "$MULTI_BACKEND_TIMEOUT"
+}
+for i in "${!NAMES[@]}"; do
+  out="${PREFIX}-${SUFFIXES[$i]}.txt"
+  rm -f "$out" "${out}.dead" "${out}.dead.log" "${out}.log" "${out}.running"
+  # Who runs it, since when, and for how long at most: an empty marker said
+  # "alive" and nothing else, and a judge looking at an empty answer beside it
+  # could not tell three minutes in from thirty (#27). Our pid for now; the
+  # backend's own subshell replaces it with its own the moment it starts.
+  mark "${out}.running" "$$" "$now" "${TIMEOUTS[$i]}"
+done
+# The roster last: wait.sh needs it to exist, and by now every marker it will
+# look at is there -- published first, a waiter saw a roster with no markers
+# and called the run dead before it launched.
+printf '%s\n' "${SUFFIXES[@]}" > "${ROSTER}.tmp" && mv -f "${ROSTER}.tmp" "$ROSTER"
+rm -f "$LOCK"; trap - EXIT
+
+# And last thing: record how long it took (wait.sh reports it, and #28 is
+# about knowing which backend is the slow one), THEN drop the marker, so no
+# reader sees "finished" before the time is there.
+# A runner that ends with nothing written and no marker (codex exit != 124 with
+# an empty stderr) used to be marked NO OUTPUT only by the parent, after EVERY
+# backend was done -- a reader in between saw "finished, no answer, no
+# reason". Mark it here, in the runner's own subshell, the moment it ends.
+finished() { # finished <suffix> <out> <start epoch> <name>
+  [ -s "$2" ] || [ -e "${2}.dead" ] || multi_fail_backend "$2" "$4: NO OUTPUT"
+  echo "$1 $(( $(date +%s) - $3 ))" >> "$ROSTER"
+  rm -f "${2}.running"
+}
+
 # All backends start at once. OpenCode spends most of a minute waking up and
 # every model takes 30-90s, so anything sequential here is pure wall clock.
 pids=""
@@ -349,15 +467,6 @@ trap 'multi_ask_terminated 2' INT
 trap 'multi_ask_terminated 1' HUP
 for i in "${!NAMES[@]}"; do
   name="${NAMES[$i]}"; model="${MODELS[$i]}"; out="${PREFIX}-${SUFFIXES[$i]}.txt"
-  # A reused prefix (loop mode re-reviews with the same $RUN/review) must not
-  # let last round's answer stand in for a backend that dies before writing —
-  # a stale non-empty file with no .dead marker reads as a live result.
-  # The sidecars go too: .dead.log is only ever cleared inside
-  # multi_fail_backend, so a round that FAILS then SUCCEEDS leaves last round's
-  # stderr tail sitting next to a live answer — the same stale-file confusion
-  # this line exists to close, one filename over.
-  rm -f "$out" "${out}.dead" "${out}.dead.log" "${out}.log" "${out}.running"
-  : > "${out}.running"
   # ONE cd for every backend: each harness reads the tree from its cwd, and
   # per-backend cwd handling is how openrouter/gemini shipped reviewing the
   # caller's directory as an empty diff. A new backend inherits this for free.
@@ -365,11 +474,11 @@ for i in "${!NAMES[@]}"; do
   # The runner's timeout and stall come from the config, per backend, and
   # live in the same two variables the runners always read -- set in this
   # backend's own subshell, so one slow codex does not stretch the others.
-  type="${TYPES[$i]}"; chain="${CHAINS[$i]}"
+  type="${TYPES[$i]}"; chain="${CHAINS[$i]}"; t0="$now"
   case "$type" in
     codex)
-      ( MULTI_BACKEND_TIMEOUT="${TIMEOUTS[$i]}"; cd "$REPO_DIR" \
-        && run_codex_one "$out" "${model:-${CODEX_MODEL:-$(first_of "$chain")}}"; rm -f "${out}.running" ) & ;;
+      ( MULTI_BACKEND_TIMEOUT="${TIMEOUTS[$i]}"; started "$out" && cd "$REPO_DIR" \
+        && run_codex_one "$out" "${model:-${CODEX_MODEL:-$(first_of "$chain")}}"; finished "${SUFFIXES[$i]}" "$out" "$t0" "$name" ) & ;;
     opencode)
       # Pinned: exactly that model. --model/--fallback: this run's chain.
       # Otherwise the config chain, or, when it is empty, a free model from the
@@ -382,14 +491,14 @@ for i in "${!NAMES[@]}"; do
         oc_model="${auto%% *}"; oc_fallback="${auto#* }"; [ "$oc_fallback" != "$auto" ] || oc_fallback=""
         [ -z "$FALLBACK" ] || oc_fallback="$FALLBACK"
       fi
-      ( MULTI_BACKEND_TIMEOUT="${TIMEOUTS[$i]}"; MULTI_OPENCODE_STALL="${STALLS[$i]}"; cd "$REPO_DIR" \
-        && run_opencode_one "$out" "$oc_model" "$oc_fallback"; rm -f "${out}.running" ) & ;;
+      ( MULTI_BACKEND_TIMEOUT="${TIMEOUTS[$i]}"; MULTI_OPENCODE_STALL="${STALLS[$i]}"; started "$out" && cd "$REPO_DIR" \
+        && run_opencode_one "$out" "$oc_model" "$oc_fallback"; finished "${SUFFIXES[$i]}" "$out" "$t0" "$name" ) & ;;
     claude-headless)
-      ( MULTI_BACKEND_TIMEOUT="${TIMEOUTS[$i]}"; cd "$REPO_DIR" \
-        && multi_run_headless "$name" "$QUESTION" "$out" "$model" "$chain" "${URLS[$i]}" "${KEYENVS[$i]}"; rm -f "${out}.running" ) & ;;
+      ( MULTI_BACKEND_TIMEOUT="${TIMEOUTS[$i]}"; started "$out" && cd "$REPO_DIR" \
+        && multi_run_headless "$name" "$QUESTION" "$out" "$model" "$chain" "${URLS[$i]}" "${KEYENVS[$i]}"; finished "${SUFFIXES[$i]}" "$out" "$t0" "$name" ) & ;;
     gemini)
-      ( MULTI_BACKEND_TIMEOUT="${TIMEOUTS[$i]}"; cd "$REPO_DIR" \
-        && multi_run_gemini "$name" "$QUESTION" "$out" "${model:-$(first_of "$chain")}" "${KEYENVS[$i]}"; rm -f "${out}.running" ) & ;;
+      ( MULTI_BACKEND_TIMEOUT="${TIMEOUTS[$i]}"; started "$out" && cd "$REPO_DIR" \
+        && multi_run_gemini "$name" "$QUESTION" "$out" "${model:-$(first_of "$chain")}" "${KEYENVS[$i]}"; finished "${SUFFIXES[$i]}" "$out" "$t0" "$name" ) & ;;
     *) multi_fail_backend "$out" "$name: unknown backend type '$type'"; rm -f "${out}.running" ;;
   esac
   pids="$pids $!:${SUFFIXES[$i]}"
@@ -403,11 +512,10 @@ for i in "${!NAMES[@]}"; do
   # by grepping the model's own text: an answer that starts with "codex: NO
   # OUTPUT ..." is a live backend, and parsing model text as status used to
   # read it as dead. An empty file still must never read as an answer.
-  if [ -s "$f" ] && [ ! -e "${f}.dead" ]; then
-    alive=$((alive+1))
-  else
-    [ -s "$f" ] || multi_fail_backend "$f" "${name}: NO OUTPUT"
-  fi
+  # Count only; finished() already marked an empty file NO OUTPUT in the
+  # runner's own subshell. Writing here again would land on a newer run that
+  # took the prefix the moment the last marker went.
+  if [ -s "$f" ] && [ ! -e "${f}.dead" ]; then alive=$((alive+1)); fi
   wrote="$wrote${wrote:+ }$f"
 done
 echo "wrote: $wrote"

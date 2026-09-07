@@ -17,7 +17,7 @@ metadata:
 
 # Wide ideas, several models
 
-!`sh -c 'for p in "$CLAUDE_PLUGIN_ROOT/scripts" "$HOME/.claude/skills/multi/scripts" "./.claude/skills/multi/scripts"; do [ -x "$p/probe.sh" ] && { "$p/probe.sh"; echo "scripts-dir: $p"; exit 0; }; done; echo "probe: NOT FOUND — locate scripts/probe.sh in this plugin and run it yourself"'`
+!`"$CLAUDE_PLUGIN_ROOT/scripts/probe.sh" 2>/dev/null || "$HOME/.claude/skills/multi/scripts/probe.sh" 2>/dev/null || ./.claude/skills/multi/scripts/probe.sh`
 
 The first three answers a model gives are the answers a senior engineer gives
 in thirty seconds. Correct, forgettable. The interesting ones live past number
@@ -26,6 +26,12 @@ start from different priors and land somewhere else again. This skill uses
 both axes at once and pays for one.
 
 `$SCRIPTS` is whatever the probe printed as `scripts-dir:`.
+
+If the line above reads `Shell substitution failed` instead of probe output,
+the session is in a git worktree whose shell gate refused the header; the
+plugin is fine. Run `"$HOME/.claude/skills/multi/scripts/probe.sh"` (or the
+same under `$CLAUDE_PLUGIN_ROOT`) yourself, as one plain command, and read
+`scripts-dir:` from that.
 
 ## Pre-flight
 

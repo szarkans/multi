@@ -13,7 +13,7 @@ argument-hint: "[what was promised — a plan file, an issue, or nothing to use 
 
 # Check if it is actually done
 
-!`sh -c 'for p in "$CLAUDE_PLUGIN_ROOT/scripts" "$HOME/.claude/skills/multi/scripts" "./.claude/skills/multi/scripts"; do [ -x "$p/probe.sh" ] && { "$p/probe.sh"; echo "scripts-dir: $p"; exit 0; }; done; echo "probe: NOT FOUND — locate scripts/probe.sh in this plugin and run it yourself"'`
+!`"$CLAUDE_PLUGIN_ROOT/scripts/probe.sh" 2>/dev/null || "$HOME/.claude/skills/multi/scripts/probe.sh" 2>/dev/null || ./.claude/skills/multi/scripts/probe.sh`
 
 A model that just wrote code is the worst possible judge of whether that code
 works. It compares the task to its own summary of what it did, the two match,
@@ -28,6 +28,12 @@ So this skill does two things a normal review does not:
    tests should pass" — the command, its output, its exit code.
 
 `$SCRIPTS` is whatever the probe printed as `scripts-dir:`.
+
+If the line above reads `Shell substitution failed` instead of probe output,
+the session is in a git worktree whose shell gate refused the header; the
+plugin is fine. Run `"$HOME/.claude/skills/multi/scripts/probe.sh"` (or the
+same under `$CLAUDE_PLUGIN_ROOT`) yourself, as one plain command, and read
+`scripts-dir:` from that.
 
 ## First: what was promised?
 
@@ -87,8 +93,19 @@ here — do not run git." Without --diff: what changed, in words.>
 EOF
 
 $SCRIPTS/ask.sh --repo "$COPY" --question-file "$RUN/done-prompt.md" \
-                --out-prefix "$RUN/done" --effort high
+                --out-prefix "$RUN/done" --effort high > "$RUN/ask.log" 2>&1
 ```
+
+Run that last command as a background task (the Bash tool's
+`run_in_background`): a foreground Bash call is capped at ten minutes, and a
+killed `ask.sh` marks every backend `KILLED`.
+
+When you come back for the answers, block on them instead of reading whatever
+is there: `$SCRIPTS/wait.sh --prefix "$RUN/done" --max 540` prints one line per
+backend (`ok`, `FAILED: <reason>`, or `still running` with its elapsed time and
+timeout) and exits 1 while any is still running — call it again. An empty
+`done-<backend>.txt` beside a live `done-<backend>.txt.running` is a reviewer
+still writing, not a missing one.
 
 No `--backend`: who answers is the default profile in the user's `config.toml`,
 the same as `code-review` and `ask`. Pass `--backend` only for a set the user
