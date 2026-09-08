@@ -320,19 +320,39 @@ whose pid is gone) — that reviewer was absent too, say so. `wait.sh` tells
 these apart; an empty file beside a live `.running` is none of them, it is a
 reviewer still writing.
 
-Bucket by *the underlying problem*, not by wording — the same bug gets three
-different descriptions:
+**Inventory first, judge second.** Before you merge, verify or drop anything,
+write out every finding every reviewer raised, one line each, with its author,
+its `file:line` and its claim in the reviewer's own words. Number them. One
+reviewer, one finding, one line — the inventory never groups authors
+(`[Codex/GLM]` is a bucket, not an inventory line), and a finding that names
+two mechanisms in one sentence ("X is unescaped, and the fallback returns raw
+text") is two lines. This is the list the rest of the report accounts for:
+every number lands in exactly one bucket below, and a number that appears
+nowhere is a finding you lost.
+Measured on real bugs: the judge's own failure mode is not inventing findings,
+it is folding two findings at the same place into one and keeping the wrong
+one — a reviewer's real bug merged with a neighbour's speculation and dropped
+with it. The inventory is what makes that impossible.
+
+Then bucket. Two findings are *the same* only when they name the same
+mechanism — the same wrong line doing the same wrong thing. Same file, same
+function, even the same line with a different mechanism is two findings, and
+they stay two. When in doubt, keep them apart: a duplicate costs the reader one
+line, a merge costs them a bug.
 
 - **Corroborated** — two or more reviewers from different families (Claude /
-  Codex / OpenCode). Leads the report; independent agreement is the strongest
-  evidence this pipeline produces.
+  Codex / OpenCode) named the same mechanism. Leads the report; independent
+  agreement is the strongest evidence this pipeline produces.
 - **Single-source** — one reviewer. Check each before the user sees it: open the
   cited lines, confirm it is real and reachable. In `ultra`, spawn one
   `verify` per finding instead and take its verdict.
 - **Minor** — a real defect that is simply small. Not verified — that costs more
   than it is worth — and listed at the bottom, one line each.
 - **Dropped** — only two things belong here: the code contradicts it, or (in a
-  diff review) it predates the change. "Too small" is never a reason.
+  diff review) it predates the change. "Too small" is never a reason. A dropped
+  finding keeps its own text and gets its own reason, and the reason cites the
+  line that contradicts *this* finding — not a neighbour's. Two findings
+  dropped for one reason is the merge above wearing a different hat.
 
 Rules that make the report worth reading:
 
@@ -342,8 +362,10 @@ Rules that make the report worth reading:
 - **Disagreements are surfaced, not averaged.** Read the code, decide, and put
   the disagreement in the report — where good reviewers split is where the user
   should look.
-- **Nothing raised disappears silently.** Every finding lands in a bucket, and a
-  dropped one carries its reason.
+- **Nothing raised disappears silently.** Every inventory number lands in a
+  bucket, and a dropped one carries its own text and its own reason. Before you
+  write the verdict, count: inventory numbers in, numbers placed — they match
+  or you go back.
 - **Answer the user's own words first**, if they gave any — even when the answer
   is "no, that path is fine, here is why".
 
@@ -357,24 +379,31 @@ not a schema — drop empty sections, and match the surrounding conversation.
 Reviewers: Claude <n> · Codex <effort> · OpenCode <model> · ponytail (lens: same judge, different ruleset)
 <one line if something was missing or died, and why>
 
+## 📋 Everything raised (<N>)
+1. [Codex] `path/file.py:120` — <the reviewer's claim, one line>
+2. [correctness] `path/file.py:120` — <a different mechanism at the same line stays its own number>
+3. [OpenCode] `path/x.py:12` — …
+<every finding from every reviewer, nothing merged yet; the buckets below cite these numbers>
+
 ## ✅ Corroborated (<n>)
-1. **HIGH** `path/file.py:120` — <what is wrong>
+1. **HIGH** `path/file.py:120` — <what is wrong> (#1, #4)
    <the concrete failure case> — Codex + correctness
 
 ## 🔸 Single-source, verified (<m>)
-- **MEDIUM** `path/file.py:88` — <what is wrong> — [OpenCode] verified: <what you confirmed>
+- **MEDIUM** `path/file.py:88` — <what is wrong> (#3) — [OpenCode] verified: <what you confirmed>
 
 ## ⚖️ Reviewers disagreed (<k>)
-- `path/file.py:44` — Codex calls it a race; correctness says the caller holds the lock. <Your call, and why.>
+- `path/file.py:44` — Codex calls it a race (#5); correctness says the caller holds the lock (#11). <Your call, and why.>
 
 ## 🪒 Simplicity — ponytail lens, not an independent reviewer (<p>)
 - `path/file.py:52-71` — delete: retry wrapper around an idempotent local call.
 
 ## 🔹 Minor (<q>)
-- `path/file.py:12` — [correctness] log line interpolates the wrong id; misleads during an incident.
+- `path/file.py:12` — [correctness] log line interpolates the wrong id; misleads during an incident. (#8)
 
 ## ⚪ Dropped (<j>)
-- [Codex] `path/x.py:12` — pre-existing, not introduced by this change
+- #7 [Codex] `path/x.py:12` — <the finding's own claim> — pre-existing, not introduced by this change
+- #9 [security] `path/y.py:40` — <its own claim> — `y.py:38` already escapes `name` before this line
 
 ## Verdict
 <Ship it, or fix these first.> <If ultra: is the task actually done, and what is missing.>

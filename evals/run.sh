@@ -55,7 +55,7 @@ WT_ROOT="$OUT/worktrees"; mkdir -p "$WT_ROOT"
 # only the first one.
 while :; do
   if [ "$CUSTOM_CASES" = 1 ]; then
-    IFS=$'\t' read -r -u 3 id case_repo sha paths truth intro_sha || break
+    IFS=$'\t' read -r -u 3 id case_repo sha paths truth intro_sha severity _rest || break
   else
     IFS=$'\t' read -r -u 3 id sha paths truth || break
     case_repo="$REPO"
