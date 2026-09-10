@@ -209,6 +209,124 @@ p=["x"]' > "$MULTI_HOME/config.toml"
 mkdir -p "$TMP/dir.toml"
 MULTI_CONFIG="$TMP/dir.toml" "$py" "$CFG" check >/dev/null 2>"$TMP/err"; say "an unreadable path is a config error, not a traceback" "$?:$(grep -c 'cannot read' "$TMP/err")" "2:1"
 
+echo "== avoid: windows a backend sits out, evaluated once at launch (UTC only) =="
+cat > "$MULTI_HOME/config.toml" <<'EOF'
+default_profile = "p"
+[backends.ds]
+type = "claude-headless"
+base_url = "https://api.deepseek.com/anthropic"
+models = ["deepseek-flash"]
+avoid = ["Mon-Fri 01:00-04:00 UTC", "Mon-Fri 06:00-10:00 UTC"]   # DeepSeek's peak hours
+[backends.night]
+type = "codex"
+avoid = ["22:00-02:00 UTC"]
+[backends.wk]
+type = "codex"
+avoid = ["Sat-Sun 00:00-24:00 UTC"]
+[profiles]
+p = ["ds", "night", "wk"]
+EOF
+# epochs: Wed 2026-09-09 08:12 = 1788941520, 10:00 = 1788948000, 12:50 = 1788958200,
+# Sat 2026-09-12 08:12 = 1789200720, Wed 02:30 = 1788921000, Thu 00:30 = 1789000200,
+# Wed 23:30 = 1788996600, Mon 00:30 = 1788741000, Wed 03:59 = 1788926340, Wed 04:00 = 1788926400
+closed(){ MULTI_NOW="$1" resolve --backend "$2" | cut -f10; }
+say "resolve has eleven columns" "$(MULTI_NOW=1788958200 resolve --backend ds | awk -F'\t' '{print NF}')" "11"
+say "open outside every window" "$(closed 1788958200 ds)" "-"
+say "closed inside the second weekday window, says when it is back" "$(closed 1788941520 ds)" "sits out Mon-Fri 06:00-10:00 UTC (avoid, in config.toml) — now Wed 08:12 UTC, back at Wed 10:00 UTC"
+say "closed inside the first window" "$(closed 1788921000 ds | cut -c1-32)" "sits out Mon-Fri 01:00-04:00 UTC"
+say "end is exclusive: 04:00 is open" "$(closed 1788926400 ds)" "-"
+say "03:59 is still closed" "$(closed 1788926340 ds | cut -c1-8)" "sits out"
+say "the weekday spec is open on Saturday" "$(closed 1789200720 ds)" "-"
+say "back at is the real reopening, through the next day-span: Sat 08:12 -> Mon 00:00" "$(closed 1789200720 wk)" "sits out Sat-Sun 00:00-24:00 UTC (avoid, in config.toml) — now Sat 08:12 UTC, back at Mon 00:00 UTC"
+say "a bad MULTI_NOW is a config error, not a traceback" "$(MULTI_NOW=9999999999999999999999999 resolve --backend ds >/dev/null 2>"$TMP/err"; echo "$?:$(grep -c 'MULTI_NOW' "$TMP/err")")" "2:1"
+say "a window that wraps midnight: 23:30 closed" "$(closed 1788996600 night | cut -c1-8)" "sits out"
+say "wrap: 00:30 next day still closed, back at 02:00" "$(closed 1789000200 night)" "sits out 22:00-02:00 UTC (avoid, in config.toml) — now Thu 00:30 UTC, back at Thu 02:00 UTC"
+say "wrap: 12:50 open" "$(closed 1788958200 night)" "-"
+say "day range: Saturday closed all day" "$(closed 1789200720 wk | cut -c1-8)" "sits out"
+say "day range: Monday 00:30 open" "$(closed 1788741000 wk)" "-"
+say "--ignore-avoid: closed windows do not count this run" "$(MULTI_NOW=1788941520 resolve --ignore-avoid | cut -f10 | tr '\n' ' ')" "- - - "
+say "the profile keeps every participant; closed ones are named, not dropped" "$(MULTI_NOW=1788941520 resolve | cut -f1 | tr '\n' ' ')" "ds night wk "
+say "backends lists the schedule and the verdict" "$(MULTI_NOW=1788941520 "$py" "$CFG" backends 2>/dev/null | awk -F'\t' '$1=="ds"{print $8"|"substr($9,1,8)}')" "Mon-Fri 01:00-04:00 UTC, Mon-Fri 06:00-10:00 UTC|sits out"
+say "backends: no avoid is two dashes" "$("$py" "$CFG" backends | awk -F'\t' '$1=="night"{print NF}')" "9"
+refuse "a window without UTC" 'default_profile="p"
+[backends.x]
+type="codex"
+avoid=["01:00-04:00"]
+[profiles]
+p=["x"]' "UTC"
+refuse "a window in another zone" 'default_profile="p"
+[backends.x]
+type="codex"
+avoid=["01:00-04:00 MSK"]
+[profiles]
+p=["x"]' "UTC"
+refuse "a window with a bad hour" 'default_profile="p"
+[backends.x]
+type="codex"
+avoid=["25:00-26:00 UTC"]
+[profiles]
+p=["x"]' "avoid"
+refuse "an empty window" 'default_profile="p"
+[backends.x]
+type="codex"
+avoid=["10:00-10:00 UTC"]
+[profiles]
+p=["x"]' "avoid"
+refuse "a day that is not a day" 'default_profile="p"
+[backends.x]
+type="codex"
+avoid=["Mon-Fry 01:00-04:00 UTC"]
+[profiles]
+p=["x"]' "avoid"
+refuse "avoid that is not a list" 'default_profile="p"
+[backends.x]
+type="codex"
+avoid="01:00-04:00 UTC"
+[profiles]
+p=["x"]' "avoid"
+say "a window covering the whole week says it never runs" "$(printf '%s\n' 'default_profile="p"' '[backends.x]' 'type="codex"' 'avoid=["00:00-24:00 UTC"]' '[profiles]' 'p=["x"]' > "$MULTI_HOME/config.toml"; closed 1788958200 x)" "sits out every hour of the week (avoid, in config.toml) — it will never run; drop a window"
+# Leave a config WITH a schedule behind: the vendored-parser check below then compares the new columns too.
+printf '%s\n' 'default_profile="p"' '[backends.x]' 'type="codex"' 'avoid=["Mon-Fri 06:00-10:00 UTC"]' '[profiles]' 'p=["x"]' > "$MULTI_HOME/config.toml"
+
+echo "== a|b in a profile entry: the first alternative that is open runs, the swap is recorded =="
+cat > "$MULTI_HOME/config.toml" <<'EOF'
+default_profile = "p"
+[backends.ds]
+type = "claude-headless"
+base_url = "https://api.deepseek.com/anthropic"
+models = ["deepseek-flash"]
+avoid = ["Mon-Fri 06:00-10:00 UTC"]
+[backends.glm]
+type = "claude-headless"
+base_url = "https://example.test/anthropic"
+models = ["glm-5"]
+avoid = ["Mon-Fri 08:00-09:00 UTC"]
+[backends.codex]
+type = "codex"
+[profiles]
+p = ["ds|glm:glm-5|codex", "codex"]
+EOF
+# Wed 12:50 = 1788958200 (all open), Wed 07:30 = 1788939000 (ds closed, glm open), Wed 08:12 = 1788941520 (ds and glm closed)
+say "eleven columns" "$(MULTI_NOW=1788958200 resolve | head -1 | awk -F'\t' '{print NF}')" "11"
+say "all open: the first alternative runs, no swap" "$(MULTI_NOW=1788958200 resolve | head -1 | cut -f1,4,10,11 | tr '\t' '|')" "ds|-|-|-"
+say "--ignore-avoid: the first alternative runs, no swap" "$(MULTI_NOW=1788939000 resolve --ignore-avoid | head -1 | cut -f1,10,11 | tr '\t' '|')" "ds|-|-"
+say "ds closed: glm runs with its pinned model, the swap names who sat out" "$(MULTI_NOW=1788939000 resolve | head -1 | cut -f1,4,10,11 | tr '\t' '|')" "glm|glm-5|-|ds sits out Mon-Fri 06:00-10:00 UTC (avoid, in config.toml) — now Wed 07:30 UTC, back at Wed 10:00 UTC; glm ran in its place"
+say "both closed: codex runs, the swap opens with the first one passed over" "$(MULTI_NOW=1788941520 resolve | head -1 | cut -f1,11 | cut -c1-20)" "codex	ds sits out Mo"
+say "the swap line names every alternative passed over" "$(MULTI_NOW=1788941520 resolve | head -1 | cut -f11 | grep -o 'glm sits out\|codex ran in its place' | tr '\n' ' ')" "glm sits out codex ran in its place "
+say "suffixes stay unique when the swap lands on a backend already in the profile" "$(MULTI_NOW=1788941520 resolve | cut -f1 | tr '\n' ' ')" "codex codex-2 "
+say "every alternative closed: the first is the participant, its reason first, the others named after" "$(printf '%s\n' 'default_profile="p"' '[backends.a]' 'type="codex"' 'avoid=["00:00-24:00 UTC"]' '[backends.b]' 'type="codex"' 'avoid=["00:00-24:00 UTC"]' '[profiles]' 'p=["a|b"]' > "$MULTI_HOME/config.toml"; MULTI_NOW=1788941520 resolve | cut -f1,10,11 | grep -o '^a\|	sits out\|; b sits out\|	-$' | tr '\n' ' ')" "a 	sits out ; b sits out 	- "
+refuse "an alternative naming a backend that does not exist" 'default_profile="p"
+[backends.x]
+type="codex"
+[profiles]
+p=["x|y"]' "does not exist"
+refuse "an empty alternative" 'default_profile="p"
+[backends.x]
+type="codex"
+[profiles]
+p=["x|"]' "empty"
+printf '%s\n' 'default_profile="p"' '[backends.x]' 'type="codex"' 'avoid=["Mon-Fri 06:00-10:00 UTC"]' '[profiles]' 'p=["x"]' > "$MULTI_HOME/config.toml"
+
 echo "== the repo's example config is valid and exercises every type =="
 MULTI_CONFIG="$TREE/config.example.toml" "$py" "$CFG" check >/dev/null 2>"$TMP/err"; say "config.example.toml validates" "$?:$(cat "$TMP/err")" "0:"
 say "every type appears in it" "$(MULTI_CONFIG="$TREE/config.example.toml" "$py" "$CFG" backends | cut -f2 | sort -u | tr '\n' ' ')" "claude-headless codex gemini opencode "
@@ -217,8 +335,9 @@ say "every key name in providers.example.env is read by some backend" "$(comm -2
 echo "== the vendored parser is the same parser =="
 # Hide the stdlib tomllib and compare: the fallback must read the same file the same way.
 if "$py" -c 'import tomllib' 2>/dev/null; then
-  a="$("$py" "$CFG" backends)"
-  b="$(SCRIPTS="$TREE/scripts" "$py" - <<'PY'
+  # A fixed clock on both sides: the closed column carries the minute.
+  a="$(MULTI_NOW=1788941520 "$py" "$CFG" backends)"
+  b="$(MULTI_NOW=1788941520 SCRIPTS="$TREE/scripts" "$py" - <<'PY'
 import sys, os, builtins, runpy
 real = builtins.__import__
 def fake(name, *a, **k):

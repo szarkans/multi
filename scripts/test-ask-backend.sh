@@ -343,5 +343,72 @@ else
   echo "FAIL multi_run_headless missing a model alias pin (found $or_pins/5)"; fail=1
 fi
 
+# A backend inside one of its `avoid` windows is a participant that does not
+# launch: its answer file and .dead say why, the roster closes it, no marker
+# is left behind, and the backends beside it still run. A window covering
+# the whole week keeps this independent of the clock.
+cat > "$TMP/h/config.toml" <<'EOF'
+default_profile = "p"
+[backends.codex]
+type = "codex"
+[backends.ds]
+type = "claude-headless"
+base_url = "https://api.deepseek.com/anthropic"
+models = ["deepseek-flash"]
+avoid = ["00:00-24:00 UTC"]
+[profiles]
+p = ["codex", "ds"]
+EOF
+"$HERE/ask.sh" --question q --out-prefix "$TMP/closed" >/dev/null; rc=$?
+if [ $rc -eq 0 ] && [ -s "$TMP/closed-codex.txt" ] && [ ! -e "$TMP/closed-codex.txt.dead" ] \
+  && grep -q '^ds: sits out every hour of the week (avoid, in config.toml)' "$TMP/closed-ds.txt.dead" \
+  && grep -q '^ds: sits out' "$TMP/closed-ds.txt" \
+  && [ ! -e "$TMP/closed-ds.txt.running" ] \
+  && grep -q '^ds 0$' "$TMP/closed.run"; then
+  echo "ok   a backend in its avoid window is named as sitting out, not launched; the rest run"
+else
+  echo "FAIL avoid window: rc=$rc; $(cat "$TMP/closed-ds.txt.dead" 2>/dev/null); roster: $(tr '\n' ' ' < "$TMP/closed.run" 2>/dev/null)"; fail=1
+fi
+# No grep -q in a pipe under pipefail: SIGPIPE on wait.sh's next line would read as a failure.
+waited="$("$HERE/wait.sh" --prefix "$TMP/closed")"
+if grep -q '^ds .*FAILED: ds: sits out' <<<"$waited"; then
+  echo "ok   wait.sh reports the sat-out backend with its reason"
+else
+  echo "FAIL wait.sh did not report the sat-out backend: $(tr '\n' '|' <<<"$waited")"; fail=1
+fi
+rm -f "$TMP/h/config.toml"
+
+# a|b: the first alternative that is open runs, under ITS name, and its
+# answer ends with the swap line; the file of the one that sat out is not
+# written at all — it was never a participant of this run.
+cat > "$TMP/h/config.toml" <<'EOF'
+default_profile = "p"
+[backends.codex]
+type = "codex"
+[backends.ds]              # the codex stub under another name, so it can answer when forced
+type = "codex"
+avoid = ["00:00-24:00 UTC"]
+[profiles]
+p = ["ds|codex"]
+EOF
+"$HERE/ask.sh" --question q --out-prefix "$TMP/swap" >/dev/null; rc=$?
+if [ $rc -eq 0 ] && [ ! -e "$TMP/swap-ds.txt" ] && [ ! -e "$TMP/swap-codex.txt.dead" ] \
+  && grep -q '^\[multi\] ds sits out every hour of the week (avoid, in config.toml).*; codex ran in its place$' "$TMP/swap-codex.txt" \
+  && grep -q '^codex [0-9]' "$TMP/swap.run"; then
+  echo "ok   a|b runs the open alternative under its own name and records the swap in the answer"
+else
+  echo "FAIL a|b swap: rc=$rc; files: $(ls "$TMP" | grep '^swap' | tr '\n' ' '); answer: $(cat "$TMP/swap-codex.txt" 2>/dev/null | tr '\n' '|')"; fail=1
+fi
+# --ignore-avoid: "run it anyway" -- the closed first alternative runs, the
+# other is never touched, nothing is marked dead, no swap line.
+"$HERE/ask.sh" --question q --out-prefix "$TMP/force" --ignore-avoid >/dev/null 2>"$TMP/force.err"; rc=$?
+if [ ! -e "$TMP/force-codex.txt" ] && [ -e "$TMP/force-ds.txt" ] && [ ! -e "$TMP/force-ds.txt.dead" ] \
+  && ! grep -q '^\[multi\] .* ran in its place$' "$TMP/force-ds.txt" && grep -q '^ds [0-9]' "$TMP/force.run"; then
+  echo "ok   --ignore-avoid runs the closed backend itself, this run only"
+else
+  echo "FAIL --ignore-avoid: rc=$rc; files: $(ls "$TMP" | grep '^force' | tr '\n' ' '); $(head -2 "$TMP/force-ds.txt" 2>/dev/null | tr '\n' '|')"; fail=1
+fi
+rm -f "$TMP/h/config.toml"
+
 [ $fail -eq 0 ] && echo "ALL PASS" || echo "FAILURES"
 exit $fail

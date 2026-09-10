@@ -35,13 +35,20 @@ cmd_status() {
   fi
   [ -f "$(multi_config path)" ] || echo "  (does not exist — built-in default; 'setup.sh init' writes it out to edit)"
 
-  local name type chain url keyenv timeout stall key live
-  while IFS="$(printf '\t')" read -r name type chain url keyenv timeout stall; do
+  local name type chain url keyenv timeout stall avoid closed key live
+  while IFS="$(printf '\t')" read -r name type chain url keyenv timeout stall avoid closed; do
     [ -n "$name" ] || continue
-    [ -n "$stall" ] || { echo "config.py backends: unexpected line shape" >&2; break; }
+    [ -n "$closed" ] || { echo "config.py backends: unexpected line shape" >&2; break; }
     [ "$chain" != "-" ] || chain=""
     eval "key=\${$keyenv:-}"
     printf '%-12s' "$name:"
+    # The schedule first, before any network check: a backend that would sit
+    # this hour out is what the user came here to see, and the key check
+    # below still tells them whether it will work when the window opens.
+    if [ "$avoid" != "-" ]; then
+      if [ "$closed" != "-" ]; then printf 'CLOSED NOW — %s\n%-12s' "$closed" ""
+      else printf 'open now (avoids %s)\n%-12s' "$avoid" ""; fi
+    fi
     case "$type" in
       claude-headless)
         if [ -n "$key" ]; then

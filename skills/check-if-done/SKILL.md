@@ -96,6 +96,10 @@ $SCRIPTS/ask.sh --repo "$COPY" --question-file "$RUN/done-prompt.md" \
                 --out-prefix "$RUN/done" --effort high > "$RUN/ask.log" 2>&1
 ```
 
+A backend that answers `sits out … back at …` is inside one of its `avoid`
+windows (peak hours in the config), not broken; `--ignore-avoid` runs it
+anyway, only when the user says so outright.
+
 Run that last command as a background task (the Bash tool's
 `run_in_background`): a foreground Bash call is capped at ten minutes, and a
 killed `ask.sh` marks every backend `KILLED`.
@@ -180,7 +184,7 @@ migrations, deploys, calls to third-party services with side effects.
 ```
 # ✅ Check-if-done — <what was promised> 
 Checked by: Claude · execution · Codex · OpenCode <model> · OpenRouter <model> [· Gemini]
-<one line per reviewer that failed or was missing — `Codex FAILED: <reason>` / `OpenCode FAILED: <reason>` / `OpenRouter FAILED: <reason>` from the one-line text in its `.dead` marker (`done-<backend>.txt.dead`); a backend you launched must appear here or in the list above, never vanish; point at `/multi:setup` to connect anything missing>
+<one line per reviewer that failed or was missing — `Codex FAILED: <reason>` / `OpenCode FAILED: <reason>` / `OpenRouter FAILED: <reason>` from the one-line text in its `.dead` marker (`done-<backend>.txt.dead`); a backend you launched must appear here or in the list above, never vanish; point at `/multi:setup` to connect anything missing — but one that `sits out … back at …` is in its `avoid` window, configured on purpose, and needs no setup>
 
 ## Verdict
 DONE: yes | partially | no — <one sentence>

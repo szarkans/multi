@@ -47,7 +47,11 @@ backends and profiles): no `--backend` runs the default profile. Pass
 `--backend` only when the user asked for a specific set — a profile name, or
 `codex,openrouter:<model>` — never to re-list what the config already says.
 Backends without a key answer with a marker saying so; that is a finding, not
-something to route around.
+something to route around. A backend inside one of its `avoid` windows (peak
+hours in the config) answers `sits out … back at …` and an `a|b` entry runs
+its alternative — also a finding, not an error. Only when the user says
+outright to run it anyway ("forget peak hours, use deepseek") pass
+`--ignore-avoid`: it lifts every window for this run and leaves the config alone.
 
 Pass the question **as the user asked it**. Do not rewrite it into a better
 prompt: the point is what different models do with the same words. Add context

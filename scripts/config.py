@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Read, validate and resolve the multi config — the one place backends live.
 
-    config.py resolve [--backend SPEC] [--timeout N]   who runs, one line each
-                      (--timeout N is a FLOOR: each backend gets max(N, its own))
+    config.py resolve [--backend SPEC] [--timeout N] [--ignore-avoid]
+                      who runs, one line each (--timeout N is a FLOOR: each
+                      backend gets max(N, its own); --ignore-avoid runs every
+                      backend as if it had no avoid windows, for this run)
     config.py backends                                  every configured backend
     config.py check                                     validate, say where it read
     config.py init                                      write the default file
@@ -18,8 +20,16 @@ command's output. Keys are NOT here — they live in providers.env, sourced by
 providers.sh; this file only names the variable a backend reads its key from.
 
 Output of `resolve` (one participant per line, tab-separated):
-    suffix  name  type  pinned  chain  base_url  api_key_env  timeout  stall
+    suffix  name  type  pinned  chain  base_url  api_key_env  timeout  stall  closed  swapped
 Empty fields print as "-" (a whitespace IFS in bash would swallow them).
+`swapped` is "-" unless the profile entry was a|b|c and the participant is
+not its first alternative: then one sentence naming who sat out and who ran
+in their place, which ask.sh appends to the answer.
+`closed` is "-" when the backend may run now, or one sentence saying which
+`avoid` window it is sitting out and when it is back; ask.sh writes that
+sentence as the backend's answer instead of launching it. MULTI_NOW=<epoch>
+in the environment evaluates the windows at that instant instead of the
+clock — for tests.
 `pinned` is the model named as backend:model — exactly that model, no
 fallback. `chain` is the backend's own model list, space-separated, walked in
 order when nothing is pinned. `suffix` is the answer-file suffix: name, or
@@ -28,6 +38,7 @@ name-2, name-3 for a repeated backend.
 import os
 import re
 import sys
+import time
 from urllib.parse import urlsplit
 
 try:
@@ -37,7 +48,7 @@ except ModuleNotFoundError:  # python < 3.11
     import tomli as tomllib  # type: ignore
 
 TYPES = ("claude-headless", "codex", "opencode", "gemini")
-BACKEND_KEYS = {"type", "models", "base_url", "api_key_env", "timeout", "stall"}
+BACKEND_KEYS = {"type", "models", "base_url", "api_key_env", "timeout", "stall", "avoid"}
 TOP_KEYS = {"backends", "profiles", "default_profile"}
 DEFAULT_TIMEOUT = 300
 DEFAULT_STALL = 180
@@ -69,8 +80,10 @@ DEFAULT_TOML = """\
 #
 # profiles: named lists of who runs, in parallel. An entry is a backend name
 # (its whole chain) or backend:model (exactly that model, no fallback). The
-# same entry twice runs twice. ask.sh --backend <profile> picks one;
-# --backend a,b:model is a one-off profile; no --backend = default_profile.
+# same entry twice runs twice. a|b|c is alternatives: the first whose backend
+# is not sitting out an `avoid` window runs. ask.sh --backend <profile> picks
+# one; --backend a,b:model is a one-off profile; no --backend = default_profile.
+# avoid: windows a backend sits out, UTC only: ["Mon-Fri 06:00-10:00 UTC"].
 
 default_profile = "default"
 
@@ -101,6 +114,73 @@ models = []
 [profiles]
 default = ["codex", "opencode", "openrouter"]
 """
+
+
+# --- avoid: windows a backend sits out ----------------------------------
+# A provider that bills by the hour (DeepSeek: peak Mon-Fri 01:00-04:00 and
+# 06:00-10:00 UTC, double price, moved 2026-08-16) publishes its windows in
+# UTC, so the config takes them in UTC and nothing else: no local zone, no
+# DST arithmetic, no "was that Beijing or London". One string per window:
+#   "Mon-Fri 06:00-10:00 UTC"   weekdays, those hours
+#   "Sat-Sun 00:00-24:00 UTC"   the whole weekend
+#   "22:00-02:00 UTC"           every day; wraps past midnight
+# The day names the window's START; the end is exclusive. Evaluated once, at
+# launch: a review that starts at 09:50 in an open hour runs to its end.
+DAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+WEEK = 7 * 1440
+_WINDOW = re.compile(r"^(?:(Mon|Tue|Wed|Thu|Fri|Sat|Sun)(?:-(Mon|Tue|Wed|Thu|Fri|Sat|Sun))?\s+)?"
+                     r"(\d{2}):(\d{2})-(\d{2}):(\d{2})\s+UTC$")
+
+
+def _parse_window(where, text):
+    """'Mon-Fri 06:00-10:00 UTC' -> (text, [(start_minute_of_week, length)...])."""
+    m = _WINDOW.match(text.strip()) if isinstance(text, str) else None
+    if not m:
+        raise ConfigError("%s: avoid entries look like \"Mon-Fri 06:00-10:00 UTC\" or \"22:00-02:00 UTC\" — days optional, hours in UTC (the zone is required and only UTC is accepted), got %r" % (where, text))
+    d1, d2, h1, m1, h2, m2 = m.groups()
+    h1, m1, h2, m2 = int(h1), int(m1), int(h2), int(m2)
+    if h1 > 23 or m1 > 59 or m2 > 59 or h2 > 24 or (h2 == 24 and m2 != 0):
+        raise ConfigError("%s: avoid: %r is not a time of day" % (where, text))
+    start, end = h1 * 60 + m1, h2 * 60 + m2
+    length = (end - start) % 1440 or (1440 if end == 1440 else 0)  # 22:00-02:00 wraps; 00:00-24:00 is a day; 10:00-10:00 is nothing
+    if length == 0:
+        raise ConfigError("%s: avoid: %r is an empty window" % (where, text))
+    if d1 is None:
+        days = list(range(7))
+    else:
+        a, b = DAYS.index(d1), DAYS.index(d2 or d1)
+        days = [(a + i) % 7 for i in range((b - a) % 7 + 1)]
+    return (" ".join(text.split()), [(d * 1440 + start, length) for d in days])
+
+
+def _closed_now(windows, now):
+    """Return '' if open at `now` (epoch), else why not and when it is back."""
+    t = time.gmtime(now)
+    minute = t.tm_wday * 1440 + t.tm_hour * 60 + t.tm_min
+    spans = [(text, s, l) for text, ss in windows for s, l in ss]
+    inside = lambda m, s, l: (m - s) % WEEK < l  # noqa: E731
+    hit = [(text, s, l) for text, s, l in spans if inside(minute, s, l)]
+    if not hit:
+        return ""
+    text, s, l = hit[0]
+    # "back at" is when the backend can actually run, not where this one span
+    # ends: "Sat-Sun 00:00-24:00" is two day-spans and Saturday's end is not a
+    # reopening. Walk through every span that covers the end, furthest first,
+    # until none does -- or a whole week is covered and it never reopens.
+    back, closed_for = s + l, l - (minute - s) % WEEK
+    while closed_for < WEEK:
+        more = [l2 - (back - s2) % WEEK for _, s2, l2 in spans if inside(back, s2, l2)]
+        if not more:
+            break
+        back += max(more); closed_for += max(more)
+    if closed_for >= WEEK:
+        return "sits out every hour of the week (avoid, in config.toml) — it will never run; drop a window"
+    return "sits out %s (avoid, in config.toml) — now %s, back at %s" % (text, _clock(minute), _clock(back))
+
+
+def _clock(minute_of_week):
+    m = minute_of_week % WEEK
+    return "%s %02d:%02d UTC" % (DAYS[m // 1440], (m % 1440) // 60, m % 60)
 
 
 class ConfigError(Exception):
@@ -200,7 +280,11 @@ def validate(raw, where):
         # for a pasted config.
         if not isinstance(key_env, str) or not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", key_env):
             raise ConfigError("%s: api_key_env must be a variable name (letters, digits, _), got %r" % (w, key_env))
+        avoid = b.get("avoid", [])
+        if not isinstance(avoid, list):
+            raise ConfigError("%s: avoid must be a list of windows, e.g. [\"Mon-Fri 06:00-10:00 UTC\"]" % w)
         backends[name] = {
+            "avoid": [_parse_window(w, a) for a in avoid],
             "type": t,
             "models": models,
             "base_url": base_url,
@@ -220,9 +304,12 @@ def validate(raw, where):
         if not entries:
             raise ConfigError("%s: a profile must name at least one backend" % w)
         for e in entries:
-            bname = e.split(":", 1)[0]
-            if bname not in backends:
-                raise ConfigError("%s: entry %r names a backend that does not exist (have: %s)" % (w, e, ", ".join(backends)))
+            for alt in e.split("|"):  # a|b: the first alternative that is open runs
+                bname = alt.split(":", 1)[0]
+                if not bname:
+                    raise ConfigError("%s: entry %r has an empty alternative" % (w, e))
+                if bname not in backends:
+                    raise ConfigError("%s: entry %r names a backend that does not exist (have: %s)" % (w, e, ", ".join(backends)))
         if pname in backends:
             raise ConfigError("%s: a profile and a backend share the name %r — --backend %s would be ambiguous" % (w, pname, pname))
         profiles[pname] = entries
@@ -236,7 +323,7 @@ def validate(raw, where):
     return {"backends": backends, "profiles": profiles, "default_profile": default_profile}
 
 
-def resolve(cfg, spec=None):
+def resolve(cfg, spec=None, now=None, ignore_avoid=False):
     """Turn a --backend spec into participants. Returns a list of dicts."""
     backends, profiles = cfg["backends"], cfg["profiles"]
     if spec is None or spec == "":
@@ -255,12 +342,30 @@ def resolve(cfg, spec=None):
             raise ConfigError("--backend: empty")
     out, seen, used = [], {}, set()
     for e in entries:
-        name, colon, model = e.partition(":")
-        if name not in backends:
-            raise ConfigError("--backend: unknown backend %r (backends: %s; profiles: %s; also all, both)"
-                              % (name, ", ".join(backends), ", ".join(profiles) or "none"))
-        if colon and not model:
-            raise ConfigError("--backend: %r pins nothing — write %s:<model>, or bare %s for its chain" % (e, name, name))
+        # a|b|c: the first alternative whose backend is not sitting out an
+        # `avoid` window runs, and the answer says who was passed over. Split
+        # on | BEFORE the first-colon pin rule, or the model of "a|b:m" would
+        # bind to the wrong side. Every alternative closed: the first one is
+        # the participant, and its closed column carries every reason.
+        alts = e.split("|")
+        passed = []  # (name, why) for every alternative found closed
+        for alt in alts:
+            name, colon, model = alt.partition(":")
+            if name not in backends:
+                raise ConfigError("--backend: unknown backend %r (backends: %s; profiles: %s; also all, both)"
+                                  % (name, ", ".join(backends), ", ".join(profiles) or "none"))
+            if colon and not model:
+                raise ConfigError("--backend: %r pins nothing — write %s:<model>, or bare %s for its chain" % (alt, name, name))
+            closed = "" if ignore_avoid else _closed_now(backends[name]["avoid"], now)
+            if not closed:
+                break
+            passed.append((name, closed))
+        swapped = ""
+        if closed:  # nobody open: the first alternative is the participant; the others' reasons ride along
+            name, colon, model = alts[0].partition(":")
+            closed = "; ".join([passed[0][1]] + ["%s %s" % pr for pr in passed[1:]])
+        elif passed:
+            swapped = "; ".join(["%s %s" % pr for pr in passed] + ["%s ran in its place" % name])
         # Suffix = answer file name. Unique across the whole run, not just
         # per backend: ["foo", "foo", "foo-2"] must not write foo-2 twice.
         seen[name] = seen.get(name, 0) + 1
@@ -273,7 +378,7 @@ def resolve(cfg, spec=None):
         out.append({
             "suffix": suffix, "name": name, "type": b["type"], "pinned": model,
             "chain": b["models"], "base_url": b["base_url"], "api_key_env": b["api_key_env"],
-            "timeout": b["timeout"], "stall": b["stall"],
+            "timeout": b["timeout"], "stall": b["stall"], "closed": closed, "swapped": swapped,
         })
     return out
 
@@ -286,9 +391,15 @@ def _line(*fields):
 
 
 def main(argv):
+    # MULTI_NOW=<epoch>: evaluate avoid windows at that instant -- tests only.
+    now = os.environ.get("MULTI_NOW") or time.time()
     cmd = argv[1] if len(argv) > 1 else ""
     args = argv[2:]
     try:
+        try:
+            now = int(now); time.gmtime(now)
+        except (ValueError, OverflowError, OSError):
+            raise ConfigError("MULTI_NOW must be an epoch second, got %r" % now)
         if cmd == "path":
             print(config_path())
             return 0
@@ -320,23 +431,27 @@ def main(argv):
             return 0
         if cmd == "backends":
             for name, b in cfg["backends"].items():
-                _line(name, b["type"], " ".join(b["models"]), b["base_url"], b["api_key_env"], b["timeout"], b["stall"])
+                _line(name, b["type"], " ".join(b["models"]), b["base_url"], b["api_key_env"], b["timeout"], b["stall"],
+                      ", ".join(t for t, _ in b["avoid"]), _closed_now(b["avoid"], now))
             return 0
         if cmd == "resolve":
-            spec, timeout = None, None
+            spec, timeout, ignore_avoid = None, None, False
             i = 0
             while i < len(args):
-                if args[i] == "--backend" and i + 1 < len(args):
+                if args[i] == "--ignore-avoid":  # the user said "run it anyway": one run, no config edit
+                    ignore_avoid = True; i += 1
+                elif args[i] == "--backend" and i + 1 < len(args):
                     spec = args[i + 1]; i += 2
                 elif args[i] == "--timeout" and i + 1 < len(args):
                     timeout = _positive_int("--timeout", "value", int(args[i + 1]) if args[i + 1].isdigit() else args[i + 1]); i += 2
                 else:
                     raise ConfigError("resolve: unknown argument %r" % args[i])
-            for p in resolve(cfg, spec):
+            for p in resolve(cfg, spec, now, ignore_avoid):
                 # A floor, not a replacement: the review skill passes 2400 to give
                 # slow reviewers room, and a backend the user set higher keeps it.
                 _line(p["suffix"], p["name"], p["type"], p["pinned"], " ".join(p["chain"]),
-                      p["base_url"], p["api_key_env"], max(timeout or 0, p["timeout"]), p["stall"])
+                      p["base_url"], p["api_key_env"], max(timeout or 0, p["timeout"]), p["stall"],
+                      p["closed"], p["swapped"])
             return 0
         sys.stderr.write((__doc__ or "").split("\n\n")[1] + "\n")
         return 2

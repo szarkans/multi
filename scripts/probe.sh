@@ -61,9 +61,10 @@ done
 # required; everything here is optional and reported as configured / not.
 # Keys are reported present or absent only — actually checking one costs a
 # network round trip, which scripts/setup.sh status does and this does not.
-while IFS="$(printf '\t')" read -r name type chain url keyenv timeout stall; do
+while IFS="$(printf '\t')" read -r name type chain url keyenv timeout stall avoid closed; do
   [ -n "$name" ] || continue
-  [ -n "$stall" ] || { say "config: BROKEN — unexpected backends line shape"; break; }
+  [ -n "$closed" ] || { say "config: BROKEN — unexpected backends line shape"; break; }
+  [ "$closed" = "-" ] || say "$name: CLOSED NOW — $closed"
   [ "$chain" != "-" ] || chain=""
   eval "key=\${$keyenv:-}"
   configured_models=""

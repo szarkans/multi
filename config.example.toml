@@ -40,6 +40,19 @@ models = ["local/coder"]
 api_key_env = "LOCAL_ROUTER_KEY"
 timeout = 1200
 
+[backends.deepseek]                  # DeepSeek's own Anthropic-compatible endpoint, key DEEPSEEK_API_KEY
+type = "claude-headless"
+base_url = "https://api.deepseek.com/anthropic"
+models = ["deepseek-flash"]          # V4.1 Flash; claude-* names are mapped to it too
+# Windows this backend sits out, in UTC only (the zone word is required).
+# DeepSeek bills double in these hours (its published peak, as of 2026-09-10 —
+# check api-docs.deepseek.com/quick_start/pricing, they moved on 2026-08-16).
+# Any backend can carry a list: "Sat-Sun 00:00-24:00 UTC", "22:00-02:00 UTC"
+# (every day, wraps midnight). Decided once, at launch: a run that starts in
+# an open hour finishes. Inside a window the backend is not launched and its
+# answer file says so — it is named in the report, not skipped in silence.
+avoid = ["Mon-Fri 01:00-04:00 UTC", "Mon-Fri 06:00-10:00 UTC"]
+
 [backends.gemini]                    # type "gemini": the Gemini CLI, key GEMINI_API_KEY
 type = "gemini"
 models = []                          # empty = CLI default; at most one model here
@@ -47,6 +60,9 @@ models = []                          # empty = CLI default; at most one model he
 # ---- profiles: who runs, in parallel --------------------------------------
 # An entry is a backend name (its whole models list, in order) or name:model
 # (exactly that model, no fallback). The same entry twice runs twice.
+# a|b|c is alternatives: the first whose backend is not sitting out an
+# `avoid` window runs, and its answer ends with a line naming who was passed
+# over. | splits before the colon: "deepseek|openrouter:z-ai/glm-5.2:free".
 # ask.sh --backend <profile> picks one; no --backend = default_profile;
 # --backend a,b:model is a one-off; `all` = every backend above.
 
@@ -56,6 +72,6 @@ models = []                          # empty = CLI default; at most one model he
 [profiles]
 normal  = ["codex", "glm"]
 free    = ["opencode", "openrouter:z-ai/glm-5.2:free"]   # pinned: the bare backend walks its paid models first
-paid    = ["codex", "opencode-paid", "openrouter:deepseek/deepseek-v4-flash-0731"]
+paid    = ["codex", "opencode-paid", "deepseek|glm"]   # deepseek in its cheap hours, glm when it sits out
 compare = ["openrouter:qwen/qwen3.8-flash", "openrouter:deepseek/deepseek-v4-flash-0731", "glm"]
 solo    = ["codex"]

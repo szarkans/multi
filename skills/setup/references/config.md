@@ -21,6 +21,12 @@ base_url = "https://api.z.ai/api/anthropic"
 models = ["glm-5"]
 api_key_env = "ZAI_KEY"           # only when the default name does not fit
 
+[backends.deepseek]
+type = "claude-headless"
+base_url = "https://api.deepseek.com/anthropic"
+models = ["deepseek-flash"]
+avoid = ["Mon-Fri 01:00-04:00 UTC", "Mon-Fri 06:00-10:00 UTC"]   # sits out these hours (DeepSeek's peak, double price)
+
 [backends.codex]
 type = "codex"
 models = []                       # empty = the CLI's own default
@@ -50,8 +56,22 @@ Rules that matter when editing on a user's behalf:
   `opencode models`.
 - `timeout` is per backend. `ask.sh --timeout N` raises every backend to at
   least N for that run and never lowers one.
+- `avoid` is a list of windows the backend sits out, on any backend type:
+  `"Mon-Fri 06:00-10:00 UTC"`, `"Sat-Sun 00:00-24:00 UTC"`, `"22:00-02:00 UTC"`
+  (no days = every day; wraps midnight; end exclusive). UTC only — the word is
+  required and no other zone is accepted; the user copies the provider's
+  published hours (DeepSeek: peak Mon-Fri 01:00-04:00 and 06:00-10:00 UTC,
+  double price, as of 2026-09-10). Decided once at launch. Inside a window the
+  backend is not launched; its answer reads `<name>: sits out <window> … back
+  at <time>`, and `setup.sh status` / `probe.sh` say `CLOSED NOW`. Nothing
+  in the config bypasses it: `ask.sh --ignore-avoid` lifts every window for one
+  run, and `deepseek|glm` keeps a reviewer in those hours.
 - A profile entry is `name` (its whole chain) or `name:model` (exactly that
   model, no fallback). Entries run in parallel; the same entry twice runs twice.
+  `a|b|c` is alternatives: the first whose backend is not inside an `avoid`
+  window runs, under its own name, and its answer ends with
+  `[multi] a sits out … ; b ran in its place`. `|` splits before `:`, so
+  `deepseek|openrouter:z-ai/glm-5.2:free` pins the model to openrouter.
 - `ask.sh` with no `--backend` runs `default_profile`; `--backend <profile>` or
   `--backend a,b:model` for one run.
 - `base_url` must be `https://` (plain `http://` only on localhost) and comes
