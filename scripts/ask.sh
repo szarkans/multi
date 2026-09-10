@@ -21,12 +21,10 @@
 # names can contain colons themselves (z-ai/glm-5.2:free). The same backend
 # can appear more than once with a different model — comparing two OpenRouter
 # models does not need two runs. No --backend at all runs default_profile.
-# An entry a|b|c is alternatives: the first whose backend is not sitting out
-# an `avoid` window (config.toml) runs, and its answer ends with a "[multi]"
-# line naming who was passed over. | splits before the first colon, so
-# "deepseek|openrouter:z-ai/glm-5.2:free" pins the model to openrouter.
-# --ignore-avoid runs every backend as if it had no windows, this run only:
-# the user's "I don't care about peak hours, run it" -- the config is not touched.
+# A backend inside one of its `avoid` windows (config.toml) is not launched;
+# its answer file says so and when it is back. --ignore-avoid runs every
+# backend as if it had no windows, this run only: the user's "I don't care
+# about peak hours, run it" -- the config is not touched.
 # One backend at a time is what lets a caller send a DIFFERENT question to
 # each model in parallel instead of the same one to all.
 #
@@ -127,18 +125,18 @@ RESOLVED="$(multi_config resolve ${BACKEND:+--backend "$BACKEND"} ${TIMEOUT:+--t
 # every stock macOS ships -- has no `declare -A`, and it fails there at run
 # time, mid-script, with exit 0: ask.sh printed "declare: -A: invalid option"
 # and the caller saw success.
-NAMES=(); MODELS=(); SUFFIXES=(); TYPES=(); CHAINS=(); URLS=(); KEYENVS=(); TIMEOUTS=(); STALLS=(); CLOSED=(); SWAPPED=()
+NAMES=(); MODELS=(); SUFFIXES=(); TYPES=(); CHAINS=(); URLS=(); KEYENVS=(); TIMEOUTS=(); STALLS=(); CLOSED=()
 dash() { [ "$1" = "-" ] && printf '' || printf '%s' "$1"; }
-while IFS="$(printf '\t')" read -r suffix name type pinned chain url keyenv timeout stall closed swapped; do
+while IFS="$(printf '\t')" read -r suffix name type pinned chain url keyenv timeout stall closed; do
   [ -n "$suffix" ] || continue
-  # Eleven columns; a shape change in config.py must fail here, not misroute.
+  # Ten columns; a shape change in config.py must fail here, not misroute.
   # The LAST variable of `read` takes the rest of the line, so the check is on
   # it: a column added after it without a name here would ride into the
   # previous one as "text<tab>text".
-  [ -n "$swapped" ] || { echo "config.py resolve: unexpected line shape: $suffix ..." >&2; exit 2; }
+  [ -n "$closed" ] || { echo "config.py resolve: unexpected line shape: $suffix ..." >&2; exit 2; }
   SUFFIXES+=("$suffix"); NAMES+=("$name"); TYPES+=("$type"); MODELS+=("$(dash "$pinned")")
   CHAINS+=("$(dash "$chain")"); URLS+=("$(dash "$url")"); KEYENVS+=("$keyenv"); TIMEOUTS+=("$timeout"); STALLS+=("$stall")
-  CLOSED+=("$(dash "$closed")"); SWAPPED+=("$(dash "$swapped")")
+  CLOSED+=("$(dash "$closed")")
 done <<EOF
 $RESOLVED
 EOF
@@ -467,11 +465,8 @@ rm -f "$LOCK"; trap - EXIT
 # an empty stderr) used to be marked NO OUTPUT only by the parent, after EVERY
 # backend was done -- a reader in between saw "finished, no answer, no
 # reason". Mark it here, in the runner's own subshell, the moment it ends.
-finished() { # finished <suffix> <out> <start epoch> <name> [swapped]
+finished() { # finished <suffix> <out> <start epoch> <name>
   [ -s "$2" ] || [ -e "${2}.dead" ] || multi_fail_backend "$2" "$4: NO OUTPUT"
-  # An a|b entry that ran its second choice says so in the answer: the file
-  # name and the roster carry who ran, this line carries who was asked for.
-  [ -z "${5:-}" ] || [ -e "${2}.dead" ] || echo "[multi] $5" >> "$2"
   echo "$1 $(( $(date +%s) - $3 ))" >> "$ROSTER"
   rm -f "${2}.running"
 }
@@ -504,7 +499,7 @@ for i in "${!NAMES[@]}"; do
   case "$type" in
     codex)
       ( MULTI_BACKEND_TIMEOUT="${TIMEOUTS[$i]}"; started "$out" && cd "$REPO_DIR" \
-        && run_codex_one "$out" "${model:-${CODEX_MODEL:-$(first_of "$chain")}}"; finished "${SUFFIXES[$i]}" "$out" "$t0" "$name" "${SWAPPED[$i]}" ) & ;;
+        && run_codex_one "$out" "${model:-${CODEX_MODEL:-$(first_of "$chain")}}"; finished "${SUFFIXES[$i]}" "$out" "$t0" "$name" ) & ;;
     opencode)
       # Pinned: exactly that model. --model/--fallback: this run's chain.
       # Otherwise the config chain, or, when it is empty, a free model from the
@@ -518,13 +513,13 @@ for i in "${!NAMES[@]}"; do
         [ -z "$FALLBACK" ] || oc_fallback="$FALLBACK"
       fi
       ( MULTI_BACKEND_TIMEOUT="${TIMEOUTS[$i]}"; MULTI_OPENCODE_STALL="${STALLS[$i]}"; started "$out" && cd "$REPO_DIR" \
-        && run_opencode_one "$out" "$oc_model" "$oc_fallback"; finished "${SUFFIXES[$i]}" "$out" "$t0" "$name" "${SWAPPED[$i]}" ) & ;;
+        && run_opencode_one "$out" "$oc_model" "$oc_fallback"; finished "${SUFFIXES[$i]}" "$out" "$t0" "$name" ) & ;;
     claude-headless)
       ( MULTI_BACKEND_TIMEOUT="${TIMEOUTS[$i]}"; started "$out" && cd "$REPO_DIR" \
-        && multi_run_headless "$name" "$QUESTION" "$out" "$model" "$chain" "${URLS[$i]}" "${KEYENVS[$i]}"; finished "${SUFFIXES[$i]}" "$out" "$t0" "$name" "${SWAPPED[$i]}" ) & ;;
+        && multi_run_headless "$name" "$QUESTION" "$out" "$model" "$chain" "${URLS[$i]}" "${KEYENVS[$i]}"; finished "${SUFFIXES[$i]}" "$out" "$t0" "$name" ) & ;;
     gemini)
       ( MULTI_BACKEND_TIMEOUT="${TIMEOUTS[$i]}"; started "$out" && cd "$REPO_DIR" \
-        && multi_run_gemini "$name" "$QUESTION" "$out" "${model:-$(first_of "$chain")}" "${KEYENVS[$i]}"; finished "${SUFFIXES[$i]}" "$out" "$t0" "$name" "${SWAPPED[$i]}" ) & ;;
+        && multi_run_gemini "$name" "$QUESTION" "$out" "${model:-$(first_of "$chain")}" "${KEYENVS[$i]}"; finished "${SUFFIXES[$i]}" "$out" "$t0" "$name" ) & ;;
     *) multi_fail_backend "$out" "$name: unknown backend type '$type'"; rm -f "${out}.running" ;;
   esac
   pids="$pids $!:${SUFFIXES[$i]}"

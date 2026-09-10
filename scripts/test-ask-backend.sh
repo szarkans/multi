@@ -378,32 +378,18 @@ else
 fi
 rm -f "$TMP/h/config.toml"
 
-# a|b: the first alternative that is open runs, under ITS name, and its
-# answer ends with the swap line; the file of the one that sat out is not
-# written at all — it was never a participant of this run.
+# --ignore-avoid: "run it anyway" -- the closed backend runs, nothing is
+# marked dead. The codex stub under another name, so it can answer.
 cat > "$TMP/h/config.toml" <<'EOF'
 default_profile = "p"
-[backends.codex]
-type = "codex"
-[backends.ds]              # the codex stub under another name, so it can answer when forced
+[backends.ds]
 type = "codex"
 avoid = ["00:00-24:00 UTC"]
 [profiles]
-p = ["ds|codex"]
+p = ["ds"]
 EOF
-"$HERE/ask.sh" --question q --out-prefix "$TMP/swap" >/dev/null; rc=$?
-if [ $rc -eq 0 ] && [ ! -e "$TMP/swap-ds.txt" ] && [ ! -e "$TMP/swap-codex.txt.dead" ] \
-  && grep -q '^\[multi\] ds sits out every hour of the week (avoid, in config.toml).*; codex ran in its place$' "$TMP/swap-codex.txt" \
-  && grep -q '^codex [0-9]' "$TMP/swap.run"; then
-  echo "ok   a|b runs the open alternative under its own name and records the swap in the answer"
-else
-  echo "FAIL a|b swap: rc=$rc; files: $(ls "$TMP" | grep '^swap' | tr '\n' ' '); answer: $(cat "$TMP/swap-codex.txt" 2>/dev/null | tr '\n' '|')"; fail=1
-fi
-# --ignore-avoid: "run it anyway" -- the closed first alternative runs, the
-# other is never touched, nothing is marked dead, no swap line.
 "$HERE/ask.sh" --question q --out-prefix "$TMP/force" --ignore-avoid >/dev/null 2>"$TMP/force.err"; rc=$?
-if [ ! -e "$TMP/force-codex.txt" ] && [ -e "$TMP/force-ds.txt" ] && [ ! -e "$TMP/force-ds.txt.dead" ] \
-  && ! grep -q '^\[multi\] .* ran in its place$' "$TMP/force-ds.txt" && grep -q '^ds [0-9]' "$TMP/force.run"; then
+if [ $rc -eq 0 ] && [ -s "$TMP/force-ds.txt" ] && [ ! -e "$TMP/force-ds.txt.dead" ] && grep -q '^ds [0-9]' "$TMP/force.run"; then
   echo "ok   --ignore-avoid runs the closed backend itself, this run only"
 else
   echo "FAIL --ignore-avoid: rc=$rc; files: $(ls "$TMP" | grep '^force' | tr '\n' ' '); $(head -2 "$TMP/force-ds.txt" 2>/dev/null | tr '\n' '|')"; fail=1

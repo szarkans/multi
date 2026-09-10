@@ -65,13 +65,9 @@ Rules that matter when editing on a user's behalf:
   backend is not launched; its answer reads `<name>: sits out <window> … back
   at <time>`, and `setup.sh status` / `probe.sh` say `CLOSED NOW`. Nothing
   in the config bypasses it: `ask.sh --ignore-avoid` lifts every window for one
-  run, and `deepseek|glm` keeps a reviewer in those hours.
+  run. A profile that needs a reviewer in those hours lists one explicitly.
 - A profile entry is `name` (its whole chain) or `name:model` (exactly that
   model, no fallback). Entries run in parallel; the same entry twice runs twice.
-  `a|b|c` is alternatives: the first whose backend is not inside an `avoid`
-  window runs, under its own name, and its answer ends with
-  `[multi] a sits out … ; b ran in its place`. `|` splits before `:`, so
-  `deepseek|openrouter:z-ai/glm-5.2:free` pins the model to openrouter.
 - `ask.sh` with no `--backend` runs `default_profile`; `--backend <profile>` or
   `--backend a,b:model` for one run.
 - `base_url` must be `https://` (plain `http://` only on localhost) and comes

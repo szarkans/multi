@@ -60,9 +60,6 @@ models = []                          # empty = CLI default; at most one model he
 # ---- profiles: who runs, in parallel --------------------------------------
 # An entry is a backend name (its whole models list, in order) or name:model
 # (exactly that model, no fallback). The same entry twice runs twice.
-# a|b|c is alternatives: the first whose backend is not sitting out an
-# `avoid` window runs, and its answer ends with a line naming who was passed
-# over. | splits before the colon: "deepseek|openrouter:z-ai/glm-5.2:free".
 # ask.sh --backend <profile> picks one; no --backend = default_profile;
 # --backend a,b:model is a one-off; `all` = every backend above.
 
@@ -72,6 +69,6 @@ models = []                          # empty = CLI default; at most one model he
 [profiles]
 normal  = ["codex", "glm"]
 free    = ["opencode", "openrouter:z-ai/glm-5.2:free"]   # pinned: the bare backend walks its paid models first
-paid    = ["codex", "opencode-paid", "deepseek|glm"]   # deepseek in its cheap hours, glm when it sits out
+paid    = ["codex", "opencode-paid", "deepseek"]   # in deepseek's peak hours this runs two reviewers, and says so
 compare = ["openrouter:qwen/qwen3.8-flash", "openrouter:deepseek/deepseek-v4-flash-0731", "glm"]
 solo    = ["codex"]

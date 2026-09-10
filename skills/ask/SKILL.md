@@ -48,8 +48,7 @@ backends and profiles): no `--backend` runs the default profile. Pass
 `codex,openrouter:<model>` — never to re-list what the config already says.
 Backends without a key answer with a marker saying so; that is a finding, not
 something to route around. A backend inside one of its `avoid` windows (peak
-hours in the config) answers `sits out … back at …` and an `a|b` entry runs
-its alternative — also a finding, not an error. Only when the user says
+hours in the config) answers `sits out … back at …` — a finding, not an error. Only when the user says
 outright to run it anyway ("forget peak hours, use deepseek") pass
 `--ignore-avoid`: it lifts every window for this run and leaves the config alone.
 

@@ -20,11 +20,8 @@ command's output. Keys are NOT here — they live in providers.env, sourced by
 providers.sh; this file only names the variable a backend reads its key from.
 
 Output of `resolve` (one participant per line, tab-separated):
-    suffix  name  type  pinned  chain  base_url  api_key_env  timeout  stall  closed  swapped
+    suffix  name  type  pinned  chain  base_url  api_key_env  timeout  stall  closed
 Empty fields print as "-" (a whitespace IFS in bash would swallow them).
-`swapped` is "-" unless the profile entry was a|b|c and the participant is
-not its first alternative: then one sentence naming who sat out and who ran
-in their place, which ask.sh appends to the answer.
 `closed` is "-" when the backend may run now, or one sentence saying which
 `avoid` window it is sitting out and when it is back; ask.sh writes that
 sentence as the backend's answer instead of launching it. MULTI_NOW=<epoch>
@@ -80,10 +77,10 @@ DEFAULT_TOML = """\
 #
 # profiles: named lists of who runs, in parallel. An entry is a backend name
 # (its whole chain) or backend:model (exactly that model, no fallback). The
-# same entry twice runs twice. a|b|c is alternatives: the first whose backend
-# is not sitting out an `avoid` window runs. ask.sh --backend <profile> picks
-# one; --backend a,b:model is a one-off profile; no --backend = default_profile.
-# avoid: windows a backend sits out, UTC only: ["Mon-Fri 06:00-10:00 UTC"].
+# same entry twice runs twice. ask.sh --backend <profile> picks one;
+# --backend a,b:model is a one-off profile; no --backend = default_profile.
+# avoid: windows a backend sits out, UTC only: ["Mon-Fri 06:00-10:00 UTC"];
+#   ask.sh --ignore-avoid lifts them for one run.
 
 default_profile = "default"
 
@@ -304,12 +301,9 @@ def validate(raw, where):
         if not entries:
             raise ConfigError("%s: a profile must name at least one backend" % w)
         for e in entries:
-            for alt in e.split("|"):  # a|b: the first alternative that is open runs
-                bname = alt.split(":", 1)[0]
-                if not bname:
-                    raise ConfigError("%s: entry %r has an empty alternative" % (w, e))
-                if bname not in backends:
-                    raise ConfigError("%s: entry %r names a backend that does not exist (have: %s)" % (w, e, ", ".join(backends)))
+            bname = e.split(":", 1)[0]
+            if bname not in backends:
+                raise ConfigError("%s: entry %r names a backend that does not exist (have: %s)" % (w, e, ", ".join(backends)))
         if pname in backends:
             raise ConfigError("%s: a profile and a backend share the name %r — --backend %s would be ambiguous" % (w, pname, pname))
         profiles[pname] = entries
@@ -342,30 +336,16 @@ def resolve(cfg, spec=None, now=None, ignore_avoid=False):
             raise ConfigError("--backend: empty")
     out, seen, used = [], {}, set()
     for e in entries:
-        # a|b|c: the first alternative whose backend is not sitting out an
-        # `avoid` window runs, and the answer says who was passed over. Split
-        # on | BEFORE the first-colon pin rule, or the model of "a|b:m" would
-        # bind to the wrong side. Every alternative closed: the first one is
-        # the participant, and its closed column carries every reason.
-        alts = e.split("|")
-        passed = []  # (name, why) for every alternative found closed
-        for alt in alts:
-            name, colon, model = alt.partition(":")
-            if name not in backends:
-                raise ConfigError("--backend: unknown backend %r (backends: %s; profiles: %s; also all, both)"
-                                  % (name, ", ".join(backends), ", ".join(profiles) or "none"))
-            if colon and not model:
-                raise ConfigError("--backend: %r pins nothing — write %s:<model>, or bare %s for its chain" % (alt, name, name))
-            closed = "" if ignore_avoid else _closed_now(backends[name]["avoid"], now)
-            if not closed:
-                break
-            passed.append((name, closed))
-        swapped = ""
-        if closed:  # nobody open: the first alternative is the participant; the others' reasons ride along
-            name, colon, model = alts[0].partition(":")
-            closed = "; ".join([passed[0][1]] + ["%s %s" % pr for pr in passed[1:]])
-        elif passed:
-            swapped = "; ".join(["%s %s" % pr for pr in passed] + ["%s ran in its place" % name])
+        name, colon, model = e.partition(":")
+        if name not in backends:
+            raise ConfigError("--backend: unknown backend %r (backends: %s; profiles: %s; also all, both)"
+                              % (name, ", ".join(backends), ", ".join(profiles) or "none"))
+        if colon and not model:
+            raise ConfigError("--backend: %r pins nothing — write %s:<model>, or bare %s for its chain" % (e, name, name))
+        # A backend inside one of its avoid windows is still a participant: the
+        # entry stays, the column says why it will not run. The user put the
+        # window there; the report names the hour, not a missing reviewer.
+        closed = "" if ignore_avoid else _closed_now(backends[name]["avoid"], now)
         # Suffix = answer file name. Unique across the whole run, not just
         # per backend: ["foo", "foo", "foo-2"] must not write foo-2 twice.
         seen[name] = seen.get(name, 0) + 1
@@ -378,7 +358,7 @@ def resolve(cfg, spec=None, now=None, ignore_avoid=False):
         out.append({
             "suffix": suffix, "name": name, "type": b["type"], "pinned": model,
             "chain": b["models"], "base_url": b["base_url"], "api_key_env": b["api_key_env"],
-            "timeout": b["timeout"], "stall": b["stall"], "closed": closed, "swapped": swapped,
+            "timeout": b["timeout"], "stall": b["stall"], "closed": closed,
         })
     return out
 
@@ -451,7 +431,7 @@ def main(argv):
                 # slow reviewers room, and a backend the user set higher keeps it.
                 _line(p["suffix"], p["name"], p["type"], p["pinned"], " ".join(p["chain"]),
                       p["base_url"], p["api_key_env"], max(timeout or 0, p["timeout"]), p["stall"],
-                      p["closed"], p["swapped"])
+                      p["closed"])
             return 0
         sys.stderr.write((__doc__ or "").split("\n\n")[1] + "\n")
         return 2

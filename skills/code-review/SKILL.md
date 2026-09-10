@@ -197,8 +197,8 @@ No `--backend`: who reviews is the default profile in the user's `config.toml`
 (the probe printed its backends and profiles). Pass `--backend <profile>` or an
 explicit list only when the user asked for a specific set for this review.
 A reviewer that `sits out … back at …` is inside one of its `avoid` windows
-(peak hours in the config), and an `a|b` entry swaps in its alternative — name
-it in the report, do not treat it as broken. Pass `--ignore-avoid` only when
+(peak hours in the config) — name it in the
+report, do not treat it as broken. Pass `--ignore-avoid` only when
 the user says outright to run it anyway; it lifts every window for this run.
 
 `run-dir.sh` prints this session's own directory, `/tmp/multi/<session>--<slug>`,
