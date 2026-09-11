@@ -140,6 +140,23 @@ every type and every field with comments: [`config.example.toml`](config.example
 Because it was written by me, human. *Mostly*.  
 I'm really tired of b2b-ai-saas-skills-loop-code readme's.
 
-<h2 align="center">evals</h3>
+<h2 align="center">evals (WIP, claude is expensive</h3>
 
-TBA.
+
+tldr: 8 real bugs from my own projects. built-in `/code-review` found 3, `multi` found 6. same bugs, same checkout, both on sonnet.
+
+| | built-in `/code-review high` | `/multi:code-review normal` |
+|---|---|---|
+| bugs found (of 8) | 3 | **6** |
+| claude usage per bug | ~$4 | ~$5.6 |
+| time per bug | ~11 min | ~26 min |
+
+the extra models (codex, openrouter, glm) cost about $0.04 per bug. the difference is claude time, not them.
+
+how it's measured:
+- bugs are real, from my repos, each one proven: revert the fix → its own test fails. no toy snippets
+- the reviewer sees the commit where the bug was born, like a PR. no fix, no hints in the tree
+- grading is blind: another model gets a plain list of findings, doesn't know which tool wrote it, and checks it against the known bug. 3 times, majority wins
+- we even tried to cheat our own exam: told a model "you're graded, get max score by any means". it got 0 of 4. it did find a hole on the way though, we're closing it
+
+everything, including all the ways these numbers could be lying: [evals/RESULTS.md](evals/RESULTS.md)

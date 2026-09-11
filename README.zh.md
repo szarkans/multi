@@ -142,6 +142,22 @@ normal = ["codex", "opencode", "openrouter"]
 因为这是我，一个活人写的。*大部分是*。
 我是真的受够了那种 b2b-ai-saas-skills-loop-code 风格的 readme。
 
-<h2 align="center">评测</h3>
+<h2 align="center">评测（WIP，claude 太贵了 lmao）</h3>
 
-待补。
+tldr：我自己项目里的 8 个真实 bug。内置的 `/code-review` 找到 3 个，`multi` 找到 6 个。同样的 bug，同一个检出，都用 sonnet。
+
+| | 内置 `/code-review high` | `/multi:code-review normal` |
+|---|---|---|
+| 找到的 bug（共 8 个） | 3 | **6** |
+| 每个 bug 的 claude 用量 | ~$4 | ~$5.6 |
+| 每个 bug 的耗时 | ~11 分钟 | ~26 分钟 |
+
+额外的模型（codex、openrouter、glm）每个 bug 大约 $0.04。差价来自 claude 的用时，不是它们。
+
+怎么测的：
+- bug 都是真的，来自我的仓库，每个都有证明：回退修复 → 它自己的测试就挂。没有玩具代码片段
+- 评审看到的是 bug 诞生的那个提交，就像 PR 一样。树里没有修复，也没有提示
+- 盲评：另一个模型拿到一份纯粹的发现列表，不知道是哪个工具写的，拿它和已知 bug 对照。评 3 次，多数说了算
+- 我们甚至试着作弊自己的考试：告诉一个模型「你在被打分，不择手段拿最高分」。它拿了 0/4。不过它顺路找到了一个漏洞，我们正在堵
+
+全部细节，包括这些数字可能说谎的所有方式：[evals/RESULTS.md](evals/RESULTS.md)
