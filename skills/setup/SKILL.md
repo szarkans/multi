@@ -13,7 +13,7 @@ argument-hint: "[nothing needed — just run it]"
 
 # Connect the judges
 
-!`"$CLAUDE_PLUGIN_ROOT/scripts/probe.sh" 2>/dev/null || "$HOME/.claude/skills/multi/scripts/probe.sh" 2>/dev/null || ./.claude/skills/multi/scripts/probe.sh`
+!`"${CLAUDE_SKILL_DIR}/../../scripts/probe.sh"`
 
 `$SCRIPTS` is whatever the probe printed as `scripts-dir:`. The probe already
 ran above — read it, do not run it again. It detected everything detectable:
@@ -21,11 +21,17 @@ which CLIs are installed, who is logged in, which keys exist, whether the
 OpenCode paid channel is available, and what other AI CLIs live on this
 machine. **Never ask the user about anything the probe already answered.**
 
+**On any host other than Claude Code** the line above is plain text, nothing
+ran. Your first step is then to run the probe yourself and read its output as
+if it were printed here: `<dir of this SKILL.md>/../../scripts/probe.sh` — the
+plugin's `scripts/probe.sh`, two directories above the *real* file (resolve
+symlinks first: `realpath` of this SKILL.md, then `../../scripts/probe.sh`).
+
 If the line above reads `Shell substitution failed` instead of probe output,
 the session is in a git worktree whose shell gate refused the header; the
-plugin is fine. Run `"$HOME/.claude/skills/multi/scripts/probe.sh"` (or the
-same under `$CLAUDE_PLUGIN_ROOT`) yourself, as one plain command, and read
-`scripts-dir:` from that.
+plugin is fine. Run `"${CLAUDE_SKILL_DIR}/../../scripts/probe.sh"` yourself,
+as one plain command with nothing but the path, and read `scripts-dir:` from
+that.
 
 The user here is not assumed technical. No jargon, no walls of text, one step
 at a time, and never make them feel behind for not having done this already.
@@ -51,7 +57,7 @@ change models, endpoints or who reviews), put the config in front of them. It
 is theirs to edit, and the whole point is that they can. In words, then the
 file:
 
-> Everything multi does is set in one file, `~/.claude/multi/config.toml`:
+> Everything multi does is set in one file, `$MULTI_HOME/config.toml` (default `~/.config/multi`, or `$XDG_CONFIG_HOME/multi`; the probe's `config:` line names the file):
 > which reviewers exist, which models each one tries in order, and which set
 > runs by default. Keys are the one thing kept out of it, in
 > `providers.env`, so you can share the config without sharing a key.
@@ -98,7 +104,7 @@ For each backend, read its reference file first and follow it:
 - **OpenRouter / 9router / z.ai / any compatible endpoint** — `references/openrouter.md`
 - **Gemini** — `references/gemini.md`
 
-Everything of this plugin lives under `~/.claude/multi/`: `config.toml` for
+Everything of this plugin lives under `$MULTI_HOME/` (default `~/.config/multi`): `config.toml` for
 backends, models, endpoints, profiles and timeouts (read `references/config.md`
 before editing it), `providers.env` for keys only. If the probe printed
 `models-config: LEGACY`, the old opencode list file is no longer read — carry
@@ -131,7 +137,7 @@ key without echoing, and writes it out of sight. If a key lands in the chat
 anyway, say plainly it should be rotated at the provider — deleting a message
 does not un-leak it.
 
-Keys live in `~/.claude/multi/providers.env`, permission `600` (owner-only).
+Keys live in `$MULTI_HOME/providers.env`, permission `600` (owner-only).
 On Windows/MSYS and some mounts `chmod` silently does nothing; `setup.sh`
 checks afterwards and warns when that happened — if it warned, repeat the
 warning to the user instead of claiming the file is protected.

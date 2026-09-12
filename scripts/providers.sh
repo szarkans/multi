@@ -241,6 +241,7 @@ multi_deny_rule() { # multi_deny_rule <path> -> prints the rule that withholds i
       .gnupg/*|*/.gnupg/*)                       rule="gpg-dir" ;;
       .kube/*|*/.kube/*)                         rule="kubeconfig" ;;
       .docker/config.json|*/.docker/config.json) rule="registry-auth" ;;
+      .config/multi/*|*/.config/multi/*)         rule="plugin-keys" ;;
       .claude/multi/*|*/.claude/multi/*)         rule="plugin-keys" ;;
     esac
   fi
@@ -322,7 +323,23 @@ multi_python() {
   return 1
 }
 
-MULTI_HOME="${MULTI_HOME:-$HOME/.claude/multi}"
+# Config lives where every harness looks, not under Claude's own dotdir. The
+# pre-1.15 location is not migrated: probe.sh prints one notice when it still
+# holds files and MULTI_HOME was not set by hand (a hand-set MULTI_HOME pointing
+# there is a choice, not a leftover).
+# MULTI_CONFIG or MULTI_PROVIDERS_ENV naming a file is the same choice for that
+# one file: an old config.toml is a leftover unless MULTI_CONFIG is set, an old
+# providers.env unless MULTI_PROVIDERS_ENV is. One override never silences the
+# notice about the other file (a Codex-hosted review found the first cut did).
+MULTI_LEGACY_HOME=""
+MULTI_HOME_EXPLICIT="${MULTI_HOME:+1}"   # a hand-set MULTI_HOME: the old dir is somebody else's business
+if [ -z "${MULTI_HOME:-}" ]; then
+  if { [ -z "${MULTI_CONFIG:-}" ] && [ -e "$HOME/.claude/multi/config.toml" ]; } \
+     || { [ -z "${MULTI_PROVIDERS_ENV:-}" ] && [ -e "$HOME/.claude/multi/providers.env" ]; }; then
+    MULTI_LEGACY_HOME="$HOME/.claude/multi"
+  fi
+fi
+MULTI_HOME="${MULTI_HOME:-${XDG_CONFIG_HOME:-$HOME/.config}/multi}"
 MULTI_PROVIDERS_ENV="${MULTI_PROVIDERS_ENV:-$MULTI_HOME/providers.env}"
 
 # Keys live outside the plugin on purpose: the plugin directory is a git clone,
@@ -374,6 +391,17 @@ multi_config() {
   # `export`, `declare -x`, leading whitespace. A `#` comment does not.
   local stale=""
   case "${1:-}" in init|path) ;; *)
+  # The 1.15 config move, same hazard: an old config.toml may have pointed
+  # OPENROUTER_API_KEY at another host, and with no config at the path that is
+  # actually read the built-in default would send that key to openrouter.ai.
+  # Refuse while the key is set (however it got into the environment) and the
+  # only config.toml is the old one. OPENROUTER_API_KEY by name: it is the one
+  # key the built-in default sends to a configurable endpoint; GEMINI_API_KEY
+  # goes to Google whatever the file said. (Found by a Codex-hosted review.)
+  if [ -z "$MULTI_HOME_EXPLICIT" ] && [ -n "${OPENROUTER_API_KEY:-}" ] && [ -e "$HOME/.claude/multi/config.toml" ] && [ ! -e "${MULTI_CONFIG:-$MULTI_HOME/config.toml}" ]; then
+    echo "multi config: $HOME/.claude/multi/config.toml is no longer read, and OPENROUTER_API_KEY is set -- the built-in default would send that key to openrouter.ai even if the old file pointed it elsewhere. Move config.toml and providers.env to $MULTI_HOME, or set MULTI_HOME=$HOME/.claude/multi to stay. Nothing runs until then." >&2
+    return 2
+  fi
   stale="$(grep -o '^[[:space:]]*\(export[[:space:]]\{1,\}\|declare[[:space:]]\{1,\}-x[[:space:]]\{1,\}\)\{0,1\}MULTI_\(OPENROUTER_[A-Z_]*\|OPENCODE_MODEL\|GEMINI_MODEL\|BACKEND_TIMEOUT\|CODEX_TIMEOUT\|OPENCODE_STALL\)=' "$MULTI_PROVIDERS_ENV" 2>/dev/null | sed 's/.*MULTI_/MULTI_/; s/=$//' | sort -u | tr '\n' ' ')"
   if [ -n "$stale" ]; then
     echo "multi config: $MULTI_PROVIDERS_ENV still sets ${stale} -- these are no longer read. Move the values into $MULTI_HOME/config.toml ([backends.openrouter] base_url / models, [backends.opencode] models / stall, [backends.gemini] models, timeout per backend; 'setup.sh init' writes a template) and delete or comment out those lines. Nothing runs until then: a key set for a custom endpoint must not be sent to the default one." >&2

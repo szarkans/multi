@@ -24,6 +24,8 @@ fail=0
 say(){ if [ "$2" = "$3" ]; then echo "  ok   $1"; else echo "  FAIL $1: got '$2' want '$3'"; fail=1; fi; }
 
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+# Own MULTI_HOME: the machine's real config must not shape this test.
+export MULTI_HOME="$TMP/h"
 
 # A realistic target: a committed file, an UNCOMMITTED edit to it, a brand-new
 # untracked file, an ignored heavy dir, a hostile opencode config, a big binary.

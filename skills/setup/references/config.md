@@ -1,6 +1,6 @@
 # config.toml — backends, models, endpoints, profiles, timeouts
 
-One file, `~/.claude/multi/config.toml`. The plugin repo's `config.example.toml`
+One file, `$MULTI_HOME/config.toml` (default `~/.config/multi`, or `$XDG_CONFIG_HOME/multi`; the probe's `config:` line names the file). The plugin repo's `config.example.toml`
 shows every type and field with comments; copy sections from it. Keys are NOT in it — they stay in
 `providers.env`, set with `setup.sh set <NAME>`. When the file does not exist
 the plugin runs on a built-in default (codex, opencode, openrouter);

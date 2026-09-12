@@ -1,5 +1,5 @@
 # multi — example config with every backend type and every field.
-# Real file: ~/.claude/multi/config.toml. `scripts/setup.sh init` writes a
+# Real file: ~/.config/multi/config.toml. `scripts/setup.sh init` writes a
 # smaller default there; copy sections from here as you need them.
 # Keys are never in this file — see providers.example.env.
 

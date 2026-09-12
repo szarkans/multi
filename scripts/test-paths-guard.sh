@@ -55,6 +55,7 @@ if command -v git >/dev/null 2>&1; then
     && printf 'T=1\n' > .env.local \
     && printf 'k\n' > deploy_rsa \
     && printf 'k\n' > my-service-account.json \
+    && mkdir -p .config/multi .claude/multi && printf 'k\n' > .config/multi/providers.env && printf 'k\n' > .claude/multi/config.toml \
     && touch 'src/`id`.py' \
     && ln -s /etc/hostname innocent.txt \
     && git add .gitignore && git commit -qm init )
@@ -74,6 +75,8 @@ if command -v git >/dev/null 2>&1; then
   # Judged by where it points, which is why we refuse to look at all.
   case "$note" in *innocent.txt*)        say "symlink stays home"             leaked clean ;; *) say "symlink stays home" clean clean ;; esac
   case "$note" in *withheld*)            say "withheld count is stated"       ok ok ;; *) say "withheld count is stated" missing ok ;; esac
+  case "$note" in *'.config/multi'*)     say "new plugin config dir stays home" leaked clean ;; *) say "new plugin config dir stays home" clean clean ;; esac
+  case "$note" in *'.claude/multi'*)     say "old plugin config dir stays home" leaked clean ;; *) say "old plugin config dir stays home" clean clean ;; esac
 
   # `git ls-files --others` only lists what is under the CURRENT directory,
   # while the `git diff` beside it in the same prompt is always repo-wide. Run

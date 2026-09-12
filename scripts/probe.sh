@@ -43,19 +43,39 @@ say "scripts-dir: $SELF_DIR"
 # file is reported here, before any skill acts on it, and is a hard stop.
 if ! CONFIG="$(multi_config check 2>&1)"; then
   say "config: BROKEN — $CONFIG"
-  say "config: fix $(multi_config path 2>/dev/null || echo "$MULTI_HOME/config.toml") or delete it to get the built-in default"
+  cfg="$(multi_config path 2>/dev/null || echo "$MULTI_HOME/config.toml")"
+  [ ! -e "$cfg" ] || say "config: fix $cfg or delete it to get the built-in default"
   BACKENDS=""
 else
   say "$CONFIG"
   BACKENDS="$(multi_config backends)" || { say "config: BROKEN — backends could not be listed"; BACKENDS=""; }
 fi
+# 1.15 moved the config dir out of ~/.claude. Nothing is migrated: one line
+# names the old files and the new place, and it goes away when they do.
+[ -z "$MULTI_LEGACY_HOME" ] || say "config-dir: LEGACY — $MULTI_LEGACY_HOME is no longer read; move config.toml and providers.env to $MULTI_HOME (or set MULTI_HOME to keep the old place)"
 # The pre-config opencode list is not read any more; say so once, with the
 # one edit that carries it over.
-for legacy in "$MULTI_HOME/models" "${XDG_CONFIG_HOME:-$HOME/.config}/multi/models"; do
+for legacy in "$MULTI_HOME/models" "$HOME/.claude/multi/models"; do
   [ -f "$legacy" ] || continue
   say "models-config: LEGACY — $legacy is no longer read; put its list under [backends.opencode] models = [...] in $(multi_config path) and delete the file"
   break
 done
+
+# --- update notice --------------------------------------------------------
+# The plugin version the user last ran is $MULTI_HOME/.seen-version. A newer
+# plugin says what changed once, from its own CHANGELOG section, then records
+# itself. A first run records silently: there is nothing to have changed from.
+# Host hooks (SessionStart and the like) may print these same lines earlier;
+# they never carry a second text.
+VERSION="$(sed -n '/"version"/{s/.*"version": *"\([^"]*\)".*/\1/p;q;}' "$SELF_DIR/../.claude-plugin/plugin.json" 2>/dev/null)"
+SEEN_FILE="$MULTI_HOME/.seen-version"
+if [ -n "$VERSION" ]; then
+  seen="$(cat "$SEEN_FILE" 2>/dev/null || true)"
+  if [ "$seen" != "$VERSION" ] && mkdir -p "$MULTI_HOME" 2>/dev/null && printf '%s\n' "$VERSION" > "$SEEN_FILE" 2>/dev/null && [ -n "$seen" ]; then
+    say "update: multi $VERSION (you last ran $seen) — what changed:"
+    awk -v v="## $VERSION " 'index($0, v)==1 {on=1; next} /^## /{on=0} on && NF {print "  " $0}' "$SELF_DIR/../CHANGELOG.md" 2>/dev/null
+  fi
+fi
 
 # One line per configured backend. Codex above is the exception because it is
 # required; everything here is optional and reported as configured / not.

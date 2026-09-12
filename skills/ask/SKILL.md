@@ -12,7 +12,7 @@ argument-hint: "[the question, in words]"
 
 # Ask several models
 
-!`"$CLAUDE_PLUGIN_ROOT/scripts/probe.sh" 2>/dev/null || "$HOME/.claude/skills/multi/scripts/probe.sh" 2>/dev/null || ./.claude/skills/multi/scripts/probe.sh`
+!`"${CLAUDE_SKILL_DIR}/../../scripts/probe.sh"`
 
 One model's answer is one model's priors. Three answers from different families
 show you where the question is actually settled and where it only looked
@@ -24,11 +24,17 @@ for. Show what each said, then say where they differ.
 
 `$SCRIPTS` is whatever the probe printed as `scripts-dir:`.
 
+**On any host other than Claude Code** the line above is plain text, nothing
+ran. Your first step is then to run the probe yourself and read its output as
+if it were printed here: `<dir of this SKILL.md>/../../scripts/probe.sh` — the
+plugin's `scripts/probe.sh`, two directories above the *real* file (resolve
+symlinks first: `realpath` of this SKILL.md, then `../../scripts/probe.sh`).
+
 If the line above reads `Shell substitution failed` instead of probe output,
 the session is in a git worktree whose shell gate refused the header; the
-plugin is fine. Run `"$HOME/.claude/skills/multi/scripts/probe.sh"` (or the
-same under `$CLAUDE_PLUGIN_ROOT`) yourself, as one plain command, and read
-`scripts-dir:` from that.
+plugin is fine. Run `"${CLAUDE_SKILL_DIR}/../../scripts/probe.sh"` yourself,
+as one plain command with nothing but the path, and read `scripts-dir:` from
+that.
 
 ## Run it
 
@@ -41,6 +47,12 @@ RUN="$($SCRIPTS/run-dir.sh --slug <two-to-four words: the project and the job, e
 $SCRIPTS/ask.sh --question "<the user's question, verbatim>" \
                 --out-prefix "$RUN/ask" [--effort <low|medium|high|xhigh|max>]
 ```
+
+That call waits for every backend. On a host whose shell tool caps a call and
+kills the process group at the cap (OpenCode: two minutes by default) add
+`--detach` to the call (it re-starts itself in a session of its own and returns
+at once; keep a `> "$RUN/ask.log" 2>&1` redirect) and collect with `$SCRIPTS/wait.sh --prefix "$RUN/ask" --max
+100`, called again while it exits 1.
 
 Who answers comes from the user's `config.toml` (the probe printed its
 backends and profiles): no `--backend` runs the default profile. Pass

@@ -198,7 +198,9 @@ class ConfigError(Exception):
 def config_path():
     if os.environ.get("MULTI_CONFIG"):
         return os.environ["MULTI_CONFIG"]
-    home = os.environ.get("MULTI_HOME") or os.path.join(os.path.expanduser("~"), ".claude", "multi")
+    home = os.environ.get("MULTI_HOME") or os.path.join(
+        os.environ.get("XDG_CONFIG_HOME") or os.path.join(os.path.expanduser("~"), ".config"), "multi"
+    )
     return os.path.join(home, "config.toml")
 
 

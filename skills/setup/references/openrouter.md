@@ -23,7 +23,7 @@ your quota, and a review can die on a dead pool. The plugin falls back
 through several free pools automatically, but **cheap paid models
 ($0.05–0.30 per million tokens) are far more reliable and cost cents per
 review** — recommend them to anyone who can pay a little. The model chain is
-the `models` list of `[backends.openrouter]` in `~/.claude/multi/config.toml`
+the `models` list of `[backends.openrouter]` in `$MULTI_HOME/config.toml` (default `~/.config/multi`, or `$XDG_CONFIG_HOME/multi`; the probe's `config:` line names the file)
 (`references/config.md`): first is preferred, rest are fallbacks. Something
 like `["z-ai/glm-5.3-flash", "deepseek/deepseek-v3.2", "qwen/qwen3-coder-30b"]`;
 the "research it for me" flow in `model-research.md` helps pick current ones.

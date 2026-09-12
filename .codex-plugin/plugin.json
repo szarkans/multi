@@ -1,0 +1,28 @@
+{
+  "name": "multi",
+  "version": "1.15.0",
+  "description": "Several models on the same question at once — the host model's reviewer roles, OpenAI Codex, OpenCode and any OpenRouter model — reconciled into one report. Review code, check whether the work is actually finished, brainstorm wide, or ask all of them something.",
+  "author": {
+    "name": "Sergei Shatrov",
+    "url": "https://github.com/szarkans"
+  },
+  "homepage": "https://github.com/szarkans/multi",
+  "repository": "https://github.com/szarkans/multi",
+  "license": "MIT",
+  "keywords": ["code-review", "codex", "opencode", "multi-model", "consensus", "review"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Multi",
+    "shortDescription": "Several models review the same code; disagreement is the signal",
+    "longDescription": "Code review, done-check and brainstorming by several model families at once — Codex, OpenCode, OpenRouter, Gemini and the host model's own reviewer roles — judged into one report that says who found what and who was missing.",
+    "developerName": "szarkans",
+    "category": "Productivity",
+    "capabilities": ["Interactive"],
+    "websiteURL": "https://github.com/szarkans/multi",
+    "defaultPrompt": [
+      "$multi:code-review the uncommitted diff",
+      "$multi:check-if-done against the plan",
+      "$multi:setup"
+    ]
+  }
+}

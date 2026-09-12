@@ -77,6 +77,8 @@ SELF_DIR="$(cd -- "$(dirname -- "$0")" && pwd)"
 
 QUESTION=""; QFILE=""; PREFIX=""; EFFORT=medium; MODEL=""; FALLBACK=""; CODEX_MODEL=""; BACKEND=""; REPO=""; TIMEOUT=""; IGNORE_AVOID=""
 need() { [ "$1" -ge 2 ] || { echo "missing value for $2" >&2; exit 2; }; }
+DETACH_ARGS=()
+for a in "$@"; do [ "$a" = "--detach" ] || DETACH_ARGS+=("$a"); done
 while [ $# -gt 0 ]; do
   case "$1" in
     --question)      need $# "$1"; QUESTION="$2"; shift 2 ;;
@@ -97,9 +99,24 @@ while [ $# -gt 0 ]; do
     # Where the CLI reviewers run git and read files: the review target, not the
     # process cwd. Default cwd, so /ask and /adhd (no repo) are unaffected.
     --repo)          need $# "$1"; REPO="$2"; shift 2 ;;
+    # Run in a session of its own and return at once, printing the pid. For
+    # hosts whose shell tool kills its whole process group at a timeout
+    # (OpenCode: two minutes by default) -- `nohup … &` dies with the group.
+    # python does the setsid: stock macOS ships no `setsid` binary, and python3
+    # is already required here (config.toml). stdout/stderr stay as the caller
+    # redirected them; stdin is closed.
+    --detach)        DETACH=1; shift ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
+if [ "${DETACH:-0}" = "1" ]; then
+  py="$(multi_python)" || { echo "ask.sh --detach: no working python3" >&2; exit 2; }
+  "$py" -c 'import os, sys
+os.setsid()
+os.execvp(sys.argv[1], sys.argv[1:])' "$0" "${DETACH_ARGS[@]}" < /dev/null &
+  echo "ask.sh detached, pid $!"
+  exit 0
+fi
 REPO_DIR="${REPO:-.}"
 [ -d "$REPO_DIR" ] || { echo "--repo is not a directory: $REPO_DIR" >&2; exit 2; }
 [ -n "$PREFIX" ] || { echo "--out-prefix is required" >&2; exit 2; }

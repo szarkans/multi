@@ -8,9 +8,19 @@
 set -uo pipefail
 TREE="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
+# Own MULTI_HOME: the machine's real config must not shape this test.
+export MULTI_HOME="$TMP/h"
 export MULTI_RUN_BASE="$TMP/multi"
 fail=0
 say(){ if [ "$2" = "$3" ]; then echo "  ok   $1"; else echo "  FAIL $1: got '$2' want '$3'"; fail=1; fi; }
+echo "== the host session id is the identity: Claude, then Codex, then MULTI_RUN_ID =="
+rd(){ env -u CLAUDE_CODE_SESSION_ID -u CODEX_THREAD_ID -u OPENCODE_PID -u MULTI_RUN_ID "$@" MULTI_RUN_BASE="$TMP/rb" bash "$TREE/scripts/run-dir.sh" --slug x; }
+say "codex thread id beats the Claude session it was started from" "$(basename "$(rd CLAUDE_CODE_SESSION_ID=cc CODEX_THREAD_ID=cdx-1)")" "cdx-1--x"
+say "opencode pid beats the Claude session too" "$(basename "$(rd CLAUDE_CODE_SESSION_ID=cc OPENCODE_PID=42)")" "oc-42--x"
+say "MULTI_RUN_ID beats every host id" "$(basename "$(rd CLAUDE_CODE_SESSION_ID=cc CODEX_THREAD_ID=cdx-1 MULTI_RUN_ID=me)")" "me--x"
+say "claude session id when it is the only one" "$(basename "$(rd CLAUDE_CODE_SESSION_ID=cc)")" "cc--x"
+# The rest of this file runs without any host id, whatever host runs the tests.
+unset CLAUDE_CODE_SESSION_ID CODEX_THREAD_ID OPENCODE_PID
 
 export CLAUDE_CODE_SESSION_ID=aaaa-1111
 a="$(bash "$TREE/scripts/run-dir.sh" --slug 'Skills: fixing MULTI!!')"

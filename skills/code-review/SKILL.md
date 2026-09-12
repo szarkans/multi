@@ -12,7 +12,7 @@ argument-hint: "[what to review, in words] [lite|normal|ultra] [haiku|sonnet|opu
 
 # Multi-model code review
 
-!`"$CLAUDE_PLUGIN_ROOT/scripts/probe.sh" 2>/dev/null || "$HOME/.claude/skills/multi/scripts/probe.sh" 2>/dev/null || ./.claude/skills/multi/scripts/probe.sh`
+!`"${CLAUDE_SKILL_DIR}/../../scripts/probe.sh"`
 
 Several models read the same code, and you decide what reaches the user. That
 is the whole idea: one model invents problems and walks past real ones, and you
@@ -29,11 +29,17 @@ observations".
 
 `$SCRIPTS` below is whatever the probe printed as `scripts-dir:`.
 
+**On any host other than Claude Code** the line above is plain text, nothing
+ran. Your first step is then to run the probe yourself and read its output as
+if it were printed here: `<dir of this SKILL.md>/../../scripts/probe.sh` — the
+plugin's `scripts/probe.sh`, two directories above the *real* file (resolve
+symlinks first: `realpath` of this SKILL.md, then `../../scripts/probe.sh`).
+
 If the line above reads `Shell substitution failed` instead of probe output,
-the session is in a git worktree and its shell gate refused the header — the
-plugin is fine and so are the backends. Run the probe yourself, as one plain
-command with nothing but the path: `"$HOME/.claude/skills/multi/scripts/probe.sh"`
-(or the same under `$CLAUDE_PLUGIN_ROOT`), and read `scripts-dir:` from that.
+the session is in a git worktree whose shell gate refused the header; the
+plugin is fine. Run `"${CLAUDE_SKILL_DIR}/../../scripts/probe.sh"` yourself,
+as one plain command with nothing but the path, and read `scripts-dir:` from
+that.
 The gate also refuses `sh -c`, `bash <file>`, `${VAR:-default}` and loops, so
 keep every later command in that shape too.
 
@@ -42,10 +48,12 @@ keep every later command in that shape too.
 From the probe lines above — they are already there, do not re-run it.
 
 **No second reviewer family → stop.** This is multi-model review; without at
-least one non-Claude reviewer there is nothing here that a single-model review
-does not already do. The pipeline runs four as reviewers: Codex, OpenCode,
-OpenRouter (Claude Code driving a non-Claude model) and Gemini — any one of
-them satisfies the gate — but only if it is in the profile that will run
+least one reviewer from a model family other than yours (the host model
+reading this) there is nothing here that a single-model review does not
+already do. The pipeline runs four as reviewers: Codex, OpenCode, OpenRouter
+(a headless `claude` driving a non-Claude model) and Gemini — any one of a
+different family than yours satisfies the gate (on Codex, Codex does not) —
+but only if it is in the profile that will run
 (the default profile, or the one the user named): a configured backend the
 profile leaves out reviews nothing. If the profile has no configured
 non-Claude backend, say so and point at `/multi:setup`. Do not quietly deliver a one-model
@@ -165,10 +173,14 @@ $SCRIPTS/ask.sh --repo "$COPY" --question-file "$RUN/review.prompt.md" --out-pre
                 > "$RUN/ask.log" 2>&1
 ```
 
-Run that last command **as a background task** (the Bash tool's
-`run_in_background`) — never in the foreground: a Bash call is capped at ten
-minutes, the review budget is forty, and a killed `ask.sh` takes every backend
-with it and marks them all `KILLED`.
+Run that last command **detached from the shell tool** — never in the
+foreground: a shell call is capped (ten minutes on Claude Code, **two minutes
+by default on OpenCode**), the review budget is forty, and a killed `ask.sh`
+takes every backend with it and marks them all `KILLED`. On Claude Code use the
+Bash tool's `run_in_background`. On every other host the shell tool kills the
+whole process group at its timeout, so `nohup … &` is not enough — add
+`--detach` to the `ask.sh` call (same redirect to `$RUN/ask.log`): it re-starts
+itself in a session of its own, prints the pid and returns at once.
 
 One `--out-prefix` per target. A second review in the same session — another
 branch, a re-run with a different focus — gets its own (`$RUN/review-2`,
@@ -263,7 +275,7 @@ two HIGH, OpenCode contradicts one."*
 
 An explicitly named mode skips all of this. Obey it.
 
-| | Claude sub-agents | when |
+| | role reviewers (`agents/<role>.md`) | when |
 |---|---|---|
 | `lite` | `correctness` only | small, low-risk, external reviewers agree and found little |
 | `normal` *(default)* | `correctness` · `security` · `design` | anything heading for a PR |
@@ -271,6 +283,21 @@ An explicitly named mode skips all of this. Obey it.
 
 The adversarial pass needs Codex specifically; without it, `ultra` runs without
 that pass — the rest of the mode is unchanged.
+
+The roles live in `agents/<role>.md` at the plugin root, one file per role,
+and that file is the whole instruction — the same text on every host:
+
+- **Claude Code** registers them as sub-agents `multi:correctness`,
+  `multi:security`, `multi:design`, `multi:execution`, `multi:verify`.
+- **A host whose sub-agents can be made read-only** (no shell, no write)
+  spawns one per role with the file's body as its instructions.
+- **Any other host** — no sub-agents, or sub-agents that keep a shell in the
+  live checkout (Codex today) — reads the role file and reviews inline, one
+  pass per role, *after* the external answers are in and with the file's rules
+  in front of it. A copied role text cannot take a shell away, and a reviewer
+  with a shell in the live tree is the data-loss path the snapshot exists to
+  close; parallelism is not worth it. Say so in the report: that pass is your
+  own family, not an independent reviewer.
 
 Spawn them **in parallel, in one message**. Give each the target, the paths or
 range, the contents of `$RUN/ctx.md`, and the user's own words if there
@@ -292,6 +319,8 @@ not what protects the live tree from them — removing the shell is.
 **Model**: the argument if given, else `MULTI_REVIEWER_MODEL` from the probe, else
 the agent files' default (Sonnet). **No mode raises it on its own** — `ultra`
 buys depth through more angles and real verification, not a bigger model.
+On a host without Claude models the roles run on the host's own default model;
+name it in the report's `Reviewers:` line.
 
 **`ultra` is not a deeper code review — it reviews whether the task got done.**
 Was there a plan and was it followed; is the thing actually finished or only
@@ -344,8 +373,9 @@ function, even the same line with a different mechanism is two findings, and
 they stay two. When in doubt, keep them apart: a duplicate costs the reader one
 line, a merge costs them a bug.
 
-- **Corroborated** — two or more reviewers from different families (Claude /
-  Codex / OpenCode) named the same mechanism. Leads the report; independent
+- **Corroborated** — two or more reviewers from different families (the host
+  model's roles / Codex / OpenCode / OpenRouter / Gemini) named the same
+  mechanism. Two of your own role passes agreeing is one family, not two. Leads the report; independent
   agreement is the strongest evidence this pipeline produces.
 - **Single-source** — one reviewer. Check each before the user sees it: open the
   cited lines, confirm it is real and reachable. In `ultra`, spawn one
@@ -380,7 +410,8 @@ not a schema — drop empty sections, and match the surrounding conversation.
 
 ```
 # 🔍 Multi-review — <target> · <mode>
-Reviewers: Claude <n> · Codex <effort> · OpenCode <model> · ponytail (lens: same judge, different ruleset)
+Reviewers: <host> <n roles> · Codex <effort> · OpenCode <model> · ponytail (lens: same judge, different ruleset)
+Families that ran: <k> — <e.g. Claude, OpenAI, OpenCode/free> · missing: <who, and why — or "none">
 <one line if something was missing or died, and why>
 
 ## 📋 Everything raised (<N>)

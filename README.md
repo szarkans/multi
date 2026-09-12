@@ -69,9 +69,24 @@ git clone https://github.com/szarkans/multi ~/.claude/skills/multi
 
 then restart claude code and use `/multi:setup`
 
+<h3 align="center">other hosts</h3>
+
+multi is SKILL.md files plus bash scripts, so any agent that reads the SKILL.md standard can run it. the manifests only tell each host where the skills are; one clone serves them all
+
+| host | install | run | verified |
+|---|---|---|---|
+| claude code | see above | `/multi:code-review` | yes, 1.15.0 |
+| codex cli / desktop | add to `~/.agents/plugins/marketplace.json` (path is relative to `$HOME`): `{"name":"multi","source":{"source":"local","path":"./.claude/skills/multi"},"policy":{"installation":"AVAILABLE","authentication":"ON_INSTALL"},"category":"Productivity"}` then `codex plugin add multi@personal` | `$multi:code-review` | yes, 1.15.0 |
+| opencode | `for s in code-review ask adhd check-if-done setup; do ln -s ~/.claude/skills/multi/skills/$s ~/.agents/skills/multi-$s; done` | ask for a review, it loads the `code-review` skill | partly: skill, probe, snapshot and reviewers run; the judge step was not reached in a headless run |
+| codex without a marketplace | the same symlinks | `$code-review` | no |
+| gemini cli | `gemini extensions install https://github.com/szarkans/multi` | ask for a review, gemini activates the skill | no: the extension links and lists all skills, a live run was not done |
+| windows | claude code via git bash; codex via wsl or git bash | | no |
+
+notes: codex installs a copy, after `git pull` run `codex plugin remove multi` and `codex plugin add multi@personal` again. opencode and codex read only `<dir>/<name>/SKILL.md`, one level deep, that is why the symlinks are per skill. headless `opencode run` needs `OPENCODE_PERMISSION='{"bash":"allow","skill":"allow","read":"allow","glob":"allow","grep":"allow","task":"allow","external_directory":"allow"}'`. opencode names a skill by its frontmatter `name`, so it collides with any other `code-review` skill on the machine
+
 <h2 align="center">configure</h3>
 
-once you ran `/multi:setup`, two files will be created: `~/.claude/multi/config.toml` - who reviews, which models, in what order, and what runs by default and `~/.claude/multi/providers.env` - api keys for you providers if you have any
+once you ran `/multi:setup`, two files will be created: `~/.config/multi/config.toml` - who reviews, which models, in what order, and what runs by default and `~/.config/multi/providers.env` - api keys for you providers if you have any. `MULTI_HOME` moves the whole directory (`$XDG_CONFIG_HOME/multi` is honoured). before 1.15.0 it was `~/.claude/multi`: nothing is migrated, move the two files by hand, the probe reminds you once per run until you do
 
 a backend is a name + a type. four types: `codex`, `opencode`, `claude-headless` (claude code pointed at any anthropic-compatible endpoint: openrouter, 9router/omnirouter, local models, whatever you want) and `gemini`. want two endpoints? two `claude-headless` tables. a profile is who runs together.
 

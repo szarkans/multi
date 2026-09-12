@@ -17,7 +17,7 @@ metadata:
 
 # Wide ideas, several models
 
-!`"$CLAUDE_PLUGIN_ROOT/scripts/probe.sh" 2>/dev/null || "$HOME/.claude/skills/multi/scripts/probe.sh" 2>/dev/null || ./.claude/skills/multi/scripts/probe.sh`
+!`"${CLAUDE_SKILL_DIR}/../../scripts/probe.sh"`
 
 The first three answers a model gives are the answers a senior engineer gives
 in thirty seconds. Correct, forgettable. The interesting ones live past number
@@ -27,11 +27,17 @@ both axes at once and pays for one.
 
 `$SCRIPTS` is whatever the probe printed as `scripts-dir:`.
 
+**On any host other than Claude Code** the line above is plain text, nothing
+ran. Your first step is then to run the probe yourself and read its output as
+if it were printed here: `<dir of this SKILL.md>/../../scripts/probe.sh` — the
+plugin's `scripts/probe.sh`, two directories above the *real* file (resolve
+symlinks first: `realpath` of this SKILL.md, then `../../scripts/probe.sh`).
+
 If the line above reads `Shell substitution failed` instead of probe output,
 the session is in a git worktree whose shell gate refused the header; the
-plugin is fine. Run `"$HOME/.claude/skills/multi/scripts/probe.sh"` (or the
-same under `$CLAUDE_PLUGIN_ROOT`) yourself, as one plain command, and read
-`scripts-dir:` from that.
+plugin is fine. Run `"${CLAUDE_SKILL_DIR}/../../scripts/probe.sh"` yourself,
+as one plain command with nothing but the path, and read `scripts-dir:` from
+that.
 
 ## Pre-flight
 
@@ -51,14 +57,14 @@ same problem gives a different pool the second time.
 
 | frame | backend |
 |---|---|
-| 1 | Claude sub-agent |
+| 1 | host sub-agent (the model running this skill) |
 | 2 | Codex |
 | 3 | OpenCode |
-| 4 | Claude sub-agent |
+| 4 | host sub-agent |
 | 5 | Codex |
 
 Start the external models **first** — they take 30–90 seconds and OpenCode
-spends most of a minute waking up. Launch the Claude agents while they run.
+spends most of a minute waking up. Launch the host-side frames while they run.
 
 ```bash
 RUN="$($SCRIPTS/run-dir.sh --slug <two-to-four words: the project and the job, e.g. skills-fixing-multi>)"
@@ -69,6 +75,12 @@ $SCRIPTS/ask.sh --question-file "$RUN/adhd-f3.md" --out-prefix "$RUN/adhd-f3" \
                 --backend opencode &
 wait
 ```
+
+On a host whose shell tool caps a call and kills the process group at the cap
+(OpenCode: two minutes by default), drop the `&` and the `wait`: add `--detach` to each
+`ask.sh` call (with `> "$RUN/adhd-fN.log" 2>&1`), return, and collect
+with `$SCRIPTS/wait.sh --prefix "$RUN/adhd-fN" --max 100`, called again while
+it exits 1.
 
 `$RUN` is this session's own directory, so two sessions brainstorming at once
 do not overwrite each other. Shell variables do not survive between commands —
@@ -100,9 +112,13 @@ wearing five hats, not five branches.
 
 ### When a backend is missing or dies
 
-The probe says who is alive. A missing backend's frames go to Claude
+The probe says who is alive. A missing backend's frames go to host
 sub-agents, and the report says so in one line: *"Codex not installed — frames
-2 and 5 ran as Claude agents."* Never quietly re-label a Claude idea as
+2 and 5 ran as host agents."* A host with **no sub-agents at all** does not run
+frames inline — sequential frames in one context see each other's ideas, which
+is the one thing this method forbids. Give those frames to the external
+backends instead (a second `ask.sh` call per frame, different backend each),
+or run fewer frames and say so. Never quietly re-label a host-model idea as
 Codex's. Read the one-line text in `${RUN}/...-codex.txt.dead` and
 `${RUN}/...-opencode.txt.dead` for `codex: ...` / `opencode: ...` reasons;
 those files explain missing/failed backends. `codex: MISSING`, `opencode: NO OUTPUT`, `opencode: TIMEOUT`

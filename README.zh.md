@@ -71,9 +71,24 @@ git clone https://github.com/szarkans/multi ~/.claude/skills/multi
 
 然后重启 claude code，跑一下 `/multi:setup`
 
+<h3 align="center">其他宿主</h3>
+
+multi 就是一组 SKILL.md 加 bash 脚本，任何读 SKILL.md 标准的 agent 都能跑。清单文件只是告诉宿主 skill 在哪；一份 clone 服务所有宿主
+
+| 宿主 | 安装 | 运行 | 已验证 |
+|---|---|---|---|
+| claude code | 见上文 | `/multi:code-review` | 是，1.15.0 |
+| codex cli / desktop | 加到 `~/.agents/plugins/marketplace.json`（路径相对于 `$HOME`）：`{"name":"multi","source":{"source":"local","path":"./.claude/skills/multi"},"policy":{"installation":"AVAILABLE","authentication":"ON_INSTALL"},"category":"Productivity"}`，然后 `codex plugin add multi@personal` | `$multi:code-review` | 是，1.15.0 |
+| opencode | `for s in code-review ask adhd check-if-done setup; do ln -s ~/.claude/skills/multi/skills/$s ~/.agents/skills/multi-$s; done` | 让它做 review，它会加载 `code-review` skill | 部分：skill、probe、快照和评审器都跑通；headless 运行没到评判那一步 |
+| 没有 marketplace 的 codex | 同样的符号链接 | `$code-review` | 否 |
+| gemini cli | `gemini extensions install https://github.com/szarkans/multi` | 让它做 review，gemini 自己激活 skill | 否：扩展能链接并列出全部 skill，但没做过实跑 |
+| windows | claude code 走 git bash；codex 走 wsl 或 git bash | | 否 |
+
+说明：codex 装的是一份拷贝，`git pull` 之后要 `codex plugin remove multi` 再 `codex plugin add multi@personal`。opencode 和 codex 只读 `<dir>/<name>/SKILL.md` 一层，所以符号链接按 skill 逐个建。headless 的 `opencode run` 需要 `OPENCODE_PERMISSION='{"bash":"allow","skill":"allow","read":"allow","glob":"allow","grep":"allow","task":"allow","external_directory":"allow"}'`。opencode 按 frontmatter 的 `name` 命名 skill，会和机器上其他 `code-review` skill 冲突
+
 <h2 align="center">配置</h3>
 
-跑过一次 `/multi:setup` 之后，会生成两个文件：`~/.claude/multi/config.toml` —— 谁来评审、用什么模型、什么顺序、默认跑什么，以及 `~/.claude/multi/providers.env` —— 如果你有的话，各家 provider 的 api key
+跑过一次 `/multi:setup` 之后，会生成两个文件：`~/.config/multi/config.toml` —— 谁来评审、用什么模型、什么顺序、默认跑什么，以及 `~/.config/multi/providers.env` —— 如果你有的话，各家 provider 的 api key。`MULTI_HOME` 可以整体挪走这个目录（也认 `$XDG_CONFIG_HOME/multi`）。1.15.0 之前是 `~/.claude/multi`：不做迁移，两个文件手动挪过去，挪之前 probe 每次运行都会提醒
 
 一个 backend 就是一个名字加一个类型。四种类型：`codex`、`opencode`、`claude-headless`（claude code 指向任意兼容 anthropic 协议的端点：openrouter、9router/omnirouter、本地模型，随便你）、`gemini`。想要两个端点？开两张 `claude-headless` 表。profile 就是「谁一起跑」。
 

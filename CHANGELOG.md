@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.15.0 — 2026-09-12
+
+- Runs on any harness that reads `SKILL.md` (#30): skill bodies drop `~/.claude/skills/multi` and `CLAUDE_PLUGIN_ROOT`; the Claude header is `"${CLAUDE_SKILL_DIR}/../../scripts/probe.sh"`, every other host runs that same `scripts/probe.sh` as its first step. Why: the maintainer is now the first non-Claude user.
+- **Config moved** to `${XDG_CONFIG_HOME:-~/.config}/multi`. Not migrated: move `config.toml` and `providers.env` from `~/.claude/multi` by hand, or set `MULTI_HOME` to stay; the probe says so once while the old files exist.
+- Reviewer roles `agents/*.md` are the one source on every host: sub-agents where the host has them, an inline pass where it does not; the report names how many families ran.
+- Update notice: the probe prints this section once after an upgrade (`$MULTI_HOME/.seen-version`). Why: a silent config move is a plugin silently on defaults.
+- Host manifests: `.codex-plugin/plugin.json`, `gemini-extension.json`; OpenCode and marketplace-less Codex via one symlink per skill into `~/.agents/skills/multi-<name>` (both read only `<dir>/<name>/SKILL.md`). README lists each host with its install command and whether a live `code-review` passed under it.
+- Hard stop, same as the stale-knob one: an old `~/.claude/multi/config.toml` plus `OPENROUTER_API_KEY` in the environment and no new config refuses to run. Why: the old file may have pointed that key at another host, and the built-in default would send it to openrouter.ai (found by the Codex-hosted review of this release).
+- `run-dir.sh` identity: `MULTI_RUN_ID`, then `CODEX_THREAD_ID` / `OPENCODE_PID`, then `CLAUDE_CODE_SESSION_ID`; a Codex thread started from a Claude session no longer shares that session's run directory.
+- `ask.sh --detach`: re-starts itself in a session of its own (python `setsid`, stock macOS has no binary) and returns with the pid, for hosts whose shell tool kills its process group at a timeout (OpenCode: two minutes by default). Why: the first OpenCode-hosted review lost every backend to that kill.
+- Role reviewers are spawned as sub-agents only where the host can make them read-only; elsewhere (Codex sub-agents keep a shell in the live checkout) the roles run inline. Why: a copied role text cannot take a shell away.
+
 ## 1.14.0 — 2026-09-12
 
 - `claude-headless` backends (OpenRouter, DeepSeek) are killed for silence, not by the clock: `stall` seconds (default 600) without the transcript growing → `STALLED`, `timeout` is now a ceiling (default 1800). Why: a flat 300s cut a model 38 paid turns into an `/ask` and threw its work away.

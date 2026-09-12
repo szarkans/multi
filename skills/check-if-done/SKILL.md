@@ -13,7 +13,7 @@ argument-hint: "[what was promised — a plan file, an issue, or nothing to use 
 
 # Check if it is actually done
 
-!`"$CLAUDE_PLUGIN_ROOT/scripts/probe.sh" 2>/dev/null || "$HOME/.claude/skills/multi/scripts/probe.sh" 2>/dev/null || ./.claude/skills/multi/scripts/probe.sh`
+!`"${CLAUDE_SKILL_DIR}/../../scripts/probe.sh"`
 
 A model that just wrote code is the worst possible judge of whether that code
 works. It compares the task to its own summary of what it did, the two match,
@@ -23,17 +23,23 @@ intention.
 So this skill does two things a normal review does not:
 
 1. **Someone who did not write it looks at it** — Codex, OpenCode, and a
-   sub-agent that has never seen this conversation.
+   reviewer role that has never seen this conversation.
 2. **Nothing is called done without an executed command behind it.** Not "the
    tests should pass" — the command, its output, its exit code.
 
 `$SCRIPTS` is whatever the probe printed as `scripts-dir:`.
 
+**On any host other than Claude Code** the line above is plain text, nothing
+ran. Your first step is then to run the probe yourself and read its output as
+if it were printed here: `<dir of this SKILL.md>/../../scripts/probe.sh` — the
+plugin's `scripts/probe.sh`, two directories above the *real* file (resolve
+symlinks first: `realpath` of this SKILL.md, then `../../scripts/probe.sh`).
+
 If the line above reads `Shell substitution failed` instead of probe output,
 the session is in a git worktree whose shell gate refused the header; the
-plugin is fine. Run `"$HOME/.claude/skills/multi/scripts/probe.sh"` (or the
-same under `$CLAUDE_PLUGIN_ROOT`) yourself, as one plain command, and read
-`scripts-dir:` from that.
+plugin is fine. Run `"${CLAUDE_SKILL_DIR}/../../scripts/probe.sh"` yourself,
+as one plain command with nothing but the path, and read `scripts-dir:` from
+that.
 
 ## First: what was promised?
 
@@ -100,12 +106,15 @@ A backend that answers `sits out … back at …` is inside one of its `avoid`
 windows (peak hours in the config), not broken; `--ignore-avoid` runs it
 anyway, only when the user says so outright.
 
-Run that last command as a background task (the Bash tool's
-`run_in_background`): a foreground Bash call is capped at ten minutes, and a
-killed `ask.sh` marks every backend `KILLED`.
+Run that last command detached from the shell tool: a foreground shell call is
+capped (ten minutes on Claude Code, two by default on OpenCode), and a killed
+`ask.sh` marks every backend `KILLED`. On Claude Code use the Bash tool's
+`run_in_background`; on any other host the shell tool kills its whole process
+group at the timeout, so add `--detach` to the `ask.sh` call (same redirect):
+it re-starts itself in a session of its own and returns at once.
 
 When you come back for the answers, block on them instead of reading whatever
-is there: `$SCRIPTS/wait.sh --prefix "$RUN/done" --max 540` prints one line per
+is there: `$SCRIPTS/wait.sh --prefix "$RUN/done" --max 540` (below the shell tool's own cap: 540 on Claude Code, 100 on OpenCode's default two minutes) prints one line per
 backend (`ok`, `FAILED: <reason>`, or `still running` with its elapsed time and
 timeout) and exits 1 while any is still running — call it again. An empty
 `done-<backend>.txt` beside a live `done-<backend>.txt.running` is a reviewer
@@ -132,13 +141,18 @@ answer the right question:
 > it. Anchor every point to a file and line. If everything promised is really
 > there, say so plainly.
 
-Spawn the `execution` sub-agent at the same time, in the same message. Give it
-the promise, and what you know about the task — it is the only reviewer with
-access to intent, and without that context it will correctly refuse to guess.
-Point it at `$COPY`: *read the code and `$COPY/review.diff` there.* It has no Bash
-tool (it reads with Read/Grep/Glob), so it cannot run a command against the live
-tree — that is what keeps a stray `git checkout` off the user's uncommitted work,
-not the prompt. The verification that DOES run commands is yours, below, on the
+Spawn the `execution` role at the same time, in the same message. Its
+instructions are `agents/execution.md` at the plugin root — on Claude Code that
+is the sub-agent `multi:execution`; on a host whose sub-agents can be
+made read-only, one such sub-agent with that file as its body; on any other
+host (none, or sub-agents that keep a shell in the live checkout, Codex today),
+read the file and do that pass yourself after the external answers are in, and
+say in the report that it was your own pass. Give it the promise, and what you know
+about the task — it is the only reviewer with access to intent, and without
+that context it will correctly refuse to guess. Point it at `$COPY`: *read the
+code and `$COPY/review.diff` there.* It has no shell (it reads files only), so it
+cannot run a command against the live tree — that is what keeps a stray `git
+checkout` off the user's uncommitted work, not the prompt. The verification that DOES run commands is yours, below, on the
 real tree.
 
 ## Then run the checks yourself

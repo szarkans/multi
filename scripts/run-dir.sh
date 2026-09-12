@@ -29,10 +29,14 @@ while [ $# -gt 0 ]; do
 done
 
 BASE="${MULTI_RUN_BASE:-${TMPDIR:-/tmp}/multi}"
-# Inside Claude Code the session id is the identity. Outside it there is none,
-# and a bare 'shared' would make every concurrent non-CC run collide in one
-# directory; MULTI_RUN_ID lets such a caller hand in its own stable id instead.
-ID="${CLAUDE_CODE_SESSION_ID:-${MULTI_RUN_ID:-shared}}"
+# MULTI_RUN_ID is the caller's explicit identity and wins. Otherwise the host
+# session id: Codex and OpenCode before Claude Code, because a Codex thread or
+# an OpenCode run started from inside a Claude session inherits that session's
+# id and must not share its run directory (Codex exports a thread id, OpenCode
+# its server pid -- one per run, coarser than a session). With none of them a
+# bare 'shared' would make every concurrent run collide in one directory.
+ID="${MULTI_RUN_ID:-${CODEX_THREAD_ID:-${OPENCODE_PID:+oc-$OPENCODE_PID}}}"
+ID="${ID:-${CLAUDE_CODE_SESSION_ID:-shared}}"
 mkdir -p "$BASE" 2>/dev/null || { echo "cannot create $BASE" >&2; exit 2; }
 
 # Runs older than this are gone; a transcript nobody opened in a week is not

@@ -34,7 +34,7 @@ for me" → `model-research.md`).
 
 ## The models list
 
-`[backends.opencode]` in `~/.claude/multi/config.toml` (`references/config.md`):
+`[backends.opencode]` in `$MULTI_HOME/config.toml` (default `~/.config/multi`, or `$XDG_CONFIG_HOME/multi`; the probe's `config:` line names the file) (`references/config.md`):
 
 ```toml
 [backends.opencode]

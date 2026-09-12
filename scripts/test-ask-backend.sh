@@ -396,5 +396,24 @@ else
 fi
 rm -f "$TMP/h/config.toml"
 
+# --detach: back at once with a pid, the run continues in its own session
+# (so a shell tool killing its process group cannot take it), answers land.
+start=$(date +%s)
+"$HERE/ask.sh" --detach --question q --out-prefix "$TMP/det" --backend codex >"$TMP/det.out" 2>"$TMP/det.err"; rc=$?
+took=$(( $(date +%s) - start ))
+out="$(head -1 "$TMP/det.out")"
+pid="${out##* }"
+if [ $rc -eq 0 ] && [ "$took" -le 3 ] && case "$pid" in ''|*[!0-9]*) false ;; esac; then
+  echo "ok   --detach returns at once with a pid ($took s)"
+else
+  echo "FAIL --detach: rc=$rc took=${took}s out='$out' err=$(head -2 "$TMP/det.err" | tr '\n' '|')"; fail=1
+fi
+n=0; while [ $n -lt 30 ] && ! grep -q '^codex [0-9]' "$TMP/det.run" 2>/dev/null; do sleep 1; n=$((n+1)); done
+if [ -s "$TMP/det-codex.txt" ] && grep -q '^codex [0-9]' "$TMP/det.run"; then
+  echo "ok   --detach: the detached run wrote the answer and the roster"
+else
+  echo "FAIL --detach: no answer after ${n}s: $(ls "$TMP" | grep '^det' | tr '\n' ' ')"; fail=1
+fi
+
 [ $fail -eq 0 ] && echo "ALL PASS" || echo "FAILURES"
 exit $fail

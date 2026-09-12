@@ -69,9 +69,24 @@ git clone https://github.com/szarkans/multi ~/.claude/skills/multi
 
 потом перезапусти claude code и используй `/multi:setup`
 
+<h3 align="center">другие хосты</h3>
+
+multi - это файлы SKILL.md плюс bash-скрипты, так что его запустит любой агент, который читает стандарт SKILL.md. манифесты только говорят хосту, где лежат скиллы; один клон обслуживает всех
+
+| хост | установка | запуск | проверено |
+|---|---|---|---|
+| claude code | см. выше | `/multi:code-review` | да, 1.15.0 |
+| codex cli / desktop | добавь в `~/.agents/plugins/marketplace.json` (путь относительно `$HOME`): `{"name":"multi","source":{"source":"local","path":"./.claude/skills/multi"},"policy":{"installation":"AVAILABLE","authentication":"ON_INSTALL"},"category":"Productivity"}`, затем `codex plugin add multi@personal` | `$multi:code-review` | да, 1.15.0 |
+| opencode | `for s in code-review ask adhd check-if-done setup; do ln -s ~/.claude/skills/multi/skills/$s ~/.agents/skills/multi-$s; done` | попроси ревью, он загрузит скилл `code-review` | частично: скилл, проба, снапшот и ревьюеры работают; до судейства headless-прогон не дошёл |
+| codex без маркетплейса | те же симлинки | `$code-review` | нет |
+| gemini cli | `gemini extensions install https://github.com/szarkans/multi` | попроси ревью, gemini сам активирует скилл | нет: расширение линкуется и видит все скиллы, живого прогона не было |
+| windows | claude code через git bash; codex через wsl или git bash | | нет |
+
+заметки: codex ставит копию, после `git pull` сделай `codex plugin remove multi` и снова `codex plugin add multi@personal`. opencode и codex читают только `<dir>/<name>/SKILL.md`, один уровень, поэтому симлинки по скиллу. headless `opencode run` требует `OPENCODE_PERMISSION='{"bash":"allow","skill":"allow","read":"allow","glob":"allow","grep":"allow","task":"allow","external_directory":"allow"}'`. opencode называет скилл по `name` из frontmatter, так что он конфликтует с любым другим `code-review` на машине
+
 <h2 align="center">конфигурация</h3>
 
-как только запустишь `/multi:setup`, создадутся два файла: `~/.claude/multi/config.toml` - кто ревьюит, какие модели, в каком порядке, и что запускается по умолчанию и `~/.claude/multi/providers.env` - api-ключи для твоих провайдеров, если они у тебя есть
+как только запустишь `/multi:setup`, создадутся два файла: `~/.config/multi/config.toml` - кто ревьюит, какие модели, в каком порядке, и что запускается по умолчанию и `~/.config/multi/providers.env` - api-ключи для твоих провайдеров, если они у тебя есть. `MULTI_HOME` переносит весь каталог (`$XDG_CONFIG_HOME/multi` учитывается). до 1.15.0 это был `~/.claude/multi`: ничего не мигрируется, перенеси два файла руками, проба напоминает при каждом запуске, пока не перенесёшь
 
 бэкенд - это имя + тип. четыре типа: `codex`, `opencode`, `claude-headless` (claude code, направленный на любой anthropic-совместимый эндпоинт: openrouter, 9router/omnirouter, локальные модели, что угодно) и `gemini`. нужно два эндпоинта? две таблицы `claude-headless`. профиль - это кто ревьюит вместе.
 
