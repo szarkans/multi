@@ -49,6 +49,16 @@ BACKEND_KEYS = {"type", "models", "base_url", "api_key_env", "timeout", "stall",
 TOP_KEYS = {"backends", "profiles", "default_profile"}
 DEFAULT_TIMEOUT = 300
 DEFAULT_STALL = 180
+# claude-headless is killed for silence, not for the clock: its transcript
+# grows with every turn, and a model still growing it is still working.
+# Measured 2026-09-12: a flash model was cut at 300s after 38 live turns, paid
+# for and discarded. The stall is 600, not the old 300: one turn measured 266s
+# with the transcript still (providers.sh, "Why 2400"), and silence is not
+# billed, so a generous stall costs only a slower verdict on a dead key. The
+# timeout is only a ceiling against a model that keeps busy for ever, and
+# every turn of that is billed.
+HEADLESS_STALL = 600
+HEADLESS_TIMEOUT = 1800
 
 DEFAULT_TOML = """\
 # multi — who answers when several models are asked the same thing.
@@ -70,10 +80,11 @@ DEFAULT_TOML = """\
 # base_url: claude-headless only.
 # api_key_env: the variable in providers.env holding the key; defaults to
 #   <NAME>_API_KEY, e.g. OPENROUTER_API_KEY. Set it with: setup.sh set <NAME>
-# timeout: seconds per run, default 300. ask.sh --timeout N raises every
-#   backend to at least N for that run (the review skill passes 2400) and never
-#   lowers one. stall (opencode only): seconds of silence before the model is
-#   declared dead, default 180.
+# timeout: seconds per run, default 300 (claude-headless: 1800, a ceiling).
+#   ask.sh --timeout N raises every backend to at least N for that run (the
+#   review skill passes 2400) and never lowers one. stall (opencode,
+#   claude-headless): seconds of silence before the model is declared dead,
+#   default 180 (claude-headless: 600 without its transcript growing).
 #
 # profiles: named lists of who runs, in parallel. An entry is a backend name
 # (its whole chain) or backend:model (exactly that model, no fallback). The
@@ -269,8 +280,8 @@ def validate(raw, where):
             raise ConfigError("%s: base_url only applies to type = \"claude-headless\"" % w)
         if t in ("codex", "gemini") and len(models) > 1:
             raise ConfigError("%s: type %s takes at most one model — fallback chains are walked by opencode and claude-headless only, and the rest of this list would be silently ignored" % (w, t))
-        if "stall" in b and t != "opencode":
-            raise ConfigError("%s: stall only applies to type = \"opencode\"" % w)
+        if "stall" in b and t not in ("opencode", "claude-headless"):
+            raise ConfigError("%s: stall only applies to type = \"opencode\" or \"claude-headless\"" % w)
         key_env = b.get("api_key_env", name.upper().replace("-", "_") + "_API_KEY")
         # It is expanded by name in bash (eval "key=\${$key_env:-}"), so it must
         # be a plain identifier — anything else is a shell injection waiting
@@ -286,8 +297,8 @@ def validate(raw, where):
             "models": models,
             "base_url": base_url,
             "api_key_env": key_env.strip(),
-            "timeout": _positive_int(w, "timeout", b.get("timeout", DEFAULT_TIMEOUT)),
-            "stall": _positive_int(w, "stall", b.get("stall", DEFAULT_STALL)),
+            "timeout": _positive_int(w, "timeout", b.get("timeout", HEADLESS_TIMEOUT if t == "claude-headless" else DEFAULT_TIMEOUT)),
+            "stall": _positive_int(w, "stall", b.get("stall", HEADLESS_STALL if t == "claude-headless" else DEFAULT_STALL)),
         }
     profiles_raw = raw.get("profiles", {})
     if not isinstance(profiles_raw, dict):

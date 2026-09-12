@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.14.0 — 2026-09-12
+
+- `claude-headless` backends (OpenRouter, DeepSeek) are killed for silence, not by the clock: `stall` seconds (default 600) without the transcript growing → `STALLED`, `timeout` is now a ceiling (default 1800). Why: a flat 300s cut a model 38 paid turns into an `/ask` and threw its work away.
+
 ## 1.13.1 — 2026-09-11
 
 - The `a|b` profile alternatives from 1.13.0 are gone, hours after they shipped. `["codex", "glm", "deepseek|glm"]` in DeepSeek's peak hours ran GLM twice and paid for both; deduplicating alternatives against the rest of the profile was ten more lines on a mechanism nobody had asked for. A backend with `avoid` simply sits out its windows: the user put them there, the answer file and the report say which hour it is sitting out and when it is back, and a profile that wants a reviewer in those hours lists one. `--ignore-avoid` stays. `resolve` is back to ten columns.

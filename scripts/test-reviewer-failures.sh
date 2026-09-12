@@ -460,6 +460,41 @@ say "no transcript: says exactly that" "$(grep -c 'No transcript was written at 
 # A pool passed over is named, with what it said. The review used to run on
 # the second model with nothing saying the first was busy, and that read as
 # "the config order is wrong" (2026-09-07: qwen first in the list, GLM ran).
+# Killed for silence, not for the clock. Measured 2026-09-12: a model 38 live
+# turns into an /ask was cut at a flat 300s and its work thrown away. With a
+# stall, a growing transcript keeps the run alive past the stall; a transcript
+# that stops growing is killed after it -- both well before the 30s ceiling.
+echo "== openrouter is killed for silence, not while its transcript grows =="
+printf 'default_profile = "p"\n[backends.openrouter]\ntype = "claude-headless"\nbase_url = "https://openrouter.ai/api"\nmodels = ["m"]\ntimeout = 30\nstall = 3\n[profiles]\np = ["openrouter"]\n' > "$MULTI_HOME/config.toml"
+s=$SECONDS
+STUB_TURNS=3 bash "$TREE/scripts/ask.sh" --question q --backend openrouter:m --out-prefix "$TMP/st" >/dev/null 2>&1
+d=$((SECONDS-s))
+say "hung after turns: killed on the stall, not the ceiling" "$([ $d -le 10 ] && echo yes || echo "no(${d}s)")" "yes"
+say "hung after turns: says STALLED with its turns" "$(grep -c 'STALLED .* killed after 3 model turns' "$TMP/st-openrouter.txt")" "1"
+s=$SECONDS
+bash "$TREE/scripts/ask.sh" --question q --backend openrouter:m --out-prefix "$TMP/sn" >/dev/null 2>&1
+d=$((SECONDS-s))
+say "no transcript at all: killed on the stall" "$([ $d -le 10 ] && echo yes || echo "no(${d}s)")" "yes"
+say "no transcript at all: says STALLED after 0 turns" "$(grep -c 'STALLED .* killed after 0 model turns' "$TMP/sn-openrouter.txt")" "1"
+cat > "$TMP/bin/claude" <<'STUB'
+#!/usr/bin/env bash
+# One turn a second for 5s -- longer than the 3s stall -- then an answer.
+sid=""
+while [ $# -gt 0 ]; do
+  [ "$1" = "--session-id" ] && { sid="$2"; shift 2; continue; }
+  shift
+done
+mkdir -p "$CLAUDE_CONFIG_DIR/projects/stub"
+f="$CLAUDE_CONFIG_DIR/projects/stub/$sid.jsonl"
+echo '{"type":"user"}' > "$f"
+for n in 1 2 3 4 5; do sleep 1; echo '{"type":"assistant"}' >> "$f"; done
+echo "a slow answer"
+STUB
+chmod +x "$TMP/bin/claude"
+bash "$TREE/scripts/ask.sh" --question q --backend openrouter:m --out-prefix "$TMP/sg" >/dev/null 2>&1
+say "growing transcript: outlives the stall and answers" "$(grep -c '^a slow answer$' "$TMP/sg-openrouter.txt")" "1"
+say "growing transcript: not marked dead" "$([ -e "$TMP/sg-openrouter.txt.dead" ] && echo dead || echo alive)" "alive"
+
 echo "== a busy first pool is named in the answer, not skipped in silence =="
 cat > "$TMP/bin/curl" <<'STUB'
 #!/usr/bin/env bash

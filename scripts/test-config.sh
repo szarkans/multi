@@ -76,6 +76,7 @@ say "trailing slashes stripped from base_url" "$(resolve --backend openrouter | 
 say "custom api_key_env" "$(resolve --backend zcode | cut -f7)" "ZAI_KEY"
 say "per-backend timeout" "$(resolve --backend codex | cut -f8)" "17"
 say "opencode stall" "$(resolve --backend opencode | cut -f9)" "2"
+say "claude-headless defaults: 1800 ceiling, 600 stall" "$(resolve --backend openrouter | cut -f8,9 | tr '\t' ' ')" "1800 600"
 say "chain is space-separated in order" "$(resolve --backend opencode | cut -f5)" "oc/one oc/two"
 say "backends lists every entry" "$("$py" "$CFG" backends | cut -f1 | tr '\n' ' ')" "openrouter zcode codex opencode "
 say "gemini not configured here is unknown" "$(resolve --backend gemini >/dev/null; echo $?)" "2"

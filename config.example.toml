@@ -10,12 +10,12 @@ default_profile = "normal"
 [backends.codex]                     # type "codex": the Codex CLI, read-only sandbox
 type = "codex"
 models = []                          # empty = the CLI's default; at most one model here
-timeout = 600                        # seconds for one run; default 300 everywhere
+timeout = 600                        # seconds for one run; default 300 (claude-headless: 1800, a ceiling)
 
 [backends.opencode]                  # type "opencode": OpenCode CLI, plugin's read-only agent
 type = "opencode"
 models = []                          # empty = a free model from `opencode models`, others as fallback
-stall = 180                          # opencode only: seconds of silence before it counts as dead
+stall = 180                          # opencode, claude-headless: seconds of silence before it counts as dead (headless default 600)
 
 [backends.opencode-paid]             # the same type twice, under another name
 type = "opencode"

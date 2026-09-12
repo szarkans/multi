@@ -30,12 +30,12 @@ avoid = ["Mon-Fri 01:00-04:00 UTC", "Mon-Fri 06:00-10:00 UTC"]   # sits out thes
 [backends.codex]
 type = "codex"
 models = []                       # empty = the CLI's own default
-timeout = 600                     # seconds; default 300 for every backend
+timeout = 600                     # seconds; default 300 (claude-headless: 1800, a ceiling)
 
 [backends.opencode]
 type = "opencode"
 models = ["opencode-go/glm-5.3-flash", "opencode/deepseek-v4-flash"]
-stall = 180                       # opencode only: silence before it is declared dead
+stall = 180                       # opencode/claude-headless: silence before it is declared dead (headless default 600)
 
 [backends.gemini]
 type = "gemini"

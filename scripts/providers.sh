@@ -647,8 +647,37 @@ multi_run_headless() {
       --strict-mcp-config --mcp-config '{"mcpServers":{}}' \
       --setting-sources user \
       ${sid:+--session-id "$sid"} \
-      > "$out" 2> "$log"
-  rc=$?
+      > "$out" 2> "$log" &
+  # Pulse, not clock: the transcript gets a line per turn and per tool call,
+  # so a run whose transcript keeps growing is alive and is left alone up to
+  # the ceiling; MULTI_BACKEND_STALL seconds without growth kills it. Silence
+  # counts from launch, so a child that never writes a transcript (rejected
+  # key, 429 retries) dies on the stall too. A stall at or above the ceiling
+  # switches the watch off, same rule as opencode's. So does a missing session
+  # id (no uuidgen, no /proc uuid): the transcript cannot be found at all, and
+  # measuring its silence would kill every live run on the stall.
+  local pid=$! stall="${MULTI_BACKEND_STALL:-0}" stalled=0 trf="" size last=-1 quiet=0
+  [ "$stall" -lt "$MULTI_BACKEND_TIMEOUT" ] || stall=0
+  [ -n "$sid" ] || stall=0
+  if [ "$stall" -gt 0 ]; then
+    while kill -0 "$pid" 2>/dev/null; do
+      [ -n "$trf" ] || trf="$(multi_child_transcript "$sid")"
+      size=0
+      # A failed read counts as no change -- an empty size would read as
+      # growth and switch the watch off for good.
+      [ -z "$trf" ] || size="$(wc -c < "$trf" 2>/dev/null)" || size="$last"
+      size="${size// /}"
+      if [ "$size" != "$last" ]; then last="$size"; quiet=0; else quiet=$((quiet+1)); fi
+      if [ "$quiet" -ge "$stall" ]; then stalled=1; multi_kill_tree "$pid"; break; fi
+      sleep 1
+    done
+  fi
+  wait "$pid" 2>/dev/null; rc=$?
+  if [ "$stalled" -eq 1 ]; then
+    # Named for what was observed -- no growth -- not for a guessed cause.
+    multi_fail_backend "$out" "$name: STALLED — model=$model, nothing new in its transcript for ${stall}s, killed after $(multi_child_turns "$trf") model turns${trf:+ (transcript: $trf)}. No turns at all fits a rejected key or a pool gone 429 (check scripts/setup.sh status); turns and then silence fits a hung call — read the transcript tail.$(multi_headless_banner_note "$log")" "$log"
+    return 124
+  fi
   if [ "$rc" -eq 124 ]; then
     # A timed-out run never reads as an answer, even if partial output landed
     # in the file before the kill.

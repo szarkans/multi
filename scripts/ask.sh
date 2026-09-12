@@ -515,7 +515,7 @@ for i in "${!NAMES[@]}"; do
       ( MULTI_BACKEND_TIMEOUT="${TIMEOUTS[$i]}"; MULTI_OPENCODE_STALL="${STALLS[$i]}"; started "$out" && cd "$REPO_DIR" \
         && run_opencode_one "$out" "$oc_model" "$oc_fallback"; finished "${SUFFIXES[$i]}" "$out" "$t0" "$name" ) & ;;
     claude-headless)
-      ( MULTI_BACKEND_TIMEOUT="${TIMEOUTS[$i]}"; started "$out" && cd "$REPO_DIR" \
+      ( MULTI_BACKEND_TIMEOUT="${TIMEOUTS[$i]}"; MULTI_BACKEND_STALL="${STALLS[$i]}"; started "$out" && cd "$REPO_DIR" \
         && multi_run_headless "$name" "$QUESTION" "$out" "$model" "$chain" "${URLS[$i]}" "${KEYENVS[$i]}"; finished "${SUFFIXES[$i]}" "$out" "$t0" "$name" ) & ;;
     gemini)
       ( MULTI_BACKEND_TIMEOUT="${TIMEOUTS[$i]}"; started "$out" && cd "$REPO_DIR" \
