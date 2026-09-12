@@ -1,5 +1,5 @@
 {
   "name": "multi",
-  "version": "1.15.0",
+  "version": "1.15.1",
   "description": "Several models on the same question at once — Codex, OpenCode, OpenRouter and the host model's reviewer roles — reconciled into one report. Skills: code-review, check-if-done, adhd, ask, setup."
 }

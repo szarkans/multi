@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.15.1 — 2026-09-13
+
+- Install like superpowers: `INSTALL.md` in the repo, the person tells their agent "Fetch and follow instructions from …/INSTALL.md" and it does its own host. Codex is two commands (`codex plugin marketplace add szarkans/multi`, `codex plugin add multi@szkills`) because Codex reads the repo's `.claude-plugin/marketplace.json` as a marketplace, nothing extra needed; OpenCode is one `skills.paths` entry instead of five symlinks. Why: 1.15.0 made the person hand-edit a marketplace file and create symlinks, which nobody should have to.
+
 ## 1.15.0 — 2026-09-12
 
 - Runs on any harness that reads `SKILL.md` (#30): skill bodies drop `~/.claude/skills/multi` and `CLAUDE_PLUGIN_ROOT`; the Claude header is `"${CLAUDE_SKILL_DIR}/../../scripts/probe.sh"`, every other host runs that same `scripts/probe.sh` as its first step. Why: the maintainer is now the first non-Claude user.

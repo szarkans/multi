@@ -1,6 +1,6 @@
 {
   "name": "multi",
-  "version": "1.15.0",
+  "version": "1.15.1",
   "description": "Several models on the same question at once — the host model's reviewer roles, OpenAI Codex, OpenCode and any OpenRouter model — reconciled into one report. Review code, check whether the work is actually finished, brainstorm wide, or ask all of them something.",
   "author": {
     "name": "Sergei Shatrov",

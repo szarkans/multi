@@ -73,18 +73,21 @@ git clone https://github.com/szarkans/multi ~/.claude/skills/multi
 
 <h3 align="center">其他宿主</h3>
 
-multi 就是一组 SKILL.md 加 bash 脚本，任何读 SKILL.md 标准的 agent 都能跑。清单文件只是告诉宿主 skill 在哪；一份 clone 服务所有宿主
+multi 就是一组 SKILL.md 加 bash 脚本，任何读 SKILL.md 标准的 agent 都能跑。告诉你的 agent：
+
+```
+Fetch and follow instructions from https://raw.githubusercontent.com/szarkans/multi/main/INSTALL.md
+```
+
+它会自己挑对应的章节。速查：
 
 | 宿主 | 安装 | 运行 | 已验证 |
 |---|---|---|---|
 | claude code | 见上文 | `/multi:code-review` | 是，1.15.0 |
-| codex cli / desktop | 加到 `~/.agents/plugins/marketplace.json`（路径相对于 `$HOME`）：`{"name":"multi","source":{"source":"local","path":"./.claude/skills/multi"},"policy":{"installation":"AVAILABLE","authentication":"ON_INSTALL"},"category":"Productivity"}`，然后 `codex plugin add multi@personal` | `$multi:code-review` | 是，1.15.0 |
-| opencode | `for s in code-review ask adhd check-if-done setup; do ln -s ~/.claude/skills/multi/skills/$s ~/.agents/skills/multi-$s; done` | 让它做 review，它会加载 `code-review` skill | 部分：skill、probe、快照和评审器都跑通；headless 运行没到评判那一步 |
-| 没有 marketplace 的 codex | 同样的符号链接 | `$code-review` | 否 |
-| gemini cli | `gemini extensions install https://github.com/szarkans/multi` | 让它做 review，gemini 自己激活 skill | 否：扩展能链接并列出全部 skill，但没做过实跑 |
+| codex cli / app | `codex plugin marketplace add szarkans/multi`，然后 `codex plugin add multi@szkills` | `$multi:code-review` | 是，1.15.1 |
+| opencode | 在 `~/.config/opencode/opencode.json` 里加 `"skills": {"paths": ["~/.claude/skills/multi/skills"]}` | 让它做 review | 部分：skill、probe、快照和评审器跑通，headless 没到评判那步 |
+| gemini cli | `gemini extensions install https://github.com/szarkans/multi` | 让它做 review | 否：能链接并列出 skill，没实跑 |
 | windows | claude code 走 git bash；codex 走 wsl 或 git bash | | 否 |
-
-说明：codex 装的是一份拷贝，`git pull` 之后要 `codex plugin remove multi` 再 `codex plugin add multi@personal`。opencode 和 codex 只读 `<dir>/<name>/SKILL.md` 一层，所以符号链接按 skill 逐个建。headless 的 `opencode run` 需要 `OPENCODE_PERMISSION='{"bash":"allow","skill":"allow","read":"allow","glob":"allow","grep":"allow","task":"allow","external_directory":"allow"}'`。opencode 按 frontmatter 的 `name` 命名 skill，会和机器上其他 `code-review` skill 冲突
 
 <h2 align="center">配置</h3>
 

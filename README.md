@@ -71,18 +71,21 @@ then restart claude code and use `/multi:setup`
 
 <h3 align="center">other hosts</h3>
 
-multi is SKILL.md files plus bash scripts, so any agent that reads the SKILL.md standard can run it. the manifests only tell each host where the skills are; one clone serves them all
+multi is SKILL.md files plus bash scripts, so any agent that reads the SKILL.md standard runs it. tell your agent:
+
+```
+Fetch and follow instructions from https://raw.githubusercontent.com/szarkans/multi/main/INSTALL.md
+```
+
+it picks its own section. the short form:
 
 | host | install | run | verified |
 |---|---|---|---|
 | claude code | see above | `/multi:code-review` | yes, 1.15.0 |
-| codex cli / desktop | add to `~/.agents/plugins/marketplace.json` (path is relative to `$HOME`): `{"name":"multi","source":{"source":"local","path":"./.claude/skills/multi"},"policy":{"installation":"AVAILABLE","authentication":"ON_INSTALL"},"category":"Productivity"}` then `codex plugin add multi@personal` | `$multi:code-review` | yes, 1.15.0 |
-| opencode | `for s in code-review ask adhd check-if-done setup; do ln -s ~/.claude/skills/multi/skills/$s ~/.agents/skills/multi-$s; done` | ask for a review, it loads the `code-review` skill | partly: skill, probe, snapshot and reviewers run; the judge step was not reached in a headless run |
-| codex without a marketplace | the same symlinks | `$code-review` | no |
-| gemini cli | `gemini extensions install https://github.com/szarkans/multi` | ask for a review, gemini activates the skill | no: the extension links and lists all skills, a live run was not done |
+| codex cli / app | `codex plugin marketplace add szarkans/multi` then `codex plugin add multi@szkills` | `$multi:code-review` | yes, 1.15.1 |
+| opencode | `"skills": {"paths": ["~/.claude/skills/multi/skills"]}` in `~/.config/opencode/opencode.json` | ask for a review | partly: skill, probe, snapshot and reviewers run, the judge step was not reached headless |
+| gemini cli | `gemini extensions install https://github.com/szarkans/multi` | ask for a review | no: links and lists the skills, no live run |
 | windows | claude code via git bash; codex via wsl or git bash | | no |
-
-notes: codex installs a copy, after `git pull` run `codex plugin remove multi` and `codex plugin add multi@personal` again. opencode and codex read only `<dir>/<name>/SKILL.md`, one level deep, that is why the symlinks are per skill. headless `opencode run` needs `OPENCODE_PERMISSION='{"bash":"allow","skill":"allow","read":"allow","glob":"allow","grep":"allow","task":"allow","external_directory":"allow"}'`. opencode names a skill by its frontmatter `name`, so it collides with any other `code-review` skill on the machine
 
 <h2 align="center">configure</h3>
 
