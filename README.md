@@ -81,11 +81,10 @@ it picks its own section. the short form:
 
 | host | install | run | verified |
 |---|---|---|---|
-| claude code | see above | `/multi:code-review` | yes, 1.15.0 |
-| codex cli / app | `codex plugin marketplace add szarkans/multi` then `codex plugin add multi@szkills` | `$multi:code-review` | yes, 1.15.1 |
-| opencode | `"skills": {"paths": ["~/.claude/skills/multi/skills"]}` in `~/.config/opencode/opencode.json` | ask for a review | partly: skill, probe, snapshot and reviewers run, the judge step was not reached headless |
-| gemini cli | `gemini extensions install https://github.com/szarkans/multi` | ask for a review | no: links and lists the skills, no live run |
-| windows | claude code via git bash; codex via wsl or git bash | | no |
+| claude code | `claude plugin marketplace add szarkans/multi` && `claude plugin install multi@szkills` | `/multi:code-review` |
+| codex cli / app | `codex plugin marketplace add szarkans/multi` then `codex plugin add multi@szkills` | `$multi:code-review` |
+| opencode | `"skills": {"paths": ["~/.claude/skills/multi/skills"]}` in `~/.config/opencode/opencode.json` | ask for a review |
+| gemini cli | `gemini extensions install https://github.com/szarkans/multi` |
 
 <h2 align="center">configure</h3>
 
