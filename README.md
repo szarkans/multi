@@ -80,7 +80,7 @@ Fetch and follow instructions from https://raw.githubusercontent.com/szarkans/mu
 it picks its own section. the short form:
 
 | host | install | run |
-|---|---|---|---|
+|---|---|---|
 | claude code | `claude plugin marketplace add szarkans/multi` && `claude plugin install multi@szkills` | `/multi:code-review` |
 | codex cli / app | `codex plugin marketplace add szarkans/multi` then `codex plugin add multi@szkills` | `$multi:code-review` |
 | opencode | `"skills": {"paths": ["~/.claude/skills/multi/skills"]}` in `~/.config/opencode/opencode.json` | ask for a review |
