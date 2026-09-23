@@ -22,7 +22,7 @@ intention.
 
 So this skill does two things a normal review does not:
 
-1. **Someone who did not write it looks at it** — Codex, OpenCode, and a
+1. **Someone who did not write it looks at it** — configured external backends and a
    reviewer role that has never seen this conversation.
 2. **Nothing is called done without an executed command behind it.** Not "the
    tests should pass" — the command, its output, its exit code.
@@ -197,7 +197,7 @@ migrations, deploys, calls to third-party services with side effects.
 
 ```
 # ✅ Check-if-done — <what was promised> 
-Checked by: Claude · execution · Codex · OpenCode <model> · OpenRouter <model> [· Gemini]
+Checked by: Claude · execution · <each backend that ran, with its actual model>
 <one line per reviewer that failed or was missing — `Codex FAILED: <reason>` / `OpenCode FAILED: <reason>` / `OpenRouter FAILED: <reason>` from the one-line text in its `.dead` marker (`done-<backend>.txt.dead`); a backend you launched must appear here or in the list above, never vanish; point at `/multi:setup` to connect anything missing — but one that `sits out … back at …` is in its `avoid` window, configured on purpose, and needs no setup>
 
 ## Verdict

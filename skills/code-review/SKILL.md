@@ -1,8 +1,8 @@
 ---
 name: code-review
 description: >-
-  Code review by several models at once — Claude sub-agents, OpenAI Codex, and
-  a cheap third reviewer via OpenCode — reconciled into one report. Reviews
+  Code review by several models at once — host reviewers, Codex, Copilot,
+  OpenCode and configured providers — reconciled into one report. Reviews
   whatever is named: a diff, a branch, specific files, one function, a legacy
   module, a whole repo. Use for any review request, a second or third opinion,
   a cross-check before a PR, or "code-review", "multi", "consensus review".
@@ -50,7 +50,7 @@ From the probe lines above — they are already there, do not re-run it.
 **No second reviewer family → stop.** This is multi-model review; without at
 least one reviewer from a model family other than yours (the host model
 reading this) there is nothing here that a single-model review does not
-already do. The pipeline runs four as reviewers: Codex, OpenCode, OpenRouter
+already do. The pipeline can run Codex, Copilot, OpenCode, OpenRouter
 (a headless `claude` driving a non-Claude model) and Gemini — any one of a
 different family than yours satisfies the gate (on Codex, Codex does not) —
 but only if it is in the profile that will run
@@ -58,6 +58,11 @@ but only if it is in the profile that will run
 profile leaves out reviews nothing. If the profile has no configured
 non-Claude backend, say so and point at `/multi:setup`. Do not quietly deliver a one-model
 review wearing a multi-model label.
+Copilot Auto's model family is unknown until it answers. If it is the only
+possible outside family, defer this gate until its answer names the model.
+Copilot choosing GPT alongside a Codex host is another reviewer, but not
+another model family. Report that distinction and do not call the result
+corroborated across families.
 
 Anything else missing is a note, not a stop: no OpenCode, no ponytail, not a
 git repo (fine — then the target is files, not a diff). Name what was missing
@@ -102,7 +107,7 @@ for permission, and you do not wait for an answer:
 ```
 Reviewing: <target, and where it came from — "what we just did", "branch vs main", "you asked for src/auth.py">
            <when $REPO is not the session's own checkout, show the resolved path so a wrong-tree review is caught before it runs>
-Running now: Codex <effort> · OpenCode <model> · ponytail          <— or why one is missing
+Running now: <the configured backends and models, including Copilot if selected> · ponytail <— or why one is missing>
 Then: <what decides the Claude spend>
 ```
 
@@ -331,7 +336,7 @@ what you actually know about the job. Without any of that, `ultra` degrades to
 
 ## Judge
 
-Normalize everything to `{file, line, severity, claim}`. Codex and OpenCode
+Normalize everything to `{file, line, severity, claim}`. Codex, Copilot and OpenCode
 both answer the unified review prompt as
 `FILE:LINE | HIGH|MEDIUM|LOW | reason`, with repo-relative paths. OpenCode's
 file has two parts: `## <model>` listing every tool call it made, then
@@ -373,9 +378,10 @@ function, even the same line with a different mechanism is two findings, and
 they stay two. When in doubt, keep them apart: a duplicate costs the reader one
 line, a merge costs them a bug.
 
-- **Corroborated** — two or more reviewers from different families (the host
-  model's roles / Codex / OpenCode / OpenRouter / Gemini) named the same
-  mechanism. Two of your own role passes agreeing is one family, not two. Leads the report; independent
+- **Corroborated** — two or more reviewers whose actual models belong to different
+  families named the same mechanism. Identify the family from each response,
+  especially Copilot Auto; a different CLI does not prove a different family.
+  Two of your own role passes agreeing is one family, not two. Leads the report; independent
   agreement is the strongest evidence this pipeline produces.
 - **Single-source** — one reviewer. Check each before the user sees it: open the
   cited lines, confirm it is real and reachable. In `ultra`, spawn one
@@ -410,8 +416,8 @@ not a schema — drop empty sections, and match the surrounding conversation.
 
 ```
 # 🔍 Multi-review — <target> · <mode>
-Reviewers: <host> <n roles> · Codex <effort> · OpenCode <model> · ponytail (lens: same judge, different ruleset)
-Families that ran: <k> — <e.g. Claude, OpenAI, OpenCode/free> · missing: <who, and why — or "none">
+Reviewers: <host> <n roles> · <each backend that ran, with its actual model> · ponytail (lens: same judge, different ruleset)
+Families that ran: <k> — <actual model families, or "unknown" when the model was not reported> · missing: <who, and why — or "none">
 <one line if something was missing or died, and why>
 
 ## 📋 Everything raised (<N>)

@@ -44,7 +44,7 @@ except ModuleNotFoundError:  # python < 3.11
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "_vendor"))
     import tomli as tomllib  # type: ignore
 
-TYPES = ("claude-headless", "codex", "opencode", "gemini")
+TYPES = ("claude-headless", "codex", "opencode", "gemini", "copilot")
 BACKEND_KEYS = {"type", "models", "base_url", "api_key_env", "timeout", "stall", "avoid"}
 TOP_KEYS = {"backends", "profiles", "default_profile"}
 DEFAULT_TIMEOUT = 300
@@ -63,19 +63,20 @@ HEADLESS_TIMEOUT = 1800
 DEFAULT_TOML = """\
 # multi — who answers when several models are asked the same thing.
 #
-# backends: named ways to run a model. Four types exist:
+# backends: named ways to run a model. Five types exist:
 #   codex            the Codex CLI, read-only sandbox
 #   opencode         the OpenCode CLI with the plugin's read-only agent
 #   claude-headless  `claude -p` pointed at any Anthropic-compatible endpoint
 #                    (OpenRouter, 9router, z.ai, Moonshot, a self-hosted router)
 #   gemini           the Gemini CLI
+#   copilot          GitHub Copilot CLI, read-only tools (Student: Auto only)
 # The same type may appear under several names — two claude-headless backends
 # with different base_url and api_key_env are two different reviewers.
 #
 # models: ordered fallback chain, first entry preferred. An empty list means
-# the CLI's own default (codex, gemini) or a free model picked from
+# the CLI's own default (codex, gemini), Auto (copilot), or a free model picked from
 # `opencode models` at run time (opencode). claude-headless needs at least one.
-# Only opencode and claude-headless walk a chain today; codex and gemini take
+# Only opencode and claude-headless walk a chain today; codex, gemini and copilot take
 # at most one model, and the config says so instead of ignoring the rest.
 # base_url: claude-headless only.
 # api_key_env: the variable in providers.env holding the key; defaults to
@@ -118,6 +119,10 @@ models = [               # :free pools go 429 when busy; the runner walks the li
 [backends.gemini]
 type = "gemini"
 models = []
+
+[backends.copilot]
+type = "copilot"
+models = []             # empty = Auto; Student plans support Auto only
 
 [profiles]
 default = ["codex", "opencode", "openrouter"]
@@ -280,7 +285,7 @@ def validate(raw, where):
                 raise ConfigError("%s: base_url must be https:// (http:// only on localhost) — the API key is sent there as a Bearer token" % w)
         elif "base_url" in b:
             raise ConfigError("%s: base_url only applies to type = \"claude-headless\"" % w)
-        if t in ("codex", "gemini") and len(models) > 1:
+        if t in ("codex", "gemini", "copilot") and len(models) > 1:
             raise ConfigError("%s: type %s takes at most one model — fallback chains are walked by opencode and claude-headless only, and the rest of this list would be silently ignored" % (w, t))
         if "stall" in b and t not in ("opencode", "claude-headless"):
             raise ConfigError("%s: stall only applies to type = \"opencode\" or \"claude-headless\"" % w)

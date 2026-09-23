@@ -126,6 +126,14 @@ snap_is_stripped() { # snap_is_stripped <path> -> 0 for a harness rule/config fi
     .opencode|.opencode/*|opencode.json|*/.opencode|*/.opencode/*|*/opencode.json) r=0 ;;
     opencode.jsonc|*/opencode.jsonc|opencode.config.*|*/opencode.config.*|.mcp.json|*/.mcp.json) r=0 ;;
     .claude|.claude/*|*/.claude|*/.claude/*|.gemini|.gemini/*|*/.gemini|*/.gemini/*) r=0 ;;
+    .copilot|.copilot/*|*/.copilot|*/.copilot/*) r=0 ;;
+    .github/hooks|.github/hooks/*|*/.github/hooks|*/.github/hooks/*) r=0 ;;
+    .github/copilot|.github/copilot/*|*/.github/copilot|*/.github/copilot/*) r=0 ;;
+    .github/mcp.json|*/.github/mcp.json) r=0 ;;
+    .github/agents|.github/agents/*|*/.github/agents|*/.github/agents/*) r=0 ;;
+    .github/skills|.github/skills/*|*/.github/skills|*/.github/skills/*) r=0 ;;
+    .github/instructions|.github/instructions/*|*/.github/instructions|*/.github/instructions/*) r=0 ;;
+    .github/copilot-instructions.md|*/.github/copilot-instructions.md) r=0 ;;
     CLAUDE.md|CLAUDE.local.md|AGENTS.md|AGENTS.override.md|GEMINI.md) r=0 ;;
     */CLAUDE.md|*/CLAUDE.local.md|*/AGENTS.md|*/AGENTS.override.md|*/GEMINI.md) r=0 ;;
     .gitignore|*/.gitignore|.geminiignore|*/.geminiignore) r=0 ;;
@@ -185,7 +193,11 @@ git -C "$ROOT" ls-files -z --cached --others --exclude-standard | while IFS= rea
 # case-insensitively, at any depth, whatever slipped through.
 find "$DEST" \( -iname '.opencode' -o -iname 'opencode.json' -o -iname 'opencode.jsonc' \
                 -o -iname 'opencode.config.*' \
-                -o -iname '.claude' -o -iname '.gemini' -o -iname '.mcp.json' \
+                -o -iname '.claude' -o -iname '.gemini' -o -iname '.copilot' -o -iname '.mcp.json' \
+                -o -path '*/.github/hooks' -o -path '*/.github/copilot' \
+                -o -path '*/.github/mcp.json' \
+                -o -path '*/.github/agents' -o -path '*/.github/skills' \
+                -o -path '*/.github/instructions' -o -path '*/.github/copilot-instructions.md' \
                 -o -iname 'CLAUDE.md' -o -iname 'CLAUDE.local.md' \
                 -o -iname 'AGENTS.md' -o -iname 'AGENTS.override.md' -o -iname 'GEMINI.md' \
                 -o -iname '.gitignore' -o -iname '.geminiignore' \) \

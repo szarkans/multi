@@ -12,6 +12,11 @@ type = "codex"
 models = []                          # empty = the CLI's default; at most one model here
 timeout = 600                        # seconds for one run; default 300 (claude-headless: 1800, a ceiling)
 
+[backends.copilot]                   # type "copilot": GitHub Copilot CLI, read-only tools
+type = "copilot"
+models = []                          # empty = Auto; Student plans allow Auto only
+timeout = 600                        # named models require a plan that permits manual selection
+
 [backends.opencode]                  # type "opencode": OpenCode CLI, plugin's read-only agent
 type = "opencode"
 models = []                          # empty = a free model from `opencode models`, others as fallback
@@ -68,6 +73,7 @@ models = []                          # empty = CLI default; at most one model he
 # profile you pick on purpose, not in the one every review runs with.
 [profiles]
 normal  = ["codex", "glm"]
+copilot_review = ["codex", "copilot"] # opt in: Copilot runs consume your allowance
 free    = ["opencode", "openrouter:z-ai/glm-5.2:free"]   # pinned: the bare backend walks its paid models first
 paid    = ["codex", "opencode-paid", "deepseek"]   # in deepseek's peak hours this runs two reviewers, and says so
 compare = ["openrouter:qwen/qwen3.8-flash", "openrouter:deepseek/deepseek-v4-flash-0731", "glm"]

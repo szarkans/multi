@@ -1,8 +1,8 @@
 {
   "name": "multi",
   "displayName": "Multi",
-  "version": "1.15.1",
-  "description": "Several models on the same question at once — Claude sub-agents, OpenAI Codex and a cheap third via OpenCode. Review code (`code-review`), check whether the work is actually finished rather than finished-looking (`check-if-done`), brainstorm wide with a different model per cognitive frame (`adhd`), or just ask all of them something (`ask`). Missing reviewers degrade honestly instead of silently.",
+  "version": "1.16.0",
+  "description": "Several models on the same question at once — host reviewers, Codex, Copilot CLI and OpenCode. Review code (`code-review`), check whether the work is actually finished (`check-if-done`), brainstorm with different model frames (`adhd`), or ask them all a question (`ask`). Missing reviewers are reported explicitly.",
   "author": {
     "name": "Sergei Shatrov",
     "url": "https://github.com/szarkans"
@@ -14,6 +14,7 @@
     "code-review",
     "codex",
     "opencode",
+    "copilot",
     "multi-model",
     "consensus",
     "review",

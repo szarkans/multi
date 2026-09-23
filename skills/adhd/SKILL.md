@@ -2,8 +2,8 @@
 name: adhd
 description: >-
   Divergent ideation across model families — the same brainstorm, but each
-  cognitive frame is handed to a different model (Claude sub-agent, OpenAI
-  Codex, a cheap third via OpenCode) so the ideas diverge by frame and by
+  cognitive frame is handed to a different model (host sub-agent, Codex,
+  OpenCode or Copilot) so the ideas diverge by frame and by
   model priors at once. Use for open design questions, architecture and API
   shape, naming, schema choices, fuzzy bugs with no known root cause, or on
   "multi adhd", "brainstorm with everyone", "wide ideas from all models".
@@ -53,26 +53,29 @@ Pick 5 frames from the table. Bias to `code`/`design` tags for code-shaped
 problems, always keep one `wild` for range. Vary the picks between runs so the
 same problem gives a different pool the second time.
 
-**Hand each frame to a different backend, rotating.** With all three alive:
+**Hand each frame to a different backend, rotating.** Choose two available
+external backends from the probe; use Copilot when it was selected or when
+OpenCode is absent. Copilot Auto may choose the same model family as Codex:
+read its actual model from the answer and report that overlap. With a host
+agent and two external backends A and B:
 
 | frame | backend |
 |---|---|
 | 1 | host sub-agent (the model running this skill) |
-| 2 | Codex |
-| 3 | OpenCode |
+| 2 | external A |
+| 3 | external B |
 | 4 | host sub-agent |
-| 5 | Codex |
+| 5 | external A |
 
-Start the external models **first** — they take 30–90 seconds and OpenCode
-spends most of a minute waking up. Launch the host-side frames while they run.
+Start the external models **first**. Launch the host-side frames while they run.
 
 ```bash
 RUN="$($SCRIPTS/run-dir.sh --slug <two-to-four words: the project and the job, e.g. skills-fixing-multi>)"
 
 $SCRIPTS/ask.sh --question-file "$RUN/adhd-f2.md" --out-prefix "$RUN/adhd-f2" \
-                --backend codex --effort medium &
+                --backend <external-A> --effort medium &
 $SCRIPTS/ask.sh --question-file "$RUN/adhd-f3.md" --out-prefix "$RUN/adhd-f3" \
-                --backend opencode &
+                --backend <external-B> &
 wait
 ```
 
@@ -87,8 +90,8 @@ do not overwrite each other. Shell variables do not survive between commands —
 repeat that first line in every later block that uses `$RUN`, including the
 frame files you write above.
 
-One frame per file, one file per run. `--backend` exists precisely so the two
-CLIs can get **different** questions in parallel instead of the same one.
+One frame per file, one file per run. `--backend` lets the two CLIs get
+**different** questions in parallel instead of the same one.
 
 Every branch — agent or CLI — gets only the problem, the user's context, its
 own frame, and this instruction:
@@ -113,29 +116,28 @@ wearing five hats, not five branches.
 ### When a backend is missing or dies
 
 The probe says who is alive. A missing backend's frames go to host
-sub-agents, and the report says so in one line: *"Codex not installed — frames
+sub-agents, and the report says so in one line: *"External A missing — frames
 2 and 5 ran as host agents."* A host with **no sub-agents at all** does not run
 frames inline — sequential frames in one context see each other's ideas, which
 is the one thing this method forbids. Give those frames to the external
 backends instead (a second `ask.sh` call per frame, different backend each),
 or run fewer frames and say so. Never quietly re-label a host-model idea as
-Codex's. Read the one-line text in `${RUN}/...-codex.txt.dead` and
-`${RUN}/...-opencode.txt.dead` for `codex: ...` / `opencode: ...` reasons;
-those files explain missing/failed backends. `codex: MISSING`, `opencode: NO OUTPUT`, `opencode: TIMEOUT`
+another backend's. Read the one-line text in each
+`${RUN}/...-<backend>.txt.dead` for the failure reason;
+those files explain missing/failed backends. `MISSING`, `NO OUTPUT`, `TIMEOUT`
 and an empty file are all "did not run" — check the file content, not just
 that a file exists. Mention `/multi:setup` in the report when a backend is
 missing — that's where they go to connect it.
 
 ### Reading the CLI output
 
-Codex writes the answer clean. OpenCode writes a terminal transcript: ANSI
-escapes, a `> build · <model>` header, sometimes tool calls before the answer.
-Run both through the parser rather than eyeballing them:
+Run both outputs through the parser rather than eyeballing them. Substitute
+the selected backend names in the paths:
 
 ```bash
 RUN="$($SCRIPTS/run-dir.sh)"
-python3 $SCRIPTS/parse-branch.py "$RUN/adhd-f2-codex.txt" "$RUN/adhd-f3-opencode.txt" \
-  || python $SCRIPTS/parse-branch.py "$RUN/adhd-f2-codex.txt" "$RUN/adhd-f3-opencode.txt"
+python3 $SCRIPTS/parse-branch.py "$RUN/adhd-f2-<external-A>.txt" "$RUN/adhd-f3-<external-B>.txt" \
+  || python $SCRIPTS/parse-branch.py "$RUN/adhd-f2-<external-A>.txt" "$RUN/adhd-f3-<external-B>.txt"
 ```
 
 The `|| python` is not superstition: on Windows the name `python3` resolves to
@@ -157,8 +159,8 @@ branch produced nothing — say so in the report, do not invent ideas for it.
    angle: "remove the file entirely" plays, "catch the drift" plays.
 
 3. **Deepen the top 3** by weighted score (novelty 0.35 + viability 0.40 +
-   fit 0.25), traps excluded. Send them to *different* backends — one Claude
-   agent, one Codex, one OpenCode — for the same reason Phase 1 splits:
+   fit 0.25), traps excluded. Send them to *different* backends — one host
+   agent, one external A, one external B — for the same reason Phase 1 splits:
 
    > You are in FOCUS mode. Take one promising idea and connect dots. Sketch
    > how it would actually work in 4 to 8 sentences. Name the load-bearing

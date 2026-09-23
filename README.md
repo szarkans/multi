@@ -13,6 +13,7 @@
 currently supports:
 - claude subagents
 - codex
+- github copilot cli
 - opencode
 - gemini
 - headless claude code with any API key or base URL you provide (e.g. [openrouter api key](https://openrouter.ai/), [9router url](https://9router.com/), etc)
@@ -90,7 +91,9 @@ it picks its own section. the short form:
 
 once you ran `/multi:setup`, two files will be created: `~/.config/multi/config.toml` - who reviews, which models, in what order, and what runs by default and `~/.config/multi/providers.env` - api keys for you providers if you have any. `MULTI_HOME` moves the whole directory (`$XDG_CONFIG_HOME/multi` is honoured). before 1.15.0 it was `~/.claude/multi`: nothing is migrated, move the two files by hand, the probe reminds you once per run until you do
 
-a backend is a name + a type. four types: `codex`, `opencode`, `claude-headless` (claude code pointed at any anthropic-compatible endpoint: openrouter, 9router/omnirouter, local models, whatever you want) and `gemini`. want two endpoints? two `claude-headless` tables. a profile is who runs together.
+a backend is a name + a type. five types: `codex`, `copilot`, `opencode`, `claude-headless` (claude code pointed at any anthropic-compatible endpoint: openrouter, 9router/omnirouter, local models, whatever you want) and `gemini`. want two endpoints? two `claude-headless` tables. a profile is who runs together.
+
+`copilot` uses the GitHub Copilot CLI login and reads code with `view`, `grep`, and `glob`; it cannot edit or run shell commands as a reviewer. Add a `type = "copilot"` backend to your config and include it in a profile, or use `--backend copilot` for one run with the built-in config. No key goes in `providers.env`. `models = []` uses Auto and reports the actual model in the answer when the CLI provides it (`unknown` otherwise). Copilot Student supports Auto only; a named model in `models = ["..."]` or `copilot:<model>` needs a plan that permits manual selection. Auto chooses its own reasoning effort. Copilot spends your GitHub AI credit allowance, so the built-in default profile does not launch it.
 
 <details>
 

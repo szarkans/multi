@@ -2,7 +2,7 @@
 name: setup
 description: >-
   Walks a user through connecting the judge models this plugin can use — Codex,
-  OpenCode, OpenRouter (or any compatible endpoint: 9router, z.ai, Moonshot),
+  OpenCode, GitHub Copilot CLI, OpenRouter (or any compatible endpoint: 9router, z.ai, Moonshot),
   Gemini — and through picking models, including "research current models for
   me". Use for "multi setup", "set up multi", "configure judges/reviewers/
   backends", "connect 9router", "change/pick models", "onboarding", or whenever
@@ -89,7 +89,7 @@ missing backends, shaped like this (adjust to the actual gaps):
 Then recommend an order — the fewest steps to reach **at least one non-Claude
 reviewer** (without one, `/multi:code-review` refuses to run; with one it
 works, and each further backend makes it stronger). Typical value order:
-Codex if they have the subscription, otherwise an OpenRouter-style key,
+Codex or Copilot CLI if they have access, otherwise an OpenRouter-style key,
 OpenCode as the free floor, Gemini as a free extra.
 
 ## Connect each chosen backend
@@ -100,6 +100,7 @@ them to do it, then the next. Never paste four install blocks in one message.
 For each backend, read its reference file first and follow it:
 
 - **Codex (GPT)** — `references/codex.md`
+- **GitHub Copilot CLI** — `references/copilot.md`
 - **OpenCode** — `references/opencode.md`
 - **OpenRouter / 9router / z.ai / any compatible endpoint** — `references/openrouter.md`
 - **Gemini** — `references/gemini.md`

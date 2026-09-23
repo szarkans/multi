@@ -100,6 +100,13 @@ while IFS="$(printf '\t')" read -r name type chain url keyenv timeout stall avoi
       else
         say "$name: MISSING"
       fi ;;
+    copilot)
+      if command -v copilot >/dev/null 2>&1; then
+        ver="$(copilot --version 2>/dev/null | head -1)"
+        say "$name: CLI present — ${ver}${chain:+ — $chain}${chain:- — Auto} (login and quota checked when it runs; Student supports Auto only)"
+      else
+        say "$name: MISSING (install GitHub Copilot CLI; run: copilot login)"
+      fi ;;
     opencode)
       if ! command -v opencode >/dev/null 2>&1; then
         say "$name: MISSING (third reviewer will be skipped)"

@@ -18,7 +18,8 @@ echo "== no file: the built-in default runs the plugin as before =="
 say "check names the default" "$("$py" "$CFG" check | head -1)" "config: built-in default"
 say "default profile is codex, opencode, openrouter" "$(resolve | cut -f1 | tr '\n' ' ')" "codex opencode openrouter "
 say "both = the two CLIs" "$(resolve --backend both | cut -f1 | tr '\n' ' ')" "codex opencode "
-say "all = every backend" "$(resolve --backend all | cut -f1 | tr '\n' ' ')" "codex opencode openrouter gemini "
+say "all = every backend" "$(resolve --backend all | cut -f1 | tr '\n' ' ')" "codex opencode openrouter gemini copilot "
+say "copilot default is Auto" "$(resolve --backend copilot | cut -f3,4,5 | tr '\t' ' ')" "copilot - -"
 say "codex default timeout 600" "$(resolve --backend codex | cut -f8)" "600"
 say "--timeout raises every backend to at least N" "$(resolve --backend codex,opencode --timeout 450 | cut -f8 | tr '\n' ' ')" "600 450 "
 say "openrouter key variable defaults to NAME_API_KEY" "$(resolve --backend openrouter | cut -f7)" "OPENROUTER_API_KEY"
@@ -189,6 +190,12 @@ type="codex"
 models=["a","b"]
 [profiles]
 p=["x"]' "at most one model"
+refuse "copilot also refuses fallback chains" 'default_profile="p"
+[backends.x]
+type="copilot"
+models=["a","b"]
+[profiles]
+p=["x"]' "at most one model"
 refuse "api_key_env that is not a variable name (it is eval'd by name in bash)" 'default_profile="p"
 [backends.x]
 type="codex"
@@ -295,7 +302,7 @@ printf '%s\n' 'default_profile="p"' '[backends.x]' 'type="codex"' 'avoid=["Mon-F
 
 echo "== the repo's example config is valid and exercises every type =="
 MULTI_CONFIG="$TREE/config.example.toml" "$py" "$CFG" check >/dev/null 2>"$TMP/err"; say "config.example.toml validates" "$?:$(cat "$TMP/err")" "0:"
-say "every type appears in it" "$(MULTI_CONFIG="$TREE/config.example.toml" "$py" "$CFG" backends | cut -f2 | sort -u | tr '\n' ' ')" "claude-headless codex gemini opencode "
+say "every type appears in it" "$(MULTI_CONFIG="$TREE/config.example.toml" "$py" "$CFG" backends | cut -f2 | sort -u | tr '\n' ' ')" "claude-headless codex copilot gemini opencode "
 say "every key name in providers.example.env is read by some backend" "$(comm -23 <(grep -o '^export [A-Z_]*' "$TREE/providers.example.env" | sed 's/export //' | sort) <(MULTI_CONFIG="$TREE/config.example.toml" "$py" "$CFG" backends | cut -f5 | sort -u) | tr '\n' ' ')" ""
 
 echo "== the vendored parser is the same parser =="

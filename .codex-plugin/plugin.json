@@ -1,7 +1,7 @@
 {
   "name": "multi",
-  "version": "1.15.1",
-  "description": "Several models on the same question at once — the host model's reviewer roles, OpenAI Codex, OpenCode and any OpenRouter model — reconciled into one report. Review code, check whether the work is actually finished, brainstorm wide, or ask all of them something.",
+  "version": "1.16.0",
+  "description": "Several models on the same question at once — host reviewers, Codex, Copilot CLI, OpenCode and configured providers — reconciled into one report. Review code, check whether the work is finished, brainstorm, or ask all of them something.",
   "author": {
     "name": "Sergei Shatrov",
     "url": "https://github.com/szarkans"
@@ -9,7 +9,7 @@
   "homepage": "https://github.com/szarkans/multi",
   "repository": "https://github.com/szarkans/multi",
   "license": "MIT",
-  "keywords": ["code-review", "codex", "opencode", "multi-model", "consensus", "review"],
+  "keywords": ["code-review", "codex", "opencode", "copilot", "multi-model", "consensus", "review"],
   "skills": "./skills/",
   "interface": {
     "displayName": "Multi",

@@ -202,6 +202,61 @@ run_codex_one() {
   [ -s "$out" ] || [ ! -s "${out}.log" ] || multi_fail_backend "$out" "codex: NO OUTPUT — exit=$rc (stderr in ${out}.log)" "${out}.log"
 }
 
+run_copilot_one() {
+  local out="$1" model="${2:-auto}" rc=0 parsed=0
+  local raw="${out}.jsonl" log="${out}.log" parse_log="${out}.parse.log"
+  rm -f "${out}.dead"
+  command -v copilot >/dev/null 2>&1 || { multi_fail_backend "$out" "copilot: MISSING (install GitHub Copilot CLI)"; return 0; }
+  # Unlike model tools, project hooks execute outside --available-tools. The
+  # review snapshot removes these files; a direct /ask in a trusted checkout
+  # must stop instead of loading a repository's executable hook settings.
+  local scan_dir; scan_dir="$(pwd -P)"
+  while :; do
+    if [ -e "$scan_dir/.github/hooks" ] || [ -L "$scan_dir/.github/hooks" ] \
+      || [ -e "$scan_dir/.github/copilot" ] || [ -L "$scan_dir/.github/copilot" ] \
+      || [ -e "$scan_dir/.github/mcp.json" ] || [ -L "$scan_dir/.github/mcp.json" ] \
+      || [ -e "$scan_dir/.mcp.json" ] || [ -L "$scan_dir/.mcp.json" ] \
+      || [ -e "$scan_dir/.claude/settings.json" ] || [ -L "$scan_dir/.claude/settings.json" ] \
+      || [ -e "$scan_dir/.claude/settings.local.json" ] || [ -L "$scan_dir/.claude/settings.local.json" ]; then
+      multi_fail_backend "$out" "copilot: UNSAFE REPO CONFIG — project hooks/settings present; run on a snapshot (scripts/snapshot.sh)"
+      return 0
+    fi
+    [ "$scan_dir" = / ] && break
+    scan_dir="$(dirname "$scan_dir")"
+  done
+  # The snapshot is untrusted. Only view/grep/glob are exposed to the model:
+  # no shell, edit, web, MCP, skill or subagent tool. In particular, never use
+  # --allow-all-tools (nor inherit COPILOT_ALLOW_ALL=true): it can also trust
+  # repository hooks. The snapshot strips the project's Copilot hook config.
+  local effort_args=()
+  # Student plans allow Auto only, and Copilot rejects reasoning-effort with
+  # Auto. Some named models reject it too: let Copilot use its default at
+  # multi's default "medium", and send non-default effort only when selected.
+  if [ "$model" != auto ] && [ "$EFFORT" != medium ]; then
+    effort_args=(--reasoning-effort "$EFFORT")
+  fi
+  COPILOT_ALLOW_ALL=false GITHUB_COPILOT_PROMPT_MODE_WORKSPACE_MCP=false \
+    GITHUB_COPILOT_PROMPT_MODE_REPO_HOOKS=false \
+    GITHUB_COPILOT_PROMPT_MODE_EXTENSIONS=false \
+    multi_timeout "$MULTI_BACKEND_TIMEOUT" copilot \
+    -p "$QUESTION" --model "$model" ${effort_args[@]+"${effort_args[@]}"} \
+    --available-tools=view,grep,glob --allow-tool=read --deny-tool=write \
+    --disable-builtin-mcps --disallow-temp-dir \
+    --no-custom-instructions --no-ask-user \
+    --no-auto-update --no-remote-export --output-format=json --log-level=error \
+    > "$raw" 2> "$log"
+  rc=$?
+  if [ "$rc" -eq 124 ]; then
+    multi_fail_backend "$out" "copilot: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s — model=$model" "$log"
+  elif [ "$rc" -ne 0 ]; then
+    multi_fail_backend "$out" "copilot: FAILED — model=$model exit=$rc (stderr in $log)" "$log"
+  else
+    local py; py="$(multi_python)" || { multi_fail_backend "$out" "copilot: no Python to read JSONL"; return 0; }
+    "$py" "$SELF_DIR/copilot-report.py" "$raw" "$out" 2> "$parse_log"; parsed=$?
+    [ "$parsed" -eq 0 ] || multi_fail_backend "$out" "copilot: NO ANSWER — model=$model (JSONL in $raw; parser error in $parse_log)" "$parse_log"
+  fi
+}
+
 run_opencode_one() {
   local out="$1" model="$2" fallback="$3"
   local raw="${out}.jsonl"
@@ -517,6 +572,9 @@ for i in "${!NAMES[@]}"; do
     codex)
       ( MULTI_BACKEND_TIMEOUT="${TIMEOUTS[$i]}"; started "$out" && cd "$REPO_DIR" \
         && run_codex_one "$out" "${model:-${CODEX_MODEL:-$(first_of "$chain")}}"; finished "${SUFFIXES[$i]}" "$out" "$t0" "$name" ) & ;;
+    copilot)
+      ( MULTI_BACKEND_TIMEOUT="${TIMEOUTS[$i]}"; started "$out" && cd "$REPO_DIR" \
+        && run_copilot_one "$out" "${model:-$(first_of "$chain")}"; finished "${SUFFIXES[$i]}" "$out" "$t0" "$name" ) & ;;
     opencode)
       # Pinned: exactly that model. --model/--fallback: this run's chain.
       # Otherwise the config chain, or, when it is empty, a free model from the

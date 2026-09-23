@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.16.0 — 2026-09-23
+
+- GitHub Copilot CLI is available as an opt-in `copilot` backend. Auto works with Copilot Student; eligible plans can pin one model. The answer names the model Copilot reports, or `unknown` when it does not.
+- Copilot reads the isolated review copy with only file view/search tools. Its CLI output is parsed as JSONL so progress events and tool results cannot become review findings; failures get a `.dead` marker. Project Copilot hooks and settings are stripped from the review copy.
+
 ## 1.15.1 — 2026-09-13
 
 - Install like superpowers: `INSTALL.md` in the repo, the person tells their agent "Fetch and follow instructions from …/INSTALL.md" and it does its own host. Codex is two commands (`codex plugin marketplace add szarkans/multi`, `codex plugin add multi@szkills`) because Codex reads the repo's `.claude-plugin/marketplace.json` as a marketplace, nothing extra needed; OpenCode is one `skills.paths` entry instead of five symlinks. Why: 1.15.0 made the person hand-edit a marketplace file and create symlinks, which nobody should have to.

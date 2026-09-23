@@ -32,6 +32,11 @@ type = "codex"
 models = []                       # empty = the CLI's own default
 timeout = 600                     # seconds; default 300 (claude-headless: 1800, a ceiling)
 
+[backends.copilot]
+type = "copilot"
+models = []                       # empty = Auto; required on Copilot Student
+timeout = 600
+
 [backends.opencode]
 type = "opencode"
 models = ["opencode-go/glm-5.3-flash", "opencode/deepseek-v4-flash"]
@@ -48,12 +53,15 @@ normal = ["openrouter:x-ai/grok-4.5", "zcode", "codex"]
 
 Rules that matter when editing on a user's behalf:
 
-- Four types only: `claude-headless`, `codex`, `opencode`, `gemini`. The same
+- Five types only: `claude-headless`, `codex`, `copilot`, `opencode`, `gemini`. The same
   type may appear under several names — that is how a second endpoint is added.
 - `models` is an ordered fallback chain for `opencode` and `claude-headless`.
-  `claude-headless` needs at least one; `codex` and `gemini` take at most one;
+  `claude-headless` needs at least one; `codex`, `copilot` and `gemini` take at most one;
   an empty list is the CLI default, or for opencode a free model picked from
   `opencode models`.
+- For `copilot`, an empty list means Auto. Copilot Student can only use Auto;
+  named models need an eligible plan and may be pinned with `copilot:<model>`.
+  Copilot uses its CLI login, not a key in `providers.env`.
 - `timeout` is per backend. `ask.sh --timeout N` raises every backend to at
   least N for that run and never lowers one.
 - `avoid` is a list of windows the backend sits out, on any backend type:

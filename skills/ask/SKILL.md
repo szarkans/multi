@@ -1,8 +1,8 @@
 ---
 name: ask
 description: >-
-  Put one question to several models at once — you, OpenAI Codex, and a cheap
-  third via OpenCode — and show all the answers side by side. No judging, no
+  Put one question to several models at once — you and the configured backends
+  including Codex, Copilot and OpenCode — and show the answers side by side. No judging, no
   consensus: three opinions, the user picks. Use for "ask everyone", "what do
   the other models think", "second opinion", "multi ask", or any open question
   where one model's answer is not enough.
@@ -72,7 +72,7 @@ already ruled out — but leave the question itself alone.
 Effort defaults to `high`. Raise it for a hard design question, drop it to
 `medium` or `low` for something factual.
 
-If neither external model is available, say so and just answer normally. This
+If no external model is available, say so and just answer normally. This
 skill has nothing to add without them, and pretending otherwise is worse than
 a plain answer. Point them at `/multi:setup` to connect one.
 
