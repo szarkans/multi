@@ -9,3 +9,4 @@ docs/
 tmp/
 _incidents/
 CONTEXT.md
+.memsearch/

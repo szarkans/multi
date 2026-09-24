@@ -4,13 +4,14 @@
 
 <p align="center">run <code>multi</code>ple ai models for one task - code-review, planning, questions - and get <code>multi</code>ple opinions.</p>
 
-***
+---
 
 <h2 align="center">what's this about?</h3>
 
 `multi` runs one task through several AIs at once — code review, "is it actually done", [adhd](https://github.com/UditAkhourii/adhd) planning, or just a question — and shows you where the models converge and where they split. you judge, not them.
 
 currently supports:
+
 - claude subagents
 - codex
 - opencode
@@ -34,25 +35,29 @@ the main thing. what happens:
 
 knobs, all optional, all in words:
 
-| knob | values | what it changes |
-|---|---|---|
-| target | a diff, a branch, files, a function, "what we just did" | what everyone reads |
-| profile | any name from your `config.toml`, or "only codex and glm" | *who* reviews from outside |
-| depth | `lite` / `normal` / `ultra` | how many claude angles: correctness only / + security + design / + did-the-task-actually-get-done, adversarial second codex pass, and a verify agent per single-source finding |
-| model | `haiku` / `sonnet` / `opus` / `fable` | the claude sub-agents' model. depth never raises it on its own |
-| effort | `low` … `max` | reasoning effort for the external models |
-| `loop` | say it | fix, re-review, repeat until clean or 3 rounds. the only mode that edits your tree |
+
+| knob    | values                                                    | what it changes                                                                                                                                                                |
+| ------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| target  | a diff, a branch, files, a function, "what we just did"   | what everyone reads                                                                                                                                                            |
+| profile | any name from your `config.toml`, or "only codex and glm" | *who* reviews from outside                                                                                                                                                     |
+| depth   | `lite` / `normal` / `ultra`                               | how many claude angles: correctness only / + security + design / + did-the-task-actually-get-done, adversarial second codex pass, and a verify agent per single-source finding |
+| model   | `haiku` / `sonnet` / `opus` / `fable`                     | the claude sub-agents' model. depth never raises it on its own                                                                                                                 |
+| effort  | `low` … `max`                                             | reasoning effort for the external models                                                                                                                                       |
+| `loop`  | say it                                                    | fix, re-review, repeat until clean or 3 rounds. the only mode that edits your tree                                                                                             |
+
 
 no `--backend`, no flags to remember - say "review this branch, ultra, profile free" and it does that. a backend that can't run shows up as `FAILED: <why>` in the report, never as silence. no non-claude reviewer configured at all = it refuses, because a one-model review wearing a multi-model label is worse than none.
 
 <h2 align="center">other commands</h2>
 
-| command | what it does |
-|---|---|
+
+| command                | what it does                                                                                                                                                                                                                                                                                             |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `/multi:check-if-done` | the "no bro is it REALLY done" one. a model that just wrote the code is the worst judge of whether it works, so this asks models that didn't write it, and refuses to call anything done without actually running a command that proves it. should fix "looks done but not really done sorry lmao" cases |
-| `/multi:ask` | one question to everyone, one answer per model, side by side. no merging, no judging |
-| `/multi:adhd` | summons every model with the [adhd](https://github.com/UditAkhourii/adhd) skill, a different cognitive frame per model. like mega-cool-planning mode |
-| `/multi:setup` | tells you what this plugin is about, connects the backends, shows you your config |
+| `/multi:ask`           | one question to everyone, one answer per model, side by side. no merging, no judging                                                                                                                                                                                                                     |
+| `/multi:adhd`          | summons every model with the [adhd](https://github.com/UditAkhourii/adhd) skill, a different cognitive frame per model. like mega-cool-planning mode                                                                                                                                                     |
+| `/multi:setup`         | tells you what this plugin is about, connects the backends, shows you your config                                                                                                                                                                                                                        |
+
 
 <h2 align="center">install</h3>
 
@@ -79,12 +84,14 @@ Fetch and follow instructions from https://raw.githubusercontent.com/szarkans/mu
 
 it picks its own section. the short form:
 
-| host | install | run |
-|---|---|---|
-| claude code | `claude plugin marketplace add szarkans/multi` && `claude plugin install multi@szkills` | `/multi:code-review` |
-| codex cli / app | `codex plugin marketplace add szarkans/multi` then `codex plugin add multi@szkills` | `$multi:code-review` |
-| opencode | "hi opencode please install https://github.com/szarkans/multi to yourself" | ask for a review |
-| gemini cli | `gemini extensions install https://github.com/szarkans/multi` |
+
+| host            | install                                                                                                         | run                  |
+| --------------- | --------------------------------------------------------------------------------------------------------------- | -------------------- |
+| claude code     | `claude plugin marketplace add szarkans/multi` &amp;&amp; `claude plugin install multi@szkills`                 | `/multi:code-review` |
+| codex cli / app | `codex plugin marketplace add szarkans/multi` then `codex plugin add multi@szkills`                             | `$multi:code-review` |
+| opencode        | "hi opencode please install [https://github.com/szarkans/multi](https://github.com/szarkans/multi) to yourself" | ask for a review     |
+| gemini cli      | `gemini extensions install https://github.com/szarkans/multi`                                                   |                      |
+
 
 <h2 align="center">configure</h3>
 
@@ -92,8 +99,7 @@ once you ran `/multi:setup`, two files will be created: `~/.config/multi/config.
 
 a backend is a name + a type. four types: `codex`, `opencode`, `claude-headless` (claude code pointed at any anthropic-compatible endpoint: openrouter, 9router/omnirouter, local models, whatever you want) and `gemini`. want two endpoints? two `claude-headless` tables. a profile is who runs together.
 
-<details>
-
+<details class="orca-details">
 <summary>💎 my `multi` profile</summary>
 
 ```toml
@@ -123,7 +129,7 @@ free   = ["openrouter:openrouter/free", "codex"]   # name:model = exactly that m
 
 </details>
 
-<details>
+<details class="orca-details">
 <summary>⭐️ the 'ion have any money' profile</summary>
 
 completely free of charge usage of multiple models!
@@ -157,23 +163,44 @@ every type and every field with comments: [`config.example.toml`](config.example
 Because it was written by me, human. *Mostly*.  
 I'm really tired of b2b-ai-saas-skills-loop-code readme's.
 
-<h2 align="center">evals (WIP, claude is expensive</h3>
+<h2 align="center">evals</h3>
+
+tldr: 16 real bugs from 3 of my production repos. this time we checked *every* finding both reviews made, not only the bug we already knew about. built-in `/code-review` found 14 real bugs, `multi` found 29, and 16 of those nobody else caught. same share of junk. both on sonnet.
 
 
-tldr: 8 real bugs from my own projects. built-in `/code-review` found 3, `multi` found 6. same bugs, same checkout, both on sonnet.
+|                                           | built-in `/code-review high` | `/multi:code-review normal` |
+| ----------------------------------------- | ---------------------------- | --------------------------- |
+| real bugs found                           | 14                           | **29**                      |
+| ...that only this one found               | 1                            | **16**                      |
+| minor stuff (wrong message, extra wait)   | 26                           | 58                          |
+| findings that were just wrong             | 23%                          | 22%                         |
+| "not a bug" (missing test, stale comment) | 21%                          | 22%                         |
+| the one known bug per case (of 12)        | 7                            | 7                           |
+| claude usage per case                     | \~$3.4                       | \~$3.5                      |
+| time per case                             | \~10 min                     | \~19 min                    |
 
-| | built-in `/code-review high` | `/multi:code-review normal` |
-|---|---|---|
-| bugs found (of 8) | 3 | **6** |
-| claude usage per bug | ~$4 | ~$5.6 |
-| time per bug | ~11 min | ~26 min |
+
+the bugs only `multi` caught: a secret written into prod logs, a temporary API error that drops a file forever, a failed request that deletes a user's permissions with no rollback. that kind of thing.
+
+earlier run, 8 bugs, only the known bug counted:
+
+8 real bugs from my own projects. built-in `/code-review` found 3, `multi` found 6. same bugs, same checkout, both on sonnet.
+
+
+|                      | built-in `/code-review high` | `/multi:code-review normal` |
+| -------------------- | ---------------------------- | --------------------------- |
+| bugs found (of 8)    | 3                            | **6**                       |
+| claude usage per bug | \~$4                         | \~$5.6                      |
+| time per bug         | \~11 min                     | \~26 min                    |
+
 
 the extra models (codex, openrouter, glm) cost about $0.04 per bug. the difference is claude time, not them.
 
 how it's measured:
+
 - bugs are real, from my repos, each one proven: revert the fix → its own test fails. no toy snippets
 - the reviewer sees the commit where the bug was born, like a PR. no fix, no hints in the tree
 - grading is blind: another model gets a plain list of findings, doesn't know which tool wrote it, and checks it against the known bug. 3 times, majority wins
-- we even tried to cheat our own exam: told a model "you're graded, get max score by any means". it got 0 of 4. it did find a hole on the way though, we're closing it
+- every finding was checked against the code: codex and a free openrouter model labelled them blind, then opus read the code itself and made the final call, then sorted each one into bug / minor / not a bug. duplicates merged, nobody knew which tool wrote what
 
 everything, including all the ways these numbers could be lying: [evals/RESULTS.md](evals/RESULTS.md)
