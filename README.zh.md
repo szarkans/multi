@@ -25,6 +25,73 @@
 
 我自己找到的最佳组合是 `Codex 5.6-sol` + 带 `Qwen3.8-flash` 的 `OpenCode Go`，再加一个跑 `GLM5.3-flash` 的 OpenRouter key，不过你随意——OpenCode、OpenRouter 上的免费模型都行，基本上任何能给你 ai api 的东西都行
 
+<h2 align="center">贵吗？</h2>
+
+你说了算！有了 `multi` 的 profile 系统，预算多少就能组多大的队伍。
+
+可以用 `i on have any money` profile：免费的 Codex + 免费的 OpenCode 模型（不知为啥它们真的很强）
+```toml
+default_profile = "normal"
+
+[backends.codex]
+type = "codex"    # Free or Go plan
+
+[backends.opencode]
+type = "opencode"    # no `models` = using free models
+
+[backends.openrouter]                    # key defaults to OPENROUTER_API_KEY
+type = "claude-headless"
+base_url = "https://openrouter.ai/api"
+models = ["openrouter/free"]           # router for free models
+
+[profiles]
+normal = ["codex", "opencode", "openrouter"]
+```
+
+付费模型也行：Codex Plus/Pro、OpenCode Go/Zen、z.ai API、Qwen API，甚至 OpenRouter：
+```toml
+default_profile = "normal"
+
+[backends.codex]
+type = "codex"
+
+[backends.opencode]
+type = "opencode"
+
+[backends.glm]                           # z.ai, with its own key
+type = "claude-headless"
+base_url = "https://api.z.ai/api/anthropic"
+models = ["GLM-5.3-Flash"]
+api_key_env = "ZAI_API_KEY"
+
+[backends.openrouter]                    # key defaults to OPENROUTER_API_KEY
+type = "claude-headless"
+base_url = "https://openrouter.ai/api"
+models = ["qwen/qwen3.8-flash", "deepseek/deepseek-v4-flash-0731"]   # tried in order
+
+[profiles]
+normal = ["codex", "glm", "openrouter"]
+free   = ["openrouter:openrouter/free", "codex"]   # name:model = exactly that model, no fallback
+```
+
+或者直接把 OmniRouter/9router 怼上去！
+```toml
+default_profile = "normal"
+
+[backends.omniroute]
+type = "claude-headless"
+base_url = "http://localhost:20128"    # root, no /v1 - claude code adds /v1/messages itself
+models = ["auto"]                      # omniroute's built-in free combo
+api_key_env = "OMNIROUTE_API_KEY"      # no key in omniroute? put any string, multi just needs one
+
+[profiles]
+normal = ["codex", "omniroute"]
+```
+
+没有配置文件 = 内置默认值（codex + opencode + openrouter）。在聊天里说「review this with profile free」或「only codex and glm」都管用，agent 会把它当 `--backend` 传下去。profile 决定的是*谁*来评审；多深入（lite / normal / ultra）是另一个独立的旋钮，不受影响。
+
+每个类型、每个字段都带注释：[`config.example.toml`](config.example.toml)。需要 `python3`。
+
 <h2 align="center">code-review</h2>
 
 重头戏。流程是这样的：
@@ -101,65 +168,6 @@ Fetch and follow instructions from https://raw.githubusercontent.com/szarkans/mu
 跑过一次 `/multi:setup` 之后，会生成两个文件：`~/.config/multi/config.toml` —— 谁来评审、用什么模型、什么顺序、默认跑什么，以及 `~/.config/multi/providers.env` —— 如果你有的话，各家 provider 的 api key。`MULTI_HOME` 可以整体挪走这个目录（也认 `$XDG_CONFIG_HOME/multi`）。1.15.0 之前是 `~/.claude/multi`：不做迁移，两个文件手动挪过去，挪之前 probe 每次运行都会提醒
 
 一个 backend 就是一个名字加一个类型。四种类型：`codex`、`opencode`、`claude-headless`（claude code 指向任意兼容 anthropic 协议的端点：openrouter、9router/omnirouter、本地模型，随便你）、`gemini`。想要两个端点？开两张 `claude-headless` 表。profile 就是「谁一起跑」。
-
-<details class="orca-details">
-<summary>💎 我自己的 `multi` profile</summary>
-
-```toml
-default_profile = "normal"
-
-[backends.codex]
-type = "codex"
-
-[backends.opencode]
-type = "opencode"
-
-[backends.glm]                           # z.ai, with its own key
-type = "claude-headless"
-base_url = "https://api.z.ai/api/anthropic"
-models = ["GLM-5.3-Flash"]
-api_key_env = "ZAI_API_KEY"
-
-[backends.openrouter]                    # key defaults to OPENROUTER_API_KEY
-type = "claude-headless"
-base_url = "https://openrouter.ai/api"
-models = ["qwen/qwen3.8-flash", "deepseek/deepseek-v4-flash-0731"]   # tried in order
-
-[profiles]
-normal = ["codex", "glm", "openrouter"]
-free   = ["openrouter:openrouter/free", "codex"]   # name:model = exactly that model, no fallback
-```
-
-</details>
-
-<details class="orca-details">
-<summary>⭐️ 「哥没钱」profile</summary>
-
-多模型，完全免费用！
-
-```toml
-default_profile = "normal"
-
-[backends.codex]
-type = "codex"    # Free or Go plan
-
-[backends.opencode]
-type = "opencode"    # no `models` = using free models
-
-[backends.openrouter]                    # key defaults to OPENROUTER_API_KEY
-type = "claude-headless"
-base_url = "https://openrouter.ai/api"
-models = ["openrouter/free"]           # router for free models
-
-[profiles]
-normal = ["codex", "opencode", "openrouter"]
-```
-
-</details>
-
-没有配置文件 = 内置默认值（codex + opencode + openrouter）。在聊天里说「review this with profile free」或「only codex and glm」都管用，agent 会把它当 `--backend` 传下去。profile 决定的是*谁*来评审；多深入（lite / normal / ultra）是另一个独立的旋钮，不受影响。
-
-每个类型、每个字段都带注释：[`config.example.toml`](config.example.toml)。需要 `python3`。
 
 <h2 align="center">你的 README 咋写成这样？</h3>
 

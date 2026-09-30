@@ -25,6 +25,73 @@ three LLMs can find 5 bugs but only one will find 6th - and that's why you **nee
 
 best combo i found to myself is `Codex 5.6-sol` + `OpenCode Go` with `Qwen3.8-flash` and OpenRouter key with `GLM5.3-flash`, but you do you - you can use free models from OpenCode, OpenRouter and basically anything that grants you ai api
 
+<h2 align="center">is it expensive?</h2>
+
+you decide! with `multi`'s profile system you can make whatever team you can afford on a budget.
+
+you can use `i on have any money` profile with Free Codex + Free OpenCode models (which are for some reason are really powerful)
+```toml
+default_profile = "normal"
+
+[backends.codex]
+type = "codex"    # Free or Go plan
+
+[backends.opencode]
+type = "opencode"    # no `models` = using free models
+
+[backends.openrouter]                    # key defaults to OPENROUTER_API_KEY
+type = "claude-headless"
+base_url = "https://openrouter.ai/api"
+models = ["openrouter/free"]           # router for free models
+
+[profiles]
+normal = ["codex", "opencode", "openrouter"]
+```
+
+you can use paid models with Codex Plus/Pro, OpenCode Go/Zen, z.ai API, Qwen API and even OpenRouter:
+```toml
+default_profile = "normal"
+
+[backends.codex]
+type = "codex"
+
+[backends.opencode]
+type = "opencode"
+
+[backends.glm]                           # z.ai, with its own key
+type = "claude-headless"
+base_url = "https://api.z.ai/api/anthropic"
+models = ["GLM-5.3-Flash"]
+api_key_env = "ZAI_API_KEY"
+
+[backends.openrouter]                    # key defaults to OPENROUTER_API_KEY
+type = "claude-headless"
+base_url = "https://openrouter.ai/api"
+models = ["qwen/qwen3.8-flash", "deepseek/deepseek-v4-flash-0731"]   # tried in order
+
+[profiles]
+normal = ["codex", "glm", "openrouter"]
+free   = ["openrouter:openrouter/free", "codex"]   # name:model = exactly that model, no fallback
+```
+
+or just stick OmniRouter/9router to it!
+```toml
+default_profile = "normal"
+
+[backends.omniroute]
+type = "claude-headless"
+base_url = "http://localhost:20128"    # root, no /v1 - claude code adds /v1/messages itself
+models = ["auto"]                      # omniroute's built-in free combo
+api_key_env = "OMNIROUTE_API_KEY"      # no key in omniroute? put any string, multi just needs one
+
+[profiles]
+normal = ["codex", "omniroute"]
+```
+
+no config file = built-in default (codex + opencode + openrouter). "review this with profile free" or "only codex and glm" works in chat, the agent passes it as `--backend`. profile is *who* reviews; how deep (lite / normal / ultra) is a separate knob and doesn't change.
+
+every type and every field with comments: [`config.example.toml`](config.example.toml). needs `python3`.
+
 <h2 align="center">code-review</h2>
 
 the main thing. what happens:
@@ -98,65 +165,6 @@ it picks its own section. the short form:
 once you ran `/multi:setup`, two files will be created: `~/.config/multi/config.toml` - who reviews, which models, in what order, and what runs by default and `~/.config/multi/providers.env` - api keys for you providers if you have any. `MULTI_HOME` moves the whole directory (`$XDG_CONFIG_HOME/multi` is honoured). before 1.15.0 it was `~/.claude/multi`: nothing is migrated, move the two files by hand, the probe reminds you once per run until you do
 
 a backend is a name + a type. four types: `codex`, `opencode`, `claude-headless` (claude code pointed at any anthropic-compatible endpoint: openrouter, 9router/omnirouter, local models, whatever you want) and `gemini`. want two endpoints? two `claude-headless` tables. a profile is who runs together.
-
-<details class="orca-details">
-<summary>💎 my `multi` profile</summary>
-
-```toml
-default_profile = "normal"
-
-[backends.codex]
-type = "codex"
-
-[backends.opencode]
-type = "opencode"
-
-[backends.glm]                           # z.ai, with its own key
-type = "claude-headless"
-base_url = "https://api.z.ai/api/anthropic"
-models = ["GLM-5.3-Flash"]
-api_key_env = "ZAI_API_KEY"
-
-[backends.openrouter]                    # key defaults to OPENROUTER_API_KEY
-type = "claude-headless"
-base_url = "https://openrouter.ai/api"
-models = ["qwen/qwen3.8-flash", "deepseek/deepseek-v4-flash-0731"]   # tried in order
-
-[profiles]
-normal = ["codex", "glm", "openrouter"]
-free   = ["openrouter:openrouter/free", "codex"]   # name:model = exactly that model, no fallback
-```
-
-</details>
-
-<details class="orca-details">
-<summary>⭐️ the 'ion have any money' profile</summary>
-
-completely free of charge usage of multiple models!
-
-```toml
-default_profile = "normal"
-
-[backends.codex]
-type = "codex"    # Free or Go plan
-
-[backends.opencode]
-type = "opencode"    # no `models` = using free models
-
-[backends.openrouter]                    # key defaults to OPENROUTER_API_KEY
-type = "claude-headless"
-base_url = "https://openrouter.ai/api"
-models = ["openrouter/free"]           # router for free models
-
-[profiles]
-normal = ["codex", "opencode", "openrouter"]
-```
-
-</details>
-
-no config file = built-in default (codex + opencode + openrouter). "review this with profile free" or "only codex and glm" works in chat, the agent passes it as `--backend`. profile is *who* reviews; how deep (lite / normal / ultra) is a separate knob and doesn't change.
-
-every type and every field with comments: [`config.example.toml`](config.example.toml). needs `python3`.
 
 <h2 align="center">why your README written like that?</h3>
 

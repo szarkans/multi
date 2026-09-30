@@ -25,6 +25,73 @@
 
 лучшая связка, которую я себе нашёл: `Codex 5.6-sol` + `OpenCode Go` с `Qwen3.8-flash` и ключ OpenRouter с `GLM5.3-flash`, но делай как хочешь — можно бесплатные модели из OpenCode, OpenRouter и вообще что угодно, что даёт тебе ai api
 
+<h2 align="center">это дорого?</h2>
+
+решай сам! профили в `multi` позволяют собрать любую команду, какую потянешь по деньгам.
+
+можно взять профиль `i on have any money`: бесплатный Codex + бесплатные модели OpenCode (которые почему-то реально мощные)
+```toml
+default_profile = "normal"
+
+[backends.codex]
+type = "codex"    # Free or Go plan
+
+[backends.opencode]
+type = "opencode"    # no `models` = using free models
+
+[backends.openrouter]                    # key defaults to OPENROUTER_API_KEY
+type = "claude-headless"
+base_url = "https://openrouter.ai/api"
+models = ["openrouter/free"]           # router for free models
+
+[profiles]
+normal = ["codex", "opencode", "openrouter"]
+```
+
+платные модели тоже можно - через Codex Plus/Pro, OpenCode Go/Zen, z.ai API, Qwen API и даже OpenRouter:
+```toml
+default_profile = "normal"
+
+[backends.codex]
+type = "codex"
+
+[backends.opencode]
+type = "opencode"
+
+[backends.glm]                           # z.ai, with its own key
+type = "claude-headless"
+base_url = "https://api.z.ai/api/anthropic"
+models = ["GLM-5.3-Flash"]
+api_key_env = "ZAI_API_KEY"
+
+[backends.openrouter]                    # key defaults to OPENROUTER_API_KEY
+type = "claude-headless"
+base_url = "https://openrouter.ai/api"
+models = ["qwen/qwen3.8-flash", "deepseek/deepseek-v4-flash-0731"]   # tried in order
+
+[profiles]
+normal = ["codex", "glm", "openrouter"]
+free   = ["openrouter:openrouter/free", "codex"]   # name:model = exactly that model, no fallback
+```
+
+или просто присобачь к этому OmniRouter/9router!
+```toml
+default_profile = "normal"
+
+[backends.omniroute]
+type = "claude-headless"
+base_url = "http://localhost:20128"    # root, no /v1 - claude code adds /v1/messages itself
+models = ["auto"]                      # omniroute's built-in free combo
+api_key_env = "OMNIROUTE_API_KEY"      # no key in omniroute? put any string, multi just needs one
+
+[profiles]
+normal = ["codex", "omniroute"]
+```
+
+нет конфиг-файла = встроенный дефолт (codex + opencode + openrouter). «ревьюни это с профилем free» или «только codex и glm» работает прямо в чате, агент передаёт это как `--backend`. profile - это *кто* ревьюит; насколько глубоко (lite / normal / ultra) - отдельная ручка и не меняется.
+
+каждый тип и каждое поле с комментариями: [`config.example.toml`](config.example.toml). нужен `python3`.
+
 <h2 align="center">код-ревью</h2>
 
 главное. что происходит:
@@ -100,71 +167,12 @@ Fetch and follow instructions from https://raw.githubusercontent.com/szarkans/mu
 
 бэкенд - это имя + тип. четыре типа: `codex`, `opencode`, `claude-headless` (claude code, направленный на любой anthropic-совместимый эндпоинт: openrouter, 9router/omnirouter, локальные модели, что угодно) и `gemini`. нужно два эндпоинта? две таблицы `claude-headless`. профиль - это кто ревьюит вместе.
 
-<details class="orca-details">
-<summary>💎 мой профиль `multi`</summary>
-
-```toml
-default_profile = "normal"
-
-[backends.codex]
-type = "codex"
-
-[backends.opencode]
-type = "opencode"
-
-[backends.glm]                           # z.ai, with its own key
-type = "claude-headless"
-base_url = "https://api.z.ai/api/anthropic"
-models = ["GLM-5.3-Flash"]
-api_key_env = "ZAI_API_KEY"
-
-[backends.openrouter]                    # key defaults to OPENROUTER_API_KEY
-type = "claude-headless"
-base_url = "https://openrouter.ai/api"
-models = ["qwen/qwen3.8-flash", "deepseek/deepseek-v4-flash-0731"]   # tried in order
-
-[profiles]
-normal = ["codex", "glm", "openrouter"]
-free   = ["openrouter:openrouter/free", "codex"]   # name:model = exactly that model, no fallback
-```
-
-</details>
-
-<details class="orca-details">
-<summary>⭐️ профиль «денег вообще нет»</summary>
-
-совершенно бесплатное использование нескольких моделей!
-
-```toml
-default_profile = "normal"
-
-[backends.codex]
-type = "codex"    # Free or Go plan
-
-[backends.opencode]
-type = "opencode"    # no `models` = using free models
-
-[backends.openrouter]                    # key defaults to OPENROUTER_API_KEY
-type = "claude-headless"
-base_url = "https://openrouter.ai/api"
-models = ["openrouter/free"]           # router for free models
-
-[profiles]
-normal = ["codex", "opencode", "openrouter"]
-```
-
-</details>
-
-нет конфиг-файла = встроенный дефолт (codex + opencode + openrouter). «ревьюни это с профилем free» или «только codex и glm» работает прямо в чате, агент передаёт это как `--backend`. profile - это *кто* ревьюит; насколько глубоко (lite / normal / ultra) - отдельная ручка и не меняется.
-
-каждый тип и каждое поле с комментариями: [`config.example.toml`](config.example.toml). нужен `python3`.
-
 <h2 align="center">почему README написан вот так?</h3>
 
 потому что его написал я, живой человек. *в основном*.  
 я реально задолбался от б2б-ии-саас-скиллс-луп-код ридми.
 
-<h2 align="center">евалы )</h3>
+<h2 align="center">евалы</h3>
 
 tldr: 16 настоящих багов из 3 моих продовых репо. в этот раз проверили *каждую* находку обоих ревью, а не только баг, который мы и так знали. встроенный `/code-review` нашёл 14 настоящих багов, `multi` нашёл 29, и 16 из них больше не поймал никто. мусора поровну. оба на sonnet.
 
