@@ -21,15 +21,15 @@ currently supports:
 <h2 align="center">what's the point?</h2>
 
 one model planning, doing and reviewing work is not good. by using `multi`ple models you can get something truly valuable - differing opinions.  
-three LLMs can find 5 bugs but only one will find 6th - and that's why you **need** to use `multi`. dont take my word fot it tho - check [evals](#evals) urself!   
+three LLMs can find 5 bugs but only one will find 6th - and that's why you **need** to use `multi`. don't take my word for it tho - check [evals](#evals) urself!   
 
-best combo i found to myself is `Codex 5.6-sol` + `OpenCode Go` with `Qwen3.8-flash` and OpenRouter key with `GLM5.3-flash`, but you do you - you can use free models from OpenCode, OpenRouter and basically anything that grants you ai api
+best combo i found for myself is the latest codex model + the latest chinese flash models, but you do you - you can use free models from OpenCode, OpenRouter and basically anything that gives you an ai api
 
 <h2 align="center">is it expensive?</h2>
 
 you decide! with `multi`'s profile system you can make whatever team you can afford on a budget.
 
-you can use `i on have any money` profile with Free Codex + Free OpenCode models (which are for some reason are really powerful)
+you can use the `i on have any money` profile with free Codex + free OpenCode models (which are, for some reason, really powerful). free is better than nothing, eh?
 ```toml
 default_profile = "normal"
 
@@ -42,7 +42,7 @@ type = "opencode"    # no `models` = using free models
 [backends.openrouter]                    # key defaults to OPENROUTER_API_KEY
 type = "claude-headless"
 base_url = "https://openrouter.ai/api"
-models = ["openrouter/free"]           # router for free models
+models = ["qwen/qwen3.8-27b:free", "nvidia/nemotron-3-ultra-550b-a55b:free", "stealth/another-stealth-model-alpha"]           # tried in order
 
 [profiles]
 normal = ["codex", "opencode", "openrouter"]
@@ -57,6 +57,7 @@ type = "codex"
 
 [backends.opencode]
 type = "opencode"
+models = ["opencode-go/kimi-k3", "opencode-go/deepseek-v4-pro"]   # opencode-go/ = Go sub, opencode/ = Zen pay-per-token
 
 [backends.glm]                           # z.ai, with its own key
 type = "claude-headless"
@@ -74,7 +75,7 @@ normal = ["codex", "glm", "openrouter"]
 free   = ["openrouter:openrouter/free", "codex"]   # name:model = exactly that model, no fallback
 ```
 
-or just stick OmniRouter/9router to it!
+or even stick OmniRouter/9router to it!
 ```toml
 default_profile = "normal"
 
@@ -88,6 +89,52 @@ api_key_env = "OMNIROUTE_API_KEY"      # no key in omniroute? put any string, mu
 normal = ["codex", "omniroute"]
 ```
 
+<details>
+<summary>🤡 or go full clown: every free model on the planet in one review</summary>
+
+just for fun. 34 reviewers, $0, your claude judge will hate you. free lists as of 30.09.2026, they change weekly.
+
+```toml
+default_profile = "clown"
+
+[backends.codex]
+type = "codex"
+
+[backends.oc]                            # opencode free models, plus groq and cerebras through opencode
+type = "opencode"                        # groq/cerebras: free keys, then `opencode auth login` for each
+
+[backends.openrouter]                    # free key is enough for :free models
+type = "claude-headless"
+base_url = "https://openrouter.ai/api"
+models = ["openrouter/free"]
+
+[profiles]
+clown = [
+  "codex",
+  # opencode
+  "oc:opencode/big-pickle", "oc:opencode/longcat-2.5-preview-free", "oc:opencode/mimo-v2.6-flash-free",
+  "oc:opencode/muse-spark-1.3-contributor-free", "oc:opencode/space-bunny-free",
+  # openrouter
+  "openrouter:cohere/north-mini-code:free", "openrouter:dots-studio/dots-3-note-preview:free",
+  "openrouter:google/gemma-4-26b-a4b-it:free", "openrouter:google/gemma-4-31b-it:free",
+  "openrouter:inclusionai/ling-3.0-flash-sante:free", "openrouter:liquid/lfm-2.5-2.6b:free",
+  "openrouter:nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free", "openrouter:nvidia/nemotron-3-super-120b-a12b:free",
+  "openrouter:nvidia/nemotron-3-ultra-550b-a55b:free", "openrouter:nvidia/nemotron-3.5-lightning:free",
+  "openrouter:poolside/laguna-s-2.1:free", "openrouter:poolside/laguna-xs-2.1:free",
+  "openrouter:qwen/qwen3.8-27b:free", "openrouter:stealth/space-bunny-alpha",
+  "openrouter:thinkingmachines/inkling-small:free", "openrouter:thinkingmachines/inkling:free",
+  "openrouter:openrouter/free",
+  # groq
+  "oc:groq/groq/compound", "oc:groq/groq/compound-mini", "oc:groq/llama-3.1-8b-instant",
+  "oc:groq/llama-3.3-70b-versatile", "oc:groq/openai/gpt-oss-120b", "oc:groq/openai/gpt-oss-20b",
+  "oc:groq/qwen/qwen3.6-27b", "oc:groq/qwen/qwen3.8-27b", "oc:groq/allam-2-7b",
+  # cerebras
+  "oc:cerebras/gpt-oss-120b", "oc:cerebras/qwen-3.8-27b",
+]
+```
+
+</details>
+
 no config file = built-in default (codex + opencode + openrouter). "review this with profile free" or "only codex and glm" works in chat, the agent passes it as `--backend`. profile is *who* reviews; how deep (lite / normal / ultra) is a separate knob and doesn't change.
 
 every type and every field with comments: [`config.example.toml`](config.example.toml). needs `python3`.
@@ -96,7 +143,7 @@ every type and every field with comments: [`config.example.toml`](config.example
 
 the main thing. what happens:
 
-1. every backend + sub-agents from your profile reads the same snapshot of the code (not live tree so they cant break anything), in parallel.
+1. every backend and sub-agent from your profile reads the same snapshot of the code (not the live tree, so they can't break anything), in parallel.
 2. a [ponytail](https://github.com/DietrichGebert/ponytail) lens hunts overengineering separately
 3. one report: **corroborated** (two model families saw it), **single-source** (one saw it, checked against the code before it reaches you), **disagreed** (this is the part worth reading), **dropped** (with the reason, nothing vanishes silently)
 
@@ -128,52 +175,42 @@ no `--backend`, no flags to remember - say "review this branch, ultra, profile f
 
 <h2 align="center">install</h3>
 
+claude
 ```bash
 claude plugin marketplace add szarkans/multi
 claude plugin install multi@szkills
-
-or
-npx skills add szarkans/multi
-
-or
-git clone https://github.com/szarkans/multi ~/.claude/skills/multi
 ```
 
-then restart claude code and use `/multi:setup`
+codex cli
+```bash
+codex plugin marketplace add szarkans/multi
+codex plugin add multi@szkills
+```
 
 <h3 align="center">other hosts</h3>
 
-multi is SKILL.md files plus bash scripts, so any agent that reads the SKILL.md standard runs it. tell your agent:
+just ask your agent to do this lmao:
 
 ```
 Fetch and follow instructions from https://raw.githubusercontent.com/szarkans/multi/main/INSTALL.md
 ```
 
-it picks its own section. the short form:
-
-
-| host            | install                                                                                                         | run                  |
-| --------------- | --------------------------------------------------------------------------------------------------------------- | -------------------- |
-| claude code     | `claude plugin marketplace add szarkans/multi` &amp;&amp; `claude plugin install multi@szkills`                 | `/multi:code-review` |
-| codex cli / app | `codex plugin marketplace add szarkans/multi` then `codex plugin add multi@szkills`                             | `$multi:code-review` |
-| opencode        | "hi opencode please install [https://github.com/szarkans/multi](https://github.com/szarkans/multi) to yourself" | ask for a review     |
-| gemini cli      | `gemini extensions install https://github.com/szarkans/multi`                                                   |                      |
-
+then run `/multi:setup` or `$multi:setup` or however your harness registers commands.
 
 <h2 align="center">configure</h3>
 
-once you ran `/multi:setup`, two files will be created: `~/.config/multi/config.toml` - who reviews, which models, in what order, and what runs by default and `~/.config/multi/providers.env` - api keys for you providers if you have any. `MULTI_HOME` moves the whole directory (`$XDG_CONFIG_HOME/multi` is honoured). before 1.15.0 it was `~/.claude/multi`: nothing is migrated, move the two files by hand, the probe reminds you once per run until you do
+once you run `/multi:setup`, two files will be created: `~/.config/multi/config.toml` - who reviews, which models, in what order, and what runs by default and `~/.config/multi/providers.env` - api keys for your providers if you have any. 
 
-a backend is a name + a type. four types: `codex`, `opencode`, `claude-headless` (claude code pointed at any anthropic-compatible endpoint: openrouter, 9router/omnirouter, local models, whatever you want) and `gemini`. want two endpoints? two `claude-headless` tables. a profile is who runs together.
+a backend is a name + a type. four types: `codex`, `opencode`, `claude-headless` (claude code as the harness for an API. might switch to opencode or vercel-fx in the future, since claude code is bulky) and `gemini`. want two endpoints? two `claude-headless` tables. a profile is who runs together.
 
 <h2 align="center">why your README written like that?</h3>
 
 Because it was written by me, human. *Mostly*.  
-I'm really tired of b2b-ai-saas-skills-loop-code readme's.
+I'm really tired of b2b-ai-saas-skills-loop-code READMEs.
 
 <h2 align="center">evals</h3>
 
-tldr: 16 real bugs from 3 of my production repos. this time we checked *every* finding both reviews made, not only the bug we already knew about. built-in `/code-review` found 14 real bugs, `multi` found 29, and 16 of those nobody else caught. same share of junk. both on sonnet.
+tldr: `multi` found more at about the same cost, but obviously takes longer. and those aren't even the best models i could put in its profile!
 
 
 |                                           | built-in `/code-review high` | `/multi:code-review normal` |
@@ -190,7 +227,8 @@ tldr: 16 real bugs from 3 of my production repos. this time we checked *every* f
 
 the bugs only `multi` caught: a secret written into prod logs, a temporary API error that drops a file forever, a failed request that deletes a user's permissions with no rollback. that kind of thing.
 
-earlier run, 8 bugs, only the known bug counted:
+<details>
+<summary>earlier run, 8 bugs, only the known bug counted</summary>
 
 8 real bugs from my own projects. built-in `/code-review` found 3, `multi` found 6. same bugs, same checkout, both on sonnet.
 
@@ -203,6 +241,7 @@ earlier run, 8 bugs, only the known bug counted:
 
 
 the extra models (codex, openrouter, glm) cost about $0.04 per bug. the difference is claude time, not them.
+</details>
 
 how it's measured:
 

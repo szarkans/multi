@@ -23,13 +23,13 @@
 一个模型又规划、又干活、又自己评审自己，这不行。用好几个（`multi`）模型才能拿到真正值钱的东西——不一样的意见。
 三个 LLM 能找出 5 个 bug，但第 6 个只有其中一个能找到——这就是你**需要** `multi` 的原因。别光听我说——自己去看[评测](#评测)！
 
-我自己找到的最佳组合是 `Codex 5.6-sol` + 带 `Qwen3.8-flash` 的 `OpenCode Go`，再加一个跑 `GLM5.3-flash` 的 OpenRouter key，不过你随意——OpenCode、OpenRouter 上的免费模型都行，基本上任何能给你 ai api 的东西都行
+我自己找到的最佳组合是最新的 codex 模型 + 最新的国产 flash 模型，不过你随意——OpenCode、OpenRouter 上的免费模型都行，基本上任何能给你 ai api 的东西都行
 
 <h2 align="center">贵吗？</h2>
 
 你说了算！有了 `multi` 的 profile 系统，预算多少就能组多大的队伍。
 
-可以用 `i on have any money` profile：免费的 Codex + 免费的 OpenCode 模型（不知为啥它们真的很强）
+可以用 `i on have any money` profile：免费的 Codex + 免费的 OpenCode 模型（不知为啥它们真的很强）。免费总比没有强，对吧？
 ```toml
 default_profile = "normal"
 
@@ -42,7 +42,7 @@ type = "opencode"    # no `models` = using free models
 [backends.openrouter]                    # key defaults to OPENROUTER_API_KEY
 type = "claude-headless"
 base_url = "https://openrouter.ai/api"
-models = ["openrouter/free"]           # router for free models
+models = ["qwen/qwen3.8-27b:free", "nvidia/nemotron-3-ultra-550b-a55b:free", "stealth/another-stealth-model-alpha"]           # tried in order
 
 [profiles]
 normal = ["codex", "opencode", "openrouter"]
@@ -57,6 +57,7 @@ type = "codex"
 
 [backends.opencode]
 type = "opencode"
+models = ["opencode-go/kimi-k3", "opencode-go/deepseek-v4-pro"]   # opencode-go/ = Go sub, opencode/ = Zen pay-per-token
 
 [backends.glm]                           # z.ai, with its own key
 type = "claude-headless"
@@ -74,7 +75,7 @@ normal = ["codex", "glm", "openrouter"]
 free   = ["openrouter:openrouter/free", "codex"]   # name:model = exactly that model, no fallback
 ```
 
-或者直接把 OmniRouter/9router 怼上去！
+或者甚至直接把 OmniRouter/9router 怼上去！
 ```toml
 default_profile = "normal"
 
@@ -88,6 +89,52 @@ api_key_env = "OMNIROUTE_API_KEY"      # no key in omniroute? put any string, mu
 normal = ["codex", "omniroute"]
 ```
 
+<details>
+<summary>🤡 或者玩个大的：地球上所有免费模型塞进同一次评审</summary>
+
+纯属好玩。34 个评审员，$0，你的 claude 法官会恨死你。免费列表截至 2026.09.30，每周都在变。
+
+```toml
+default_profile = "clown"
+
+[backends.codex]
+type = "codex"
+
+[backends.oc]                            # opencode free models, plus groq and cerebras through opencode
+type = "opencode"                        # groq/cerebras: free keys, then `opencode auth login` for each
+
+[backends.openrouter]                    # free key is enough for :free models
+type = "claude-headless"
+base_url = "https://openrouter.ai/api"
+models = ["openrouter/free"]
+
+[profiles]
+clown = [
+  "codex",
+  # opencode
+  "oc:opencode/big-pickle", "oc:opencode/longcat-2.5-preview-free", "oc:opencode/mimo-v2.6-flash-free",
+  "oc:opencode/muse-spark-1.3-contributor-free", "oc:opencode/space-bunny-free",
+  # openrouter
+  "openrouter:cohere/north-mini-code:free", "openrouter:dots-studio/dots-3-note-preview:free",
+  "openrouter:google/gemma-4-26b-a4b-it:free", "openrouter:google/gemma-4-31b-it:free",
+  "openrouter:inclusionai/ling-3.0-flash-sante:free", "openrouter:liquid/lfm-2.5-2.6b:free",
+  "openrouter:nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free", "openrouter:nvidia/nemotron-3-super-120b-a12b:free",
+  "openrouter:nvidia/nemotron-3-ultra-550b-a55b:free", "openrouter:nvidia/nemotron-3.5-lightning:free",
+  "openrouter:poolside/laguna-s-2.1:free", "openrouter:poolside/laguna-xs-2.1:free",
+  "openrouter:qwen/qwen3.8-27b:free", "openrouter:stealth/space-bunny-alpha",
+  "openrouter:thinkingmachines/inkling-small:free", "openrouter:thinkingmachines/inkling:free",
+  "openrouter:openrouter/free",
+  # groq
+  "oc:groq/groq/compound", "oc:groq/groq/compound-mini", "oc:groq/llama-3.1-8b-instant",
+  "oc:groq/llama-3.3-70b-versatile", "oc:groq/openai/gpt-oss-120b", "oc:groq/openai/gpt-oss-20b",
+  "oc:groq/qwen/qwen3.6-27b", "oc:groq/qwen/qwen3.8-27b", "oc:groq/allam-2-7b",
+  # cerebras
+  "oc:cerebras/gpt-oss-120b", "oc:cerebras/qwen-3.8-27b",
+]
+```
+
+</details>
+
 没有配置文件 = 内置默认值（codex + opencode + openrouter）。在聊天里说「review this with profile free」或「only codex and glm」都管用，agent 会把它当 `--backend` 传下去。profile 决定的是*谁*来评审；多深入（lite / normal / ultra）是另一个独立的旋钮，不受影响。
 
 每个类型、每个字段都带注释：[`config.example.toml`](config.example.toml)。需要 `python3`。
@@ -96,7 +143,7 @@ normal = ["codex", "omniroute"]
 
 重头戏。流程是这样的：
 
-1. 你 profile 里的每个 backend + 子代理，并行读同一份代码快照（不是活的工作树，所以它们没法搞坏任何东西）
+1. 你 profile 里的每个 backend 和子代理，并行读同一份代码快照（不是活的工作树，所以它们没法搞坏任何东西）
 2. 一个 [ponytail](https://github.com/DietrichGebert/ponytail) 视角单独专挑过度设计
 3. 出一份报告：**corroborated**（两个模型系（family）都看到了）、**single-source**（只有一个看到，送到你面前之前先跟代码核对过）、**disagreed**（这部分才是值得读的）、**dropped**（附上原因，没有东西会被悄悄丢掉）
 
@@ -128,46 +175,33 @@ normal = ["codex", "omniroute"]
 
 <h2 align="center">安装</h3>
 
+claude
 ```bash
 claude plugin marketplace add szarkans/multi
 claude plugin install multi@szkills
-
-or
-
-npx skills add szarkans/multi
-
-or
-
-git clone https://github.com/szarkans/multi ~/.claude/skills/multi
 ```
 
-然后重启 claude code，跑一下 `/multi:setup`
+codex cli
+```bash
+codex plugin marketplace add szarkans/multi
+codex plugin add multi@szkills
+```
 
 <h3 align="center">其他宿主</h3>
 
-multi 就是一组 SKILL.md 加 bash 脚本，任何读 SKILL.md 标准的 agent 都能跑。告诉你的 agent：
+直接让你的 agent 干这事就行，哈哈：
 
 ```
 Fetch and follow instructions from https://raw.githubusercontent.com/szarkans/multi/main/INSTALL.md
 ```
 
-它会自己挑对应的章节。速查：
-
-
-| 宿主              | 安装                                                                                               | 运行                   | 已验证                                     |
-| --------------- | ------------------------------------------------------------------------------------------------ | -------------------- | --------------------------------------- |
-| claude code     | 见上文                                                                                              | `/multi:code-review` | 是，1.15.0                                |
-| codex cli / app | `codex plugin marketplace add szarkans/multi`，然后 `codex plugin add multi@szkills`                | `$multi:code-review` | 是，1.15.1                                |
-| opencode        | 在 `~/.config/opencode/opencode.json` 里加 `"skills": {"paths": ["~/.claude/skills/multi/skills"]}` | 让它做 review           | 部分：skill、probe、快照和评审器跑通，headless 没到评判那步 |
-| gemini cli      | `gemini extensions install https://github.com/szarkans/multi`                                    | 让它做 review           | 否：能链接并列出 skill，没实跑                      |
-| windows         | claude code 走 git bash；codex 走 wsl 或 git bash                                                    |                      | 否                                       |
-
+然后跑 `/multi:setup` 或 `$multi:setup`，或者你的 harness 注册命令的随便什么方式。
 
 <h2 align="center">配置</h3>
 
-跑过一次 `/multi:setup` 之后，会生成两个文件：`~/.config/multi/config.toml` —— 谁来评审、用什么模型、什么顺序、默认跑什么，以及 `~/.config/multi/providers.env` —— 如果你有的话，各家 provider 的 api key。`MULTI_HOME` 可以整体挪走这个目录（也认 `$XDG_CONFIG_HOME/multi`）。1.15.0 之前是 `~/.claude/multi`：不做迁移，两个文件手动挪过去，挪之前 probe 每次运行都会提醒
+跑过一次 `/multi:setup` 之后，会生成两个文件：`~/.config/multi/config.toml` —— 谁来评审、用什么模型、什么顺序、默认跑什么，以及 `~/.config/multi/providers.env` —— 如果你有的话，各家 provider 的 api key。
 
-一个 backend 就是一个名字加一个类型。四种类型：`codex`、`opencode`、`claude-headless`（claude code 指向任意兼容 anthropic 协议的端点：openrouter、9router/omnirouter、本地模型，随便你）、`gemini`。想要两个端点？开两张 `claude-headless` 表。profile 就是「谁一起跑」。
+一个 backend 就是一个名字加一个类型。四种类型：`codex`、`opencode`、`claude-headless`（拿 claude code 当 API 的外壳。以后可能换成 opencode 或 vercel-fx，因为 claude code 太臃肿了）、`gemini`。想要两个端点？开两张 `claude-headless` 表。profile 就是「谁一起跑」。
 
 <h2 align="center">你的 README 咋写成这样？</h3>
 
@@ -176,7 +210,7 @@ Fetch and follow instructions from https://raw.githubusercontent.com/szarkans/mu
 
 <h2 align="center">评测</h3>
 
-tldr：来自我 3 个生产仓库的 16 个真实 bug。这次我们检查了两边评审的*每一条*发现，而不只是我们早就知道的那个 bug。内置的 `/code-review` 找到 14 个真实 bug，`multi` 找到 29 个，其中 16 个别人都没抓到。垃圾占比一样。都用 sonnet。
+tldr：`multi` 找到的更多，花费差不多，但显然更慢。而且这还不是我能放进它 profile 里的最好的模型！
 
 
 |                      | 内置 `/code-review high` | `/multi:code-review normal` |
@@ -193,7 +227,8 @@ tldr：来自我 3 个生产仓库的 16 个真实 bug。这次我们检查了�
 
 只有 `multi` 抓到的 bug：密钥被写进生产日志、一次临时 API 错误让文件永久丢失、一个失败的请求删掉用户权限还不回滚。就是这类东西。
 
-之前的一轮，8 个 bug，只算那个已知 bug：
+<details>
+<summary>之前的一轮，8 个 bug，只算那个已知 bug</summary>
 
 我自己项目里的 8 个真实 bug。内置的 `/code-review` 找到 3 个，`multi` 找到 6 个。同样的 bug，同一个检出，都用 sonnet。
 
@@ -206,6 +241,7 @@ tldr：来自我 3 个生产仓库的 16 个真实 bug。这次我们检查了�
 
 
 额外的模型（codex、openrouter、glm）每个 bug 大约 $0.04。差价来自 claude 的用时，不是它们。
+</details>
 
 怎么测的：
 

@@ -23,13 +23,13 @@
 когда одна модель и планирует, и делает, и ревьюит — это плохо. несколько (`multi`) моделей дают то, что реально ценно: разные мнения.  
 три LLM найдут 5 багов, а шестой найдёт только одна — вот ради этого `multi` и **нужен**. но на слово мне не верь — глянь [евалы](#евалы) сам!   
 
-лучшая связка, которую я себе нашёл: `Codex 5.6-sol` + `OpenCode Go` с `Qwen3.8-flash` и ключ OpenRouter с `GLM5.3-flash`, но делай как хочешь — можно бесплатные модели из OpenCode, OpenRouter и вообще что угодно, что даёт тебе ai api
+лучшая связка, которую я себе нашёл: свежайшая модель codex + свежайшие китайские flash-модели, но делай как хочешь — можно бесплатные модели из OpenCode, OpenRouter и вообще что угодно, что даёт тебе ai api
 
 <h2 align="center">это дорого?</h2>
 
 решай сам! профили в `multi` позволяют собрать любую команду, какую потянешь по деньгам.
 
-можно взять профиль `i on have any money`: бесплатный Codex + бесплатные модели OpenCode (которые почему-то реально мощные)
+можно взять профиль `i on have any money`: бесплатный Codex + бесплатные модели OpenCode (которые почему-то реально мощные). бесплатно лучше, чем никак, не?
 ```toml
 default_profile = "normal"
 
@@ -42,7 +42,7 @@ type = "opencode"    # no `models` = using free models
 [backends.openrouter]                    # key defaults to OPENROUTER_API_KEY
 type = "claude-headless"
 base_url = "https://openrouter.ai/api"
-models = ["openrouter/free"]           # router for free models
+models = ["qwen/qwen3.8-27b:free", "nvidia/nemotron-3-ultra-550b-a55b:free", "stealth/another-stealth-model-alpha"]           # tried in order
 
 [profiles]
 normal = ["codex", "opencode", "openrouter"]
@@ -57,6 +57,7 @@ type = "codex"
 
 [backends.opencode]
 type = "opencode"
+models = ["opencode-go/kimi-k3", "opencode-go/deepseek-v4-pro"]   # opencode-go/ = Go sub, opencode/ = Zen pay-per-token
 
 [backends.glm]                           # z.ai, with its own key
 type = "claude-headless"
@@ -74,7 +75,7 @@ normal = ["codex", "glm", "openrouter"]
 free   = ["openrouter:openrouter/free", "codex"]   # name:model = exactly that model, no fallback
 ```
 
-или просто присобачь к этому OmniRouter/9router!
+или даже присобачь к этому OmniRouter/9router!
 ```toml
 default_profile = "normal"
 
@@ -88,6 +89,52 @@ api_key_env = "OMNIROUTE_API_KEY"      # no key in omniroute? put any string, mu
 normal = ["codex", "omniroute"]
 ```
 
+<details>
+<summary>🤡 или иди до конца: все бесплатные модели планеты в одном ревью</summary>
+
+чисто для прикола. 34 ревьюера, $0, твой claude-судья тебя возненавидит. списки бесплатных на 30.09.2026, меняются каждую неделю.
+
+```toml
+default_profile = "clown"
+
+[backends.codex]
+type = "codex"
+
+[backends.oc]                            # opencode free models, plus groq and cerebras through opencode
+type = "opencode"                        # groq/cerebras: free keys, then `opencode auth login` for each
+
+[backends.openrouter]                    # free key is enough for :free models
+type = "claude-headless"
+base_url = "https://openrouter.ai/api"
+models = ["openrouter/free"]
+
+[profiles]
+clown = [
+  "codex",
+  # opencode
+  "oc:opencode/big-pickle", "oc:opencode/longcat-2.5-preview-free", "oc:opencode/mimo-v2.6-flash-free",
+  "oc:opencode/muse-spark-1.3-contributor-free", "oc:opencode/space-bunny-free",
+  # openrouter
+  "openrouter:cohere/north-mini-code:free", "openrouter:dots-studio/dots-3-note-preview:free",
+  "openrouter:google/gemma-4-26b-a4b-it:free", "openrouter:google/gemma-4-31b-it:free",
+  "openrouter:inclusionai/ling-3.0-flash-sante:free", "openrouter:liquid/lfm-2.5-2.6b:free",
+  "openrouter:nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free", "openrouter:nvidia/nemotron-3-super-120b-a12b:free",
+  "openrouter:nvidia/nemotron-3-ultra-550b-a55b:free", "openrouter:nvidia/nemotron-3.5-lightning:free",
+  "openrouter:poolside/laguna-s-2.1:free", "openrouter:poolside/laguna-xs-2.1:free",
+  "openrouter:qwen/qwen3.8-27b:free", "openrouter:stealth/space-bunny-alpha",
+  "openrouter:thinkingmachines/inkling-small:free", "openrouter:thinkingmachines/inkling:free",
+  "openrouter:openrouter/free",
+  # groq
+  "oc:groq/groq/compound", "oc:groq/groq/compound-mini", "oc:groq/llama-3.1-8b-instant",
+  "oc:groq/llama-3.3-70b-versatile", "oc:groq/openai/gpt-oss-120b", "oc:groq/openai/gpt-oss-20b",
+  "oc:groq/qwen/qwen3.6-27b", "oc:groq/qwen/qwen3.8-27b", "oc:groq/allam-2-7b",
+  # cerebras
+  "oc:cerebras/gpt-oss-120b", "oc:cerebras/qwen-3.8-27b",
+]
+```
+
+</details>
+
 нет конфиг-файла = встроенный дефолт (codex + opencode + openrouter). «ревьюни это с профилем free» или «только codex и glm» работает прямо в чате, агент передаёт это как `--backend`. profile - это *кто* ревьюит; насколько глубоко (lite / normal / ultra) - отдельная ручка и не меняется.
 
 каждый тип и каждое поле с комментариями: [`config.example.toml`](config.example.toml). нужен `python3`.
@@ -96,7 +143,7 @@ normal = ["codex", "omniroute"]
 
 главное. что происходит:
 
-1. каждый бэкенд + суб-агенты из твоего профиля читают один и тот же снэпшот кода (не живое дерево, так что сломать они ничего не могут), параллельно.
+1. каждый бэкенд и суб-агент из твоего профиля читают один и тот же снэпшот кода (не живое дерево, так что сломать они ничего не могут), параллельно.
 2. линза [ponytail](https://github.com/DietrichGebert/ponytail) отдельно охотится на оверинжиниринг
 3. один отчёт: **подтверждено** (увидели два разных семейства моделей), **от одного источника** (увидела одна модель, но перепроверено по коду, прежде чем попасть к тебе), **разногласия** (вот это стоит читать), **отброшено** (с причиной, ничего не исчезает молча)
 
@@ -128,44 +175,33 @@ normal = ["codex", "omniroute"]
 
 <h2 align="center">установка</h3>
 
+claude
 ```bash
 claude plugin marketplace add szarkans/multi
 claude plugin install multi@szkills
-
-or
-npx skills add szarkans/multi
-
-or
-git clone https://github.com/szarkans/multi ~/.claude/skills/multi
 ```
 
-потом перезапусти claude code и используй `/multi:setup`
+codex cli
+```bash
+codex plugin marketplace add szarkans/multi
+codex plugin add multi@szkills
+```
 
 <h3 align="center">другие хосты</h3>
 
-multi - это файлы SKILL.md плюс bash-скрипты, так что его запустит любой агент, который читает стандарт SKILL.md. скажи своему агенту:
+просто попроси своего агента сделать это, лол:
 
 ```
 Fetch and follow instructions from https://raw.githubusercontent.com/szarkans/multi/main/INSTALL.md
 ```
 
-он сам выберет свой раздел. коротко:
-
-
-| хост            | установка                                                                                     | запуск               | проверено                                                                                  |
-| --------------- | --------------------------------------------------------------------------------------------- | -------------------- | ------------------------------------------------------------------------------------------ |
-| claude code     | см. выше                                                                                      | `/multi:code-review` | да, 1.15.0                                                                                 |
-| codex cli / app | `codex plugin marketplace add szarkans/multi`, затем `codex plugin add multi@szkills`         | `$multi:code-review` | да, 1.15.1                                                                                 |
-| opencode        | `"skills": {"paths": ["~/.claude/skills/multi/skills"]}` в `~/.config/opencode/opencode.json` | попроси ревью        | частично: скилл, проба, снапшот и ревьюеры работают, до судейства headless-прогон не дошёл |
-| gemini cli      | `gemini extensions install https://github.com/szarkans/multi`                                 | попроси ревью        | нет: линкуется и видит скиллы, живого прогона не было                                      |
-| windows         | claude code через git bash; codex через wsl или git bash                                      |                      | нет                                                                                        |
-
+потом запусти `/multi:setup` или `$multi:setup` или как там твой харнесс регистрирует команды.
 
 <h2 align="center">конфигурация</h3>
 
-как только запустишь `/multi:setup`, создадутся два файла: `~/.config/multi/config.toml` - кто ревьюит, какие модели, в каком порядке, и что запускается по умолчанию и `~/.config/multi/providers.env` - api-ключи для твоих провайдеров, если они у тебя есть. `MULTI_HOME` переносит весь каталог (`$XDG_CONFIG_HOME/multi` учитывается). до 1.15.0 это был `~/.claude/multi`: ничего не мигрируется, перенеси два файла руками, проба напоминает при каждом запуске, пока не перенесёшь
+как только запустишь `/multi:setup`, создадутся два файла: `~/.config/multi/config.toml` - кто ревьюит, какие модели, в каком порядке, и что запускается по умолчанию и `~/.config/multi/providers.env` - api-ключи для твоих провайдеров, если они у тебя есть. 
 
-бэкенд - это имя + тип. четыре типа: `codex`, `opencode`, `claude-headless` (claude code, направленный на любой anthropic-совместимый эндпоинт: openrouter, 9router/omnirouter, локальные модели, что угодно) и `gemini`. нужно два эндпоинта? две таблицы `claude-headless`. профиль - это кто ревьюит вместе.
+бэкенд - это имя + тип. четыре типа: `codex`, `opencode`, `claude-headless` (claude code как обвязка для API. в будущем может переехать на opencode или vercel-fx, потому что claude code громоздкий) и `gemini`. нужно два эндпоинта? две таблицы `claude-headless`. профиль - это кто ревьюит вместе.
 
 <h2 align="center">почему README написан вот так?</h3>
 
@@ -174,7 +210,7 @@ Fetch and follow instructions from https://raw.githubusercontent.com/szarkans/mu
 
 <h2 align="center">евалы</h3>
 
-tldr: 16 настоящих багов из 3 моих продовых репо. в этот раз проверили *каждую* находку обоих ревью, а не только баг, который мы и так знали. встроенный `/code-review` нашёл 14 настоящих багов, `multi` нашёл 29, и 16 из них больше не поймал никто. мусора поровну. оба на sonnet.
+tldr: `multi` нашёл больше при примерно той же цене, но, очевидно, дольше. и это даже не самые лучшие модели, которые я мог бы поставить в его профиль!
 
 
 |                                            | встроенный `/code-review high` | `/multi:code-review normal` |
@@ -191,7 +227,8 @@ tldr: 16 настоящих багов из 3 моих продовых репо
 
 баги, которые поймал только `multi`: секрет, улетающий в прод-логи, временная ошибка API, из-за которой файл теряется навсегда, упавший запрос, который сносит права юзера без отката. вот такое.
 
-прошлый замер, 8 багов, считали только известный баг:
+<details>
+<summary>прошлый замер, 8 багов, считали только известный баг</summary>
 
 8 настоящих багов из моих проектов. встроенный `/code-review` нашёл 3, `multi` нашёл 6. одни и те же баги, один и тот же чекаут, оба на sonnet.
 
@@ -204,6 +241,7 @@ tldr: 16 настоящих багов из 3 моих продовых репо
 
 
 дополнительные модели (codex, openrouter, glm) стоят около $0.04 за баг. разница - это время claude, а не они.
+</details>
 
 как меряли:
 
