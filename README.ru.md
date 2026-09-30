@@ -109,15 +109,10 @@ type = "claude-headless"
 base_url = "https://openrouter.ai/api"
 models = ["openrouter/free"]
 
-[backends.deepseek]                      # 5M free tokens for new accounts
-type = "claude-headless"
-base_url = "https://api.deepseek.com/anthropic"
-models = ["deepseek-flash"]
-
-[backends.glm]                           # z.ai, flash is free
+[backends.glm]                           # z.ai: 4.7 flash is free, 5.3 flash is not
 type = "claude-headless"
 base_url = "https://api.z.ai/api/anthropic"
-models = ["GLM-5.3-Flash"]
+models = ["GLM-4.7-Flash"]
 api_key_env = "ZAI_API_KEY"
 
 [backends.gemini]                        # google ai studio free tier
@@ -126,7 +121,7 @@ models = ["gemini-3.8-flash"]
 
 [profiles]
 clown = [
-  "codex", "deepseek", "glm", "gemini",
+  "codex", "glm", "gemini",
   # opencode
   "oc:opencode/big-pickle", "oc:opencode/longcat-2.5-preview-free", "oc:opencode/mimo-v2.6-flash-free",
   "oc:opencode/muse-spark-1.3-contributor-free", "oc:opencode/space-bunny-free",
