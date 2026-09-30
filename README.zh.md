@@ -8,7 +8,8 @@
 
 <h2 align="center">这是在干嘛？</h3>
 
-`multi` 把一件事同时丢给好几个 AI —— 代码评审、「到底做完了没」、[adhd](https://github.com/UditAkhourii/adhd) 式规划，或者就是随便问问 —— 然后告诉你哪些模型意见一致，哪些不一致。判断的是你，不是它们。
+`multi` 把一件事同时丢给好几个 AI —— 最适合代码评审（[实测：比内置代码评审找到更多 bug](#评测)）。
+它还能干「到底做完了没」、[adhd](https://github.com/UditAkhourii/adhd) 式规划，或者就是随便问问 —— 然后告诉你哪些模型意见一致，哪些不一致。判断的是你，不是它们。
 
 目前支持:
 
@@ -16,7 +17,7 @@
 - codex
 - opencode
 - gemini
-- headless claude code + 你自己提供的任意 API key（比如 openrouter）
+- headless claude code + 你自己提供的任意 API key 或 base URL（比如 GLM/DeepSeek/Qwen/[openrouter](https://openrouter.ai/) 的 key、[9router](https://9router.com/)，只要有 anthropic 兼容端点就行）
 
 <h2 align="center">图啥？</h2>
 
