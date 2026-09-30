@@ -93,7 +93,7 @@ normal = ["codex", "omniroute"]
 <details>
 <summary>🤡 或者玩个大的：地球上所有免费模型塞进同一次评审</summary>
 
-纯属好玩。34 个评审员，$0，你的 claude 法官会恨死你。免费列表截至 2026.09.30，每周都在变。
+免费列表截至 2026.09.30。嗯……为什么不呢？
 
 ```toml
 default_profile = "clown"
@@ -101,17 +101,32 @@ default_profile = "clown"
 [backends.codex]
 type = "codex"
 
-[backends.oc]                            # opencode free models, plus groq and cerebras through opencode
-type = "opencode"                        # groq/cerebras: free keys, then `opencode auth login` for each
+[backends.oc]                            # opencode free models, plus every openai-compatible free tier below:
+type = "opencode"                        # free key from each, then `opencode auth login` or a provider in opencode.json
 
 [backends.openrouter]                    # free key is enough for :free models
 type = "claude-headless"
 base_url = "https://openrouter.ai/api"
 models = ["openrouter/free"]
 
+[backends.deepseek]                      # 5M free tokens for new accounts
+type = "claude-headless"
+base_url = "https://api.deepseek.com/anthropic"
+models = ["deepseek-flash"]
+
+[backends.glm]                           # z.ai, flash is free
+type = "claude-headless"
+base_url = "https://api.z.ai/api/anthropic"
+models = ["GLM-5.3-Flash"]
+api_key_env = "ZAI_API_KEY"
+
+[backends.gemini]                        # google ai studio free tier
+type = "gemini"
+models = ["gemini-3.8-flash"]
+
 [profiles]
 clown = [
-  "codex",
+  "codex", "deepseek", "glm", "gemini",
   # opencode
   "oc:opencode/big-pickle", "oc:opencode/longcat-2.5-preview-free", "oc:opencode/mimo-v2.6-flash-free",
   "oc:opencode/muse-spark-1.3-contributor-free", "oc:opencode/space-bunny-free",
@@ -124,13 +139,33 @@ clown = [
   "openrouter:poolside/laguna-s-2.1:free", "openrouter:poolside/laguna-xs-2.1:free",
   "openrouter:qwen/qwen3.8-27b:free", "openrouter:stealth/space-bunny-alpha",
   "openrouter:thinkingmachines/inkling-small:free", "openrouter:thinkingmachines/inkling:free",
+  "openrouter:typesafe/jev-latest",      # a classifier. reviews your code with one enum
   "openrouter:openrouter/free",
+  # nvidia nim - frontier chinese for free, if you get through the queue
+  "oc:nvidia/moonshotai/kimi-k3", "oc:nvidia/z-ai/glm-5.3", "oc:nvidia/z-ai/glm-5.3-flash",
+  # orcarouter
+  "oc:orcarouter/deepseek-v4-pro", "oc:orcarouter/deepseek-v4-flash", "oc:orcarouter/qwen3.8-27b",
+  "oc:orcarouter/hy3", "oc:orcarouter/orcarouter/free",
   # groq
   "oc:groq/groq/compound", "oc:groq/groq/compound-mini", "oc:groq/llama-3.1-8b-instant",
   "oc:groq/llama-3.3-70b-versatile", "oc:groq/openai/gpt-oss-120b", "oc:groq/openai/gpt-oss-20b",
   "oc:groq/qwen/qwen3.6-27b", "oc:groq/qwen/qwen3.8-27b", "oc:groq/allam-2-7b",
-  # cerebras
+  # cerebras ($5 trial now, close enough)
   "oc:cerebras/gpt-oss-120b", "oc:cerebras/qwen-3.8-27b",
+  # mistral (phone verification, they train on it)
+  "oc:mistral/mistral-large-latest", "oc:mistral/codestral-latest", "oc:mistral/mistral-nemo",
+  # cohere (1000 requests a month, this review eats one)
+  "oc:cohere/command-r-plus", "oc:cohere/command-r",
+  # cloudflare workers ai
+  "oc:cloudflare-workers-ai/@cf/openai/gpt-oss-120b", "oc:cloudflare-workers-ai/@cf/meta/llama-4-scout-17b-16e-instruct",
+  # ovhcloud (no key at all, 12 rpm)
+  "oc:ovhcloud/gpt-oss-120b", "oc:ovhcloud/Qwen3-32B",
+  # modelscope
+  "oc:modelscope/Qwen/Qwen3.8-27B", "oc:modelscope/ZhipuAI/GLM-5.3-Flash",
+  # the long tail
+  "oc:kilo/nvidia/nemotron-3-ultra:free", "oc:llm7/deepseek-r1", "oc:bazaarlink/auto:free",
+  "oc:aion/aion-2.5", "oc:agnes/agnes-2.0-flash", "oc:nscale/meta-llama/Llama-3.3-70B-Instruct",
+  "oc:nscale/deepseek-ai/DeepSeek-R1-Distill-Llama-70B", "oc:together/ternary-bonsai-27b",
 ]
 ```
 
