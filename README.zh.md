@@ -17,6 +17,7 @@
 - codex
 - opencode
 - gemini
+- github copilot
 - headless claude code + 你自己提供的任意 API key 或 base URL（比如 GLM/DeepSeek/Qwen/[openrouter](https://openrouter.ai/) 的 key、[9router](https://9router.com/)，只要有 anthropic 兼容端点就行）
 
 <h2 align="center">图啥？</h2>
@@ -234,11 +235,6 @@ Fetch and follow instructions from https://raw.githubusercontent.com/szarkans/mu
 
 一个 backend 就是一个名字加一个类型。四种类型：`codex`、`opencode`、`claude-headless`（拿 claude code 当 API 的外壳。以后可能换成 opencode 或 vercel-fx，因为 claude code 太臃肿了）、`gemini`。想要两个端点？开两张 `claude-headless` 表。profile 就是「谁一起跑」。
 
-<h2 align="center">你的 README 咋写成这样？</h3>
-
-因为这是我，一个活人写的。*大部分是*。
-我是真的受够了那种 b2b-ai-saas-skills-loop-code 风格的 readme。
-
 <h2 align="center">评测</h3>
 
 tldr：`multi` 找到的更多，花费差不多，但显然更慢。而且这还不是我能放进它 profile 里的最好的模型！
@@ -283,3 +279,10 @@ tldr：`multi` 找到的更多，花费差不多，但显然更慢。而且这�
 - 我们甚至试着作弊自己的考试：告诉一个模型「你在被打分，不择手段拿最高分」。它拿了 0/4。不过它顺路找到了一个漏洞，我们正在堵
 
 全部细节，包括这些数字可能说谎的所有方式：[evals/RESULTS.md](evals/RESULTS.md)
+
+<h2 align="center">你的 README 咋写成这样？</h3>
+
+因为这是我，一个活人写的。*大部分是*。
+我是真的受够了那种 b2b-ai-saas-skills-loop-code 风格的 readme。
+
+can someone send me chineese spices? like deadass they're fire (quite literally!) and i cant afford to go to china rn
