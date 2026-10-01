@@ -234,11 +234,6 @@ once you run `/multi:setup`, two files will be created: `~/.config/multi/config.
 
 a backend is a name + a type. four types: `codex`, `opencode`, `claude-headless` (claude code as the harness for an API. might switch to opencode or vercel-fx in the future, since claude code is bulky) and `gemini`. want two endpoints? two `claude-headless` tables. a profile is who runs together.
 
-<h2 align="center">why your README written like that?</h3>
-
-Because it was written by me, human. *Mostly*.  
-I'm really tired of b2b-ai-saas-skills-loop-code READMEs.
-
 <h2 align="center">evals</h3>
 
 tldr: `multi` found more at about the same cost, but obviously takes longer. and those aren't even the best models i could put in its profile!
@@ -282,3 +277,8 @@ how it's measured:
 - every finding was checked against the code: codex and a free openrouter model labelled them blind, then opus read the code itself and made the final call, then sorted each one into bug / minor / not a bug. duplicates merged, nobody knew which tool wrote what
 
 everything, including all the ways these numbers could be lying: [evals/RESULTS.md](evals/RESULTS.md)
+
+<h2 align="center">why your README written like that?</h3>
+
+Because it was written by me, human. *Mostly*.  
+I'm really tired of b2b-ai-saas-skills-loop-code READMEs.
