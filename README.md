@@ -11,12 +11,13 @@
 `multi` runs one task through several AIs at once — best for code review ([measured: it finds more bugs than the built-in code review](#evals)).
 it also does "is it actually done", [adhd](https://github.com/UditAkhourii/adhd) planning, or just a question — and shows you where the models converge and where they split. you judge, not them.
 
-currently supports:
+currently supports as `multi`-backends:
 
 - claude subagents
 - codex
 - opencode
 - gemini
+- github copilot
 - headless claude code with any API key or base URL you provide (e.g. GLM/DeepSeek/Qwen/[openrouter](https://openrouter.ai/) api key, [9router url](https://9router.com/), anything with an anthropic-compatible endpoint)
 
 <h2 align="center">what's the point?</h2>
