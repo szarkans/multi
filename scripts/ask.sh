@@ -75,7 +75,13 @@ SELF_DIR="$(cd -- "$(dirname -- "$0")" && pwd)"
 # shellcheck source=providers.sh
 . "$SELF_DIR/providers.sh"
 
-QUESTION=""; QFILE=""; PREFIX=""; EFFORT=medium; MODEL=""; FALLBACK=""; CODEX_MODEL=""; BACKEND=""; REPO=""; TIMEOUT=""; IGNORE_AVOID=""
+# Effort is looked up again after each backend cd's into --repo. Anchor the
+# selected config in the caller's cwd, including a relative MULTI_HOME.
+MULTI_CONFIG="$(multi_config path)" || exit 2
+case "$MULTI_CONFIG" in /*|[A-Za-z]:[/\\]*) ;; *) MULTI_CONFIG="$PWD/$MULTI_CONFIG" ;; esac  # C:/ is absolute on Windows
+export MULTI_CONFIG
+
+QUESTION=""; QFILE=""; PREFIX=""; EFFORT=""; MODEL=""; FALLBACK=""; CODEX_MODEL=""; BACKEND=""; REPO=""; TIMEOUT=""; IGNORE_AVOID=""
 need() { [ "$1" -ge 2 ] || { echo "missing value for $2" >&2; exit 2; }; }
 DETACH_ARGS=()
 for a in "$@"; do [ "$a" = "--detach" ] || DETACH_ARGS+=("$a"); done
@@ -84,7 +90,9 @@ while [ $# -gt 0 ]; do
     --question)      need $# "$1"; QUESTION="$2"; shift 2 ;;
     --question-file) need $# "$1"; QFILE="$2"; shift 2 ;;
     --out-prefix)    need $# "$1"; PREFIX="$2"; shift 2 ;;
-    --effort)        need $# "$1"; EFFORT="$2"; shift 2 ;;
+    --effort)        need $# "$1"
+                     case "$2" in ''|*[[:space:]]*) echo "--effort must be a non-empty token without whitespace" >&2; exit 2 ;; esac
+                     EFFORT="$2"; shift 2 ;;
     --model)         need $# "$1"; MODEL="$2"; shift 2 ;;
     --fallback)      need $# "$1"; FALLBACK="$2"; shift 2 ;;
     --timeout)       need $# "$1"
@@ -168,11 +176,12 @@ render_opencode() { # render_opencode <raw> <out> <model>
 }
 
 run_codex_one() {
-  local out="$1" model="$2" rc=0 timeout="$MULTI_BACKEND_TIMEOUT"
+  local out="$1" model="$2" name="$3" rc=0 timeout="$MULTI_BACKEND_TIMEOUT" effort
   # A stale marker from a previous run with the same prefix must not condemn
   # this run: the sidecar describes one invocation, not the file forever.
-  rm -f "${out}.dead"
+  rm -f "${out}.dead" "${out}.log"
   command -v codex >/dev/null 2>&1 || { multi_fail_backend "$out" "codex: MISSING"; return 0; }
+  effort="$(multi_effort "$name" "$model" codex "$out")" || return 2
   # A hung CLI used to block the `wait` below forever, and the caller — usually
   # Claude Code's own bash tool — killed the whole script instead, so every
   # other backend's answer died with it.
@@ -189,10 +198,10 @@ run_codex_one() {
     ${model:+-m "$model"} \
     -s read-only \
     --skip-git-repo-check \
-    -c model_reasoning_effort="$EFFORT" \
+    -c model_reasoning_effort="$effort" \
     -c project_doc_max_bytes=0 \
     -o "$out" \
-    "$QUESTION" >/dev/null 2>"${out}.log"
+    "$QUESTION" >/dev/null 2>>"${out}.log"
   rc=$?
   # stderr used to go to /dev/null, so a codex that failed left "NO OUTPUT" and
   # nothing to go on. The openrouter path keeps a .log for exactly this reason.
@@ -203,9 +212,9 @@ run_codex_one() {
 }
 
 run_opencode_one() {
-  local out="$1" model="$2" fallback="$3"
+  local out="$1" model="$2" fallback="$3" name="$4" effort
   local raw="${out}.jsonl"
-  rm -f "${out}.dead" "${raw}.first" "${out}.partial" "${out}.partial.calls"
+  rm -f "${out}.dead" "${out}.log" "${raw}.first" "${out}.partial" "${out}.partial.calls"
   command -v opencode >/dev/null 2>&1 || { multi_fail_backend "$out" "opencode: MISSING"; return 0; }
   [ -n "$model" ] || { multi_fail_backend "$out" "opencode: NO MODEL — none of [$MULTI_OPENCODE_CANDIDATES] is in \`opencode models\`; list models under this backend's table in config.toml, or pass --model"; return 0; }
   # --format json rather than the terminal transcript: the transcript mixes the
@@ -231,6 +240,7 @@ run_opencode_one() {
     case ",$attempted," in *",$candidate,"*) continue ;; esac
     [ -z "$retry_note" ] || echo "$retry_note — retrying on $candidate" >&2
     used="$candidate"
+    effort="$(multi_effort "$name" "$used" opencode "$out")" || return 2
     attempted="${attempted}${attempted:+,}${used}"
     attempted_count=$((attempted_count+1))
     stalled=0
@@ -240,7 +250,7 @@ run_opencode_one() {
       OPENCODE_CONFIG_CONTENT="$(cat "$SELF_DIR/opencode-readonly.json")" \
       GIT_OPTIONAL_LOCKS=0 \
       multi_timeout "$MULTI_BACKEND_TIMEOUT" opencode run --pure --agent multi-readonly --format json \
-      -m "$used" --dir "$REPO_DIR" "$QUESTION" > "$raw" 2>&1 &
+      -m "$used" ${effort:+--variant "$effort"} --dir "$REPO_DIR" "$QUESTION" > "$raw" 2>&1 &
     candidate_pid=$!
     while kill -0 "$candidate_pid" 2>/dev/null; do
       grep -q '^{' "$raw" 2>/dev/null && break
@@ -516,7 +526,7 @@ for i in "${!NAMES[@]}"; do
   case "$type" in
     codex)
       ( MULTI_BACKEND_TIMEOUT="${TIMEOUTS[$i]}"; started "$out" && cd "$REPO_DIR" \
-        && run_codex_one "$out" "${model:-${CODEX_MODEL:-$(first_of "$chain")}}"; finished "${SUFFIXES[$i]}" "$out" "$t0" "$name" ) & ;;
+        && run_codex_one "$out" "${model:-${CODEX_MODEL:-$(first_of "$chain")}}" "$name"; finished "${SUFFIXES[$i]}" "$out" "$t0" "$name" ) & ;;
     opencode)
       # Pinned: exactly that model. --model/--fallback: this run's chain.
       # Otherwise the config chain, or, when it is empty, a free model from the
@@ -530,7 +540,7 @@ for i in "${!NAMES[@]}"; do
         [ -z "$FALLBACK" ] || oc_fallback="$FALLBACK"
       fi
       ( MULTI_BACKEND_TIMEOUT="${TIMEOUTS[$i]}"; MULTI_OPENCODE_STALL="${STALLS[$i]}"; started "$out" && cd "$REPO_DIR" \
-        && run_opencode_one "$out" "$oc_model" "$oc_fallback"; finished "${SUFFIXES[$i]}" "$out" "$t0" "$name" ) & ;;
+        && run_opencode_one "$out" "$oc_model" "$oc_fallback" "$name"; finished "${SUFFIXES[$i]}" "$out" "$t0" "$name" ) & ;;
     claude-headless)
       ( MULTI_BACKEND_TIMEOUT="${TIMEOUTS[$i]}"; MULTI_BACKEND_STALL="${STALLS[$i]}"; started "$out" && cd "$REPO_DIR" \
         && multi_run_headless "$name" "$QUESTION" "$out" "$model" "$chain" "${URLS[$i]}" "${KEYENVS[$i]}"; finished "${SUFFIXES[$i]}" "$out" "$t0" "$name" ) & ;;

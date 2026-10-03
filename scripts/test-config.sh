@@ -16,6 +16,7 @@ resolve(){ "$py" "$CFG" resolve "$@" 2>"$TMP/err"; }
 
 echo "== no file: the built-in default runs the plugin as before =="
 say "check names the default" "$("$py" "$CFG" check | head -1)" "config: built-in default"
+say "verbose_prompt defaults to false without a file" "$("$py" "$CFG" verbose-prompt)" "false"
 say "default profile is codex, opencode, openrouter" "$(resolve | cut -f1 | tr '\n' ' ')" "codex opencode openrouter "
 say "both = the two CLIs" "$(resolve --backend both | cut -f1 | tr '\n' ' ')" "codex opencode "
 say "all = every backend" "$(resolve --backend all | cut -f1 | tr '\n' ' ')" "codex opencode openrouter gemini "
@@ -41,6 +42,8 @@ echo "== init writes the default, twice is a no-op, relative MULTI_CONFIG works 
 say "init" "$("$py" "$CFG" init | head -1)" "wrote: $MULTI_HOME/config.toml"
 say "init again" "$("$py" "$CFG" init)" "exists: $MULTI_HOME/config.toml"
 say "written default validates" "$("$py" "$CFG" check | head -1)" "config: $MULTI_HOME/config.toml"
+say "init documents verbose_prompt as an opt-in" "$(grep -c '^# verbose_prompt = false' "$MULTI_HOME/config.toml")" "1"
+say "written default leaves verbose_prompt off" "$("$py" "$CFG" verbose-prompt)" "false"
 
 echo "== a user config: two headless endpoints, profiles, per-backend knobs =="
 cat > "$MULTI_HOME/config.toml" <<'EOF'
@@ -100,6 +103,28 @@ refuse(){ # name toml-body expected-substring
   if [ "$rc" -eq 2 ] && grep -q -- "$3" "$TMP/err"; then echo "  ok   refused: $1"
   else echo "  FAIL not refused or wrong reason: $1 (rc=$rc): $(cat "$TMP/err")"; fail=1; fi
 }
+
+echo "== verbose_prompt: opt-in display, boolean only, no routing changes =="
+cp "$MULTI_HOME/config.toml" "$TMP/without-verbose.toml"
+say "absent verbose_prompt is false" "$("$py" "$CFG" verbose-prompt)" "false"
+before_resolve="$(resolve)"
+before_backends="$("$py" "$CFG" backends)"
+before_check="$("$py" "$CFG" check)"
+for verbose_value in true false; do
+  { printf 'verbose_prompt = %s\n' "$verbose_value"; cat "$TMP/without-verbose.toml"; } > "$MULTI_HOME/config.toml"
+  say "read verbose_prompt = $verbose_value" "$("$py" "$CFG" verbose-prompt)" "$verbose_value"
+  say "$verbose_value keeps resolve output" "$(resolve)" "$before_resolve"
+  say "$verbose_value keeps backends output" "$("$py" "$CFG" backends)" "$before_backends"
+  say "$verbose_value keeps check output" "$("$py" "$CFG" check)" "$before_check"
+  say "verbose-prompt honors MULTI_CONFIG with $verbose_value in MULTI_HOME" "$(MULTI_CONFIG="$TMP/without-verbose.toml" "$py" "$CFG" verbose-prompt)" "false"
+done
+for verbose_value in '"true"' 0 1 1.0 '[true]' '{}'; do
+  refuse "verbose_prompt = $verbose_value" "verbose_prompt = $verbose_value
+$(cat "$TMP/without-verbose.toml")" "verbose_prompt must be a boolean"
+  "$py" "$CFG" verbose-prompt >"$TMP/out" 2>"$TMP/err"
+  say "invalid $verbose_value stops the skill's read" "$?:$(cat "$TMP/out"):$(grep -c 'verbose_prompt must be a boolean' "$TMP/err")" "2::1"
+done
+
 refuse "unknown type" 'default_profile="p"
 [backends.x]
 type="ollama"

@@ -4,6 +4,7 @@
 # Keys are never in this file — see providers.example.env.
 
 default_profile = "normal"
+verbose_prompt = false              # true: skills show each full prompt before sending, without waiting for approval
 
 # ---- backends: a name, a type, and what that type needs -------------------
 
@@ -44,6 +45,9 @@ timeout = 1200
 type = "claude-headless"
 base_url = "https://api.deepseek.com/anthropic"
 models = ["deepseek-flash"]          # V4.1 Flash; claude-* names are mapped to it too
+# Exact model only; explicit --effort overrides every supporting backend.
+# No entry: Codex keeps medium, other harnesses decide. Gemini unsupported.
+# effort = { "deepseek-flash" = "low" }
 # Windows this backend sits out, in UTC only (the zone word is required).
 # DeepSeek bills double in these hours (its published peak, as of 2026-09-10 —
 # check api-docs.deepseek.com/quick_start/pricing, they moved on 2026-08-16).
