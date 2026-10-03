@@ -804,6 +804,7 @@ PY
   ANTHROPIC_DEFAULT_OPUS_MODEL="$model" \
     multi_timeout "$MULTI_BACKEND_TIMEOUT" claude -p "$prompt" \
       --strict-mcp-config --mcp-config '{"mcpServers":{}}' \
+      ${MULTI_READ_DIR:+--add-dir "$MULTI_READ_DIR"} \
       --setting-sources user \
       ${sid:+--session-id "$sid"} \
       > "$out" 2>> "$log"
@@ -907,6 +908,7 @@ multi_run_gemini() {
   GEMINI_API_KEY="$key" \
     multi_timeout "$MULTI_BACKEND_TIMEOUT" gemini -p "$prompt" \
       ${model:+-m "$model"} --approval-mode plan \
+      ${MULTI_READ_DIR:+--include-directories "$MULTI_READ_DIR"} \
       > "$out" 2> "$log"
   rc=$?
   printf '[multi] %s model %s effort=unsupported (Gemini CLI has no effort control)\n' "$name" "${model:-<default>}" >> "$log"

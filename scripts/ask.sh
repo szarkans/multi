@@ -81,7 +81,7 @@ MULTI_CONFIG="$(multi_config path)" || exit 2
 case "$MULTI_CONFIG" in /*|[A-Za-z]:[/\\]*) ;; *) MULTI_CONFIG="$PWD/$MULTI_CONFIG" ;; esac  # C:/ is absolute on Windows
 export MULTI_CONFIG
 
-QUESTION=""; QFILE=""; PREFIX=""; EFFORT=""; MODEL=""; FALLBACK=""; CODEX_MODEL=""; BACKEND=""; REPO=""; TIMEOUT=""; IGNORE_AVOID=""
+QUESTION=""; QFILE=""; PREFIX=""; EFFORT=""; MODEL=""; FALLBACK=""; CODEX_MODEL=""; BACKEND=""; REPO=""; READ_DIR=""; TIMEOUT=""; IGNORE_AVOID=""
 need() { [ "$1" -ge 2 ] || { echo "missing value for $2" >&2; exit 2; }; }
 DETACH_ARGS=()
 for a in "$@"; do [ "$a" = "--detach" ] || DETACH_ARGS+=("$a"); done
@@ -107,6 +107,12 @@ while [ $# -gt 0 ]; do
     # Where the CLI reviewers run git and read files: the review target, not the
     # process cwd. Default cwd, so /ask and /adhd (no repo) are unaffected.
     --repo)          need $# "$1"; REPO="$2"; shift 2 ;;
+    # One extra directory every participant may read besides --repo: the
+    # prepared skill copy of /multi:skill. Each harness gets it its own way
+    # (claude --add-dir, gemini --include-directories, an opencode
+    # external_directory rule); codex reads outside its cwd under -s read-only
+    # already, so its launch does not change.
+    --read-dir)      need $# "$1"; READ_DIR="$2"; shift 2 ;;
     # Run in a session of its own and return at once, printing the pid. For
     # hosts whose shell tool kills its whole process group at a timeout
     # (OpenCode: two minutes by default) -- `nohup … &` dies with the group.
@@ -127,6 +133,16 @@ os.execvp(sys.argv[1], sys.argv[1:])' "$0" "${DETACH_ARGS[@]}" < /dev/null &
 fi
 REPO_DIR="${REPO:-.}"
 [ -d "$REPO_DIR" ] || { echo "--repo is not a directory: $REPO_DIR" >&2; exit 2; }
+# Absolute and physical before any backend cd's into --repo, same reason as the
+# prefix below. Read by the runners in providers.sh.
+MULTI_READ_DIR=""
+if [ -n "$READ_DIR" ]; then
+  [ -d "$READ_DIR" ] || { echo "--read-dir is not a directory: $READ_DIR" >&2; exit 2; }
+  MULTI_READ_DIR="$(cd "$READ_DIR" && pwd -P)"
+  # It becomes an opencode permission glob, "<dir>/*": a wildcard in the
+  # resolved name would open sibling folders too. Refused rather than escaped.
+  case "$MULTI_READ_DIR" in *[*?[]*) echo "--read-dir: refusing a wildcard (* ? [) in the path: $MULTI_READ_DIR" >&2; exit 2 ;; esac
+fi
 [ -n "$PREFIX" ] || { echo "--out-prefix is required" >&2; exit 2; }
 # Make the output prefix absolute BEFORE any backend cd's into --repo: the codex
 # path runs inside "$REPO_DIR", and a relative -o/-log would then land in the
@@ -211,6 +227,17 @@ run_codex_one() {
   [ -s "$out" ] || [ ! -s "${out}.log" ] || multi_fail_backend "$out" "codex: NO OUTPUT — exit=$rc (stderr in ${out}.log)" "${out}.log"
 }
 
+# The read-only agent config, plus one external_directory rule when --read-dir
+# is set: without it opencode's read tool refuses any path outside --dir
+# (external_directory defaults to "ask", which a headless run denies).
+opencode_config() {
+  if [ -z "$MULTI_READ_DIR" ]; then cat "$SELF_DIR/opencode-readonly.json"; return; fi
+  "$(multi_python)" -c 'import json, sys
+c = json.load(open(sys.argv[1]))
+c["agent"]["multi-readonly"]["permission"]["external_directory"] = {sys.argv[2] + "/*": "allow"}
+print(json.dumps(c))' "$SELF_DIR/opencode-readonly.json" "$MULTI_READ_DIR"
+}
+
 run_opencode_one() {
   local out="$1" model="$2" fallback="$3" name="$4" effort
   local raw="${out}.jsonl"
@@ -247,7 +274,7 @@ run_opencode_one() {
     elapsed=0
     : > "$raw"
     OPENCODE_DISABLE_PROJECT_CONFIG=1 \
-      OPENCODE_CONFIG_CONTENT="$(cat "$SELF_DIR/opencode-readonly.json")" \
+      OPENCODE_CONFIG_CONTENT="$(opencode_config)" \
       GIT_OPTIONAL_LOCKS=0 \
       multi_timeout "$MULTI_BACKEND_TIMEOUT" opencode run --pure --agent multi-readonly --format json \
       -m "$used" ${effort:+--variant "$effort"} --dir "$REPO_DIR" "$QUESTION" > "$raw" 2>&1 &
