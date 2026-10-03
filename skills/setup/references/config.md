@@ -8,6 +8,7 @@ the plugin runs on a built-in default (codex, opencode, openrouter);
 
 ```toml
 default_profile = "normal"
+# verbose_prompt = false  # true: show each full prompt before sending, without waiting for approval
 
 [backends.openrouter]
 type = "claude-headless"          # claude -p against an Anthropic-compatible endpoint
@@ -25,6 +26,7 @@ api_key_env = "ZAI_KEY"           # only when the default name does not fit
 type = "claude-headless"
 base_url = "https://api.deepseek.com/anthropic"
 models = ["deepseek-flash"]
+# effort = { "deepseek-flash" = "low" }  # exact model; explicit --effort overrides
 avoid = ["Mon-Fri 01:00-04:00 UTC", "Mon-Fri 06:00-10:00 UTC"]   # sits out these hours (DeepSeek's peak, double price)
 
 [backends.codex]
@@ -56,6 +58,10 @@ Rules that matter when editing on a user's behalf:
   `opencode models`.
 - `timeout` is per backend. `ask.sh --timeout N` raises every backend to at
   least N for that run and never lowers one.
+- `effort` maps exact model names to non-empty levels without whitespace.
+  An explicit user-named `ask.sh --effort` overrides each supporting backend's
+  entry; otherwise the entry applies, then Codex uses `medium` and the other
+  harnesses choose their defaults. Gemini effort tables are unsupported.
 - `avoid` is a list of windows the backend sits out, on any backend type:
   `"Mon-Fri 06:00-10:00 UTC"`, `"Sat-Sun 00:00-24:00 UTC"`, `"22:00-02:00 UTC"`
   (no days = every day; wraps midnight; end exclusive). UTC only — the word is

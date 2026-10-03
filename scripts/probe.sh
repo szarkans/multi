@@ -46,8 +46,12 @@ if ! CONFIG="$(multi_config check 2>&1)"; then
   cfg="$(multi_config path 2>/dev/null || echo "$MULTI_HOME/config.toml")"
   [ ! -e "$cfg" ] || say "config: fix $cfg or delete it to get the built-in default"
   BACKENDS=""
+elif ! VERBOSE_PROMPT="$(multi_config verbose-prompt 2>&1)"; then
+  say "config: BROKEN — $VERBOSE_PROMPT"
+  BACKENDS=""
 else
   say "$CONFIG"
+  [ "$VERBOSE_PROMPT" != "true" ] || say "verbose-prompt: on"
   BACKENDS="$(multi_config backends)" || { say "config: BROKEN — backends could not be listed"; BACKENDS=""; }
 fi
 # 1.15 moved the config dir out of ~/.claude. Nothing is migrated: one line

@@ -6,9 +6,11 @@
                       backend gets max(N, its own); --ignore-avoid runs every
                       backend as if it had no avoid windows, for this run)
     config.py backends                                  every configured backend
+    config.py effort BACKEND MODEL                      exact model's effort, or empty
     config.py check                                     validate, say where it read
     config.py init                                      write the default file
     config.py path                                      where the file is
+    config.py verbose-prompt                            true or false, for skills
 
 The file is $MULTI_HOME/config.toml ($MULTI_CONFIG overrides the path). When
 it does not exist the built-in default below is used — the plugin works out of
@@ -45,8 +47,8 @@ except ModuleNotFoundError:  # python < 3.11
     import tomli as tomllib  # type: ignore
 
 TYPES = ("claude-headless", "codex", "opencode", "gemini")
-BACKEND_KEYS = {"type", "models", "base_url", "api_key_env", "timeout", "stall", "avoid"}
-TOP_KEYS = {"backends", "profiles", "default_profile"}
+BACKEND_KEYS = {"type", "models", "base_url", "api_key_env", "timeout", "stall", "avoid", "effort"}
+TOP_KEYS = {"backends", "profiles", "default_profile", "verbose_prompt"}
 DEFAULT_TIMEOUT = 300
 DEFAULT_STALL = 180
 # claude-headless is killed for silence, not for the clock: its transcript
@@ -94,11 +96,13 @@ DEFAULT_TOML = """\
 #   ask.sh --ignore-avoid lifts them for one run.
 
 default_profile = "default"
+# verbose_prompt = false  # true: show each full prompt before sending, without waiting for approval
 
 [backends.codex]
 type = "codex"
 models = []
 timeout = 600            # codex is the slow one
+# effort = { "exact/model" = "high" }  # explicit --effort overrides; Gemini unsupported
 
 [backends.opencode]
 type = "opencode"
@@ -218,6 +222,19 @@ def _str_list(where, key, value):
     return list(value)
 
 
+def _efforts(where, backend_type, value):
+    """Exact model names, no backend-wide default or inferred model capabilities."""
+    if not isinstance(value, dict):
+        raise ConfigError('%s: effort must be a model-to-level table, e.g. effort = { "model/id" = "high" }' % where)
+    for model, level in value.items():
+        w = "%s: effort[%r]" % (where, model)
+        if not isinstance(model, str) or not re.fullmatch(r"\S+", model):
+            raise ConfigError("%s: model must be a non-empty name without whitespace" % w)
+        if not isinstance(level, str) or not re.fullmatch(r"\S+", level):
+            raise ConfigError("%s: effort must be a non-empty token without whitespace, got %r" % (w, level))
+    return dict(value)
+
+
 def load(path=None):
     """Return (config, source). source is the path read, or 'built-in default'."""
     path = path or config_path()
@@ -240,6 +257,9 @@ def validate(raw, where):
     unknown = set(raw) - TOP_KEYS
     if unknown:
         raise ConfigError("%s: unknown top-level key(s): %s" % (where, ", ".join(sorted(unknown))))
+    verbose_prompt = raw.get("verbose_prompt", False)
+    if not isinstance(verbose_prompt, bool):
+        raise ConfigError("%s: verbose_prompt must be a boolean, got %r" % (where, verbose_prompt))
     backends_raw = raw.get("backends")
     if not isinstance(backends_raw, dict) or not backends_raw:
         raise ConfigError("%s: [backends.<name>] — at least one backend is required" % where)
@@ -259,6 +279,8 @@ def validate(raw, where):
         t = b.get("type")
         if t not in TYPES:
             raise ConfigError("%s: type must be one of %s, got %r" % (w, ", ".join(TYPES), t))
+        if t == "gemini" and "effort" in b:
+            raise ConfigError("%s: effort: Gemini CLI has no effort control; not supported" % w)
         models = _str_list(w, "models", b.get("models", []))
         base_url = b.get("base_url", "")
         if t == "claude-headless":
@@ -294,6 +316,7 @@ def validate(raw, where):
         if not isinstance(avoid, list):
             raise ConfigError("%s: avoid must be a list of windows, e.g. [\"Mon-Fri 06:00-10:00 UTC\"]" % w)
         backends[name] = {
+            "effort": _efforts(w, t, b.get("effort", {})),
             "avoid": [_parse_window(w, a) for a in avoid],
             "type": t,
             "models": models,
@@ -327,7 +350,8 @@ def validate(raw, where):
         raise ConfigError("%s: default_profile must be a string (a profile name)" % where)
     if default_profile not in profiles:
         raise ConfigError("%s: default_profile = %r names a profile that does not exist (have: %s)" % (where, default_profile, ", ".join(profiles) or "none"))
-    return {"backends": backends, "profiles": profiles, "default_profile": default_profile}
+    return {"backends": backends, "profiles": profiles, "default_profile": default_profile,
+            "verbose_prompt": verbose_prompt}
 
 
 def resolve(cfg, spec=None, now=None, ignore_avoid=False):
@@ -417,6 +441,9 @@ def main(argv):
             print("  setup.sh status")
             return 0
         cfg, source = load()
+        if cmd == "verbose-prompt":
+            print("true" if cfg["verbose_prompt"] else "false")
+            return 0
         if cmd == "check":
             print("config: %s" % source)
             print("backends: %s" % ", ".join(cfg["backends"]))
@@ -426,6 +453,14 @@ def main(argv):
             for name, b in cfg["backends"].items():
                 _line(name, b["type"], " ".join(b["models"]), b["base_url"], b["api_key_env"], b["timeout"], b["stall"],
                       ", ".join(t for t, _ in b["avoid"]), _closed_now(b["avoid"], now))
+            return 0
+        if cmd == "effort":
+            if len(args) != 2:
+                raise ConfigError("effort: expected BACKEND and an exact MODEL name")
+            # A backend this config does not name has no entry: nothing to pass.
+            level = cfg["backends"].get(args[0], {}).get("effort", {}).get(args[1])
+            if level is not None:
+                print(level)
             return 0
         if cmd == "resolve":
             spec, timeout, ignore_avoid = None, None, False

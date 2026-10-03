@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.16.0 — 2026-10-04
+
+- Per-model reasoning effort (#38): `effort = { "model" = "level" }` in a backend's table, passed to Codex, OpenCode (`--variant`) and claude-headless (`output_config.effort`). Order: the effort you named in the request, then the model's entry, then Codex's old `medium` and nothing for the rest. Why: models behave differently at the same level, and every backend except Codex silently dropped `--effort`. Skills now pass `--effort` only when you name one. Gemini is not supported: its CLI has no effort control.
+- `verbose_prompt = true` in `config.toml` (#10): the probe prints `verbose-prompt: on`, and every skill shows the exact prompt in chat before each send, without waiting. Why: you can see what goes to the models before it goes.
+- Pool probe retries a 429 once (#35): a one-second spike no longer drops the preferred model for the whole run. The endpoint's own wording is kept in `.dead.log` and in `setup.sh status` (labelled as endpoint text), never in the answer or the trusted reason. Why: a spike and a used-up quota now read differently.
+
 ## 1.15.1 — 2026-09-13
 
 - Install like superpowers: `INSTALL.md` in the repo, the person tells their agent "Fetch and follow instructions from …/INSTALL.md" and it does its own host. Codex is two commands (`codex plugin marketplace add szarkans/multi`, `codex plugin add multi@szkills`) because Codex reads the repo's `.claude-plugin/marketplace.json` as a marketplace, nothing extra needed; OpenCode is one `skills.paths` entry instead of five symlinks. Why: 1.15.0 made the person hand-edit a marketplace file and create symlinks, which nobody should have to.

@@ -413,6 +413,26 @@ multi_config() {
 }
 MULTI_SCRIPTS_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
+# multi_effort <backend> <exact-model> <type> <out> -> effort or empty.
+# An explicit request wins; otherwise the exact entry, then the old defaults.
+# One lookup/error path for every supporting transport. Gemini never calls it.
+multi_effort() {
+  local name="$1" model="$2" type="$3" out="$4" effort="${EFFORT:-}" note=""
+  if [ -z "$effort" ]; then
+    effort="$(multi_config effort "$name" "$model")" || {
+      multi_fail_backend "$out" "$name: invalid effort config"; return 2
+    }
+  fi
+  if [ -z "$effort" ] && [ "$type" = codex ]; then effort=medium; fi
+  if [ "$type" = opencode ] && [ -n "$effort" ]; then
+    # OpenCode 1.18.34 merges model.variants[variant] || {}; an unknown
+    # variant leaves the harness options alone, it does not reject the run.
+    note=" (requested variant; unavailable variants use harness defaults)"
+  fi
+  printf '[multi] %s model %s effort=%s%s\n' "$name" "${model:-<default>}" "${effort:-harness-default}" "$note" >> "${out}.log"
+  printf '%s' "$effort"
+}
+
 # --- opencode model autodetect -----------------------------------------
 # An opencode backend with an empty models list gets its chain from the
 # catalogue: first candidate below that `opencode models` lists, then every
@@ -465,35 +485,104 @@ multi_opencode_autodetect() {
 }
 
 # --- key checks ---------------------------------------------------------
-# Both print one word: OK, BAD KEY, or an HTTP code. This is the only honest
+# Both print a verdict: OK, BAD KEY, or an HTTP code. This is the only honest
 # way to answer "is my key good", because both agents treat an auth failure as
 # something to retry. Gemini checks with a free models-list GET. OpenRouter
-# pings one 1-token message instead: it proves the key AND that the model's
-# pool is actually up in one request. --max-time 10: a candidate list of five
-# must not become 100 silent seconds, but a slow healthy pool must not read as
-# dead either.
-# multi_check_headless <base_url> <key> <model> — one word about one model.
+# pings a 1-token message instead: it proves the key AND that the model's
+# pool is actually up, with one retry after 1s only for HTTP 429. --max-time 10
+# bounds each request without treating a slow healthy pool as dead.
+# multi_check_headless <base_url> <key> <model> — a closed-set verdict on stdout;
+# sanitized endpoint text goes ONLY to stderr, an untrusted diagnostic channel.
 # Bearer ONLY, mirroring the runner: the child claude authenticates with
 # ANTHROPIC_AUTH_TOKEN (Bearer) and nothing else, so the probe must send the
 # same header or its verdict describes a different request than the run —
 # an x-api-key-only endpoint would probe OK and then 401 on every review.
-multi_check_headless() {
-  local base_url="$1" key="$2" m="$3" code
+multi_check_headless() (
+  local base_url="$1" key="$2" m="$3" code curl_rc retry=0 tmp py
+  local detail="" verdict
   [ -n "$key" ] || { echo "NO KEY"; return 1; }
-  code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
-    "${base_url}/v1/messages" \
-    -H 'content-type: application/json' \
-    -H "authorization: Bearer ${key}" \
-    -H 'anthropic-version: 2023-06-01' \
-    -d "{\"model\":\"${m}\",\"max_tokens\":1,\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}")"
+  tmp="$(mktemp -d)" || { echo "HTTP 000"; return 1; }
+  # A subshell keeps the cleanup trap from replacing the caller's own trap.
+  trap 'rm -rf "$tmp"' EXIT
+  while :; do
+    # Keep at most 8 KiB of headers + body, then drain without writing to disk.
+    # The final four bytes are curl's own newline + status, not endpoint text.
+    # Draining preserves curl's transport exit code and --max-time still bounds
+    # streams. No curl-version-dependent --max-filesize or /dev/fd paths.
+    if curl -s -i -w '\n%{http_code}' --max-time 10 \
+      "${base_url}/v1/messages" \
+      -H 'content-type: application/json' \
+      -H "authorization: Bearer ${key}" \
+      -H 'anthropic-version: 2023-06-01' \
+      -d "{\"model\":\"${m}\",\"max_tokens\":1,\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}" \
+      | { head -c 8192 > "$tmp/response"; tail -c 4 > "$tmp/status"; }; then
+      curl_rc=${PIPESTATUS[0]}
+    else
+      curl_rc=${PIPESTATUS[0]}
+    fi
+    # A short response has its status in the prefix; a long one has it in the
+    # drained tail. Combining both also handles a cap that cuts the trailer.
+    code="$( { tail -c 4 "$tmp/response"; cat "$tmp/status"; } | tail -c 3)"
+    code="${code%$'\r'}"
+    case "$code" in [0-9][0-9][0-9]) ;; *) code=000 ;; esac
+    [ "$code" = "200" ] && { echo "OK"; return 0; }
+    # Each attempt owns its diagnostics: a bare 429 or transport failure on
+    # retry must never inherit a reason from the first response.
+    detail=""
+    if { [ "$code" = "429" ] || [ "$retry" -eq 1 ]; } && py="$(multi_python)"; then
+      detail="$("$py" - "$tmp/response" "$key" "$code" <<'PY'
+import json, sys, unicodedata
+
+def clean(text):
+    # Also the JSON-escaped form: an endpoint may echo the key inside a JSON string.
+    for k in {sys.argv[2], json.dumps(sys.argv[2])[1:-1]}:
+        text = text.replace(k, '[REDACTED]')
+    text = ''.join(' ' if unicodedata.category(c).startswith('C') else c for c in text)
+    return ' '.join(text.split())
+
+with open(sys.argv[1], 'rb') as f:
+    raw = f.read(8192)
+trailer = b'\n' + sys.argv[3].encode('ascii')
+if raw.endswith(trailer):
+    raw = raw[:-len(trailer)]
+headers = []
+# curl -i can include an interim HTTP 100 (or proxy CONNECT) header block.
+while raw.startswith(b'HTTP/'):
+    block, sep, raw = raw.partition(b'\r\n\r\n')
+    if not sep:
+        raw = b''
+        break
+    headers.extend(block.decode('utf-8', 'replace').splitlines()[1:])
+body = clean(raw[:4096].decode('utf-8', 'replace'))[:200]
+parts = [body] if body else []
+for line in headers:
+    name, sep, value = line.partition(':')
+    name = name.lower()
+    if sep and (name == 'retry-after' or name == 'ratelimit' or
+                name.startswith(('x-ratelimit-', 'ratelimit-'))):
+        parts.append(clean(line)[:200])
+# Binary UTF-8 avoids locale encodings and Windows newline translation.
+sys.stdout.buffer.write(('; '.join(parts)[:600] + '\n').encode('utf-8'))
+PY
+)" || detail=""
+      detail="${detail%$'\r'}"
+    fi
+    # A short, fixed pause, never Retry-After from an untrusted endpoint.
+    # Transport failures (including timeouts) and every other HTTP code stop.
+    [ "$code" = "429" ] && [ "$curl_rc" -eq 0 ] && [ "$retry" -eq 0 ] || break
+    retry=1
+    sleep 1
+  done
   case "$code" in
-    200) echo "OK" ;;
-    401|403) echo "BAD KEY (HTTP $code)"; return 1 ;;
-    402) echo "NO CREDIT (HTTP 402)"; return 1 ;;
-    429) echo "RATE LIMITED (HTTP 429)"; return 1 ;;
-    *) echo "HTTP $code"; return 1 ;;
+    401|403) verdict="BAD KEY (HTTP $code)" ;;
+    402) verdict="NO CREDIT (HTTP 402)" ;;
+    429) verdict="RATE LIMITED (HTTP 429)" ;;
+    *) verdict="HTTP $code" ;;
   esac
-}
+  printf '%s\n' "$verdict"
+  [ -z "$detail" ] || printf '%s (%s): endpoint text (untrusted): %s\n' "$m" "$verdict" "$detail" >&2
+  return 1
+)
 
 multi_check_gemini() { # multi_check_gemini <key>
   local key="${1:-}" code
@@ -510,17 +599,19 @@ multi_check_gemini() { # multi_check_gemini <key>
 
 # multi_pick_live_model <base_url> <key> <model...> — first model whose pool
 # answers right now. Prints the model name, or nothing if every candidate is
-# down. Costs one 1-token request per candidate (~0.3s each), which is far
-# cheaper than discovering a dead pool through a 300s agent timeout.
+# down. Costs one 1-token request per candidate (~0.3s each), plus one retry
+# only on 429, far cheaper than finding a dead pool via a 300s agent timeout.
 # Prints the first model whose pool answered, and -- on a second line, when
 # any were passed over -- the ones before it with what they said: "qwen (HTTP
 # 429), deepseek (HTTP 000)". A silent fallback read as "the config is wrong":
 # the review ran on the second model and nothing said the first was busy.
 # Returns 1 with only the skipped line when none answered.
+# MULTI_POOL_PROBE_LOG, when set by a caller, receives untrusted diagnostics;
+# stdout (including the skipped line) never includes endpoint text.
 multi_pick_live_model() {
   local base_url="$1" key="$2" m r skipped=""; shift 2
   for m in "$@"; do
-    r="$(multi_check_headless "$base_url" "$key" "$m")"
+    r="$(multi_check_headless "$base_url" "$key" "$m" 2>> "${MULTI_POOL_PROBE_LOG:-/dev/null}")"
     if [ "$r" = "OK" ]; then
       printf '%s' "$m"; [ -z "$skipped" ] || printf '\n%s' "$skipped"; return 0
     fi
@@ -548,6 +639,18 @@ multi_fail_backend() { # multi_fail_backend <out> <reason> [log]
   if [ -n "$log" ] && [ -s "$log" ]; then
     tail -c 2000 "$log" > "${out}.dead.log"
   fi
+}
+
+# Merge pool text into the untrusted sidecar AFTER status classification. It
+# must not participate in multi_fail_backend's or Claude's CLI-specific hints.
+multi_keep_pool_log() { # multi_keep_pool_log <out> <probe_log>
+  local out="$1" probe_log="$2"
+  if [ -s "$probe_log" ]; then
+    { [ ! -s "${out}.dead.log" ] || cat "${out}.dead.log"; cat "$probe_log"; } \
+      | tail -c 2000 > "${probe_log}.tail"
+    mv -f "${probe_log}.tail" "${out}.dead.log"
+  fi
+  rm -f "$probe_log"
 }
 
 # A child `claude` writes its transcript to $MULTI_CHILD_HOME/projects/<cwd
@@ -619,10 +722,10 @@ multi_headless_banner_note() { # multi_headless_banner_note <log> -> "" or a sen
 }
 multi_run_headless() {
   local name="$1" prompt="$2" out="$3" model="${4:-}" chain="${5:-}" base_url="$6" key_env="$7" rc=0
-  local log="${out}.log" key
+  local log="${out}.log" probe_log="${out}.probe.log" key
   # A stale marker from a previous run with the same prefix must not condemn
   # this run: the sidecar describes one invocation, not the file forever.
-  rm -f "${out}.dead"
+  rm -f "${out}.dead" "${out}.dead.log" "$log" "$probe_log" "${probe_log}.tail"
   eval "key=\${$key_env:-}"
   if [ -z "$key" ]; then
     multi_fail_backend "$out" "$name: NO KEY — ask the user to run scripts/setup.sh set $key_env in their own terminal (it prompts for the key)"; return 0
@@ -632,8 +735,9 @@ multi_run_headless() {
   local picked skipped=""
   if [ -z "$model" ]; then
     # shellcheck disable=SC2086
-    picked="$(multi_pick_live_model "$base_url" "$key" $chain)" || {
+    picked="$(MULTI_POOL_PROBE_LOG="$probe_log" multi_pick_live_model "$base_url" "$key" $chain)" || {
       multi_fail_backend "$out" "$name: ALL POOLS BUSY — tried ${picked#?} against $base_url. A 429 means either the pool is busy or this account's own quota is gone — check both; a 404 on a custom endpoint means it does not serve these model names — list models it hosts under [backends.$name] in config.toml; an HTTP 000 means the check itself timed out, the pool is slow, not necessarily dead. Retry in a minute or change the models list."
+      multi_keep_pool_log "$out" "$probe_log"
       return 0
     }
     # First line the model, second (if any) the pools passed over. The newline
@@ -643,6 +747,30 @@ multi_run_headless() {
 '
     model="${picked%%"$nl"*}"
     skipped="${picked#*"$nl"}"; [ "$skipped" != "$picked" ] || skipped=""
+  fi
+  # Look up the model AFTER pool selection. The configured chain can contain
+  # models with different effort, or no entry at all.
+  local effort extra_body="" py
+  effort="$(multi_effort "$name" "$model" claude-headless "$out")" || { multi_keep_pool_log "$out" "$probe_log"; return 2; }
+  if [ -n "$effort" ]; then
+    py="$(multi_python)" || { multi_fail_backend "$out" "$name: python3 required for effort"; return 2; }
+    # Anthropic Messages syntax, also normalized by OpenRouter/DeepSeek.
+    # Preserve provider routing and every other inherited extra-body field.
+    extra_body="$("$py" - "$effort" <<'PY'
+import json, os, sys
+try:
+    body = json.loads(os.environ.get("CLAUDE_CODE_EXTRA_BODY") or "{}")
+    if not isinstance(body, dict):
+        raise ValueError()
+    output = body.setdefault("output_config", {})
+    if not isinstance(output, dict):
+        raise ValueError()
+    output["effort"] = sys.argv[1]
+    print(json.dumps(body, separators=(",", ":")))
+except (ValueError, TypeError):
+    sys.exit("CLAUDE_CODE_EXTRA_BODY must be a JSON object with an object output_config")
+PY
+    )" || { multi_fail_backend "$out" "$name: cannot merge effort into CLAUDE_CODE_EXTRA_BODY"; multi_keep_pool_log "$out" "$probe_log"; return 2; }
   fi
   mkdir -p "$MULTI_CHILD_HOME"
   # stderr goes to its own file, never into the answer. Claude Code prints an
@@ -663,6 +791,9 @@ multi_run_headless() {
   # grants written by whoever authored the code under review. User settings
   # come from CLAUDE_CONFIG_DIR, the empty child home, so nothing hostile loads.
   local sid; sid="$(multi_uuid)"
+  (
+  # No effort entry: leave the inherited environment and CLI argv untouched.
+  [ -z "$effort" ] || export CLAUDE_CODE_EXTRA_BODY="$extra_body"
   CLAUDE_CONFIG_DIR="$MULTI_CHILD_HOME" \
   ANTHROPIC_BASE_URL="$base_url" \
   ANTHROPIC_AUTH_TOKEN="$key" \
@@ -675,7 +806,8 @@ multi_run_headless() {
       --strict-mcp-config --mcp-config '{"mcpServers":{}}' \
       --setting-sources user \
       ${sid:+--session-id "$sid"} \
-      > "$out" 2> "$log" &
+      > "$out" 2>> "$log"
+  ) &
   # Pulse, not clock: the transcript gets a line per turn and per tool call,
   # so a run whose transcript keeps growing is alive and is left alone up to
   # the ceiling; MULTI_BACKEND_STALL seconds without growth kills it. Silence
@@ -704,6 +836,7 @@ multi_run_headless() {
   if [ "$stalled" -eq 1 ]; then
     # Named for what was observed -- no growth -- not for a guessed cause.
     multi_fail_backend "$out" "$name: STALLED — model=$model, nothing new in its transcript for ${stall}s, killed after $(multi_child_turns "$trf") model turns${trf:+ (transcript: $trf)}. No turns at all fits a rejected key or a pool gone 429 (check scripts/setup.sh status); turns and then silence fits a hung call — read the transcript tail.$(multi_headless_banner_note "$log")" "$log"
+    multi_keep_pool_log "$out" "$probe_log"
     return 124
   fi
   if [ "$rc" -eq 124 ]; then
@@ -754,6 +887,7 @@ multi_run_headless() {
     echo "[multi] answered by $name model $model" >> "$out"
     [ -z "$skipped" ] || echo "[multi] $name pools skipped before it: $skipped" >> "$out"
   fi
+  multi_keep_pool_log "$out" "$probe_log"
   return "$rc"
 }
 
@@ -775,6 +909,7 @@ multi_run_gemini() {
       ${model:+-m "$model"} --approval-mode plan \
       > "$out" 2> "$log"
   rc=$?
+  printf '[multi] %s model %s effort=unsupported (Gemini CLI has no effort control)\n' "$name" "${model:-<default>}" >> "$log"
   if [ "$rc" -eq 124 ]; then
     # A timed-out run never reads as an answer, even with partial output.
     multi_fail_backend "$out" "$name: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s${model:+ — model=$model}" "$log"
