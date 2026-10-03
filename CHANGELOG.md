@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.17.0 — 2026-10-04
+
+- Added `/multi:skill <name|path> [args]` (#39): any installed skill runs on every participant, answers side by side — one model's reading of a skill is one opinion.
+- Added `scripts/prepare-skill.sh`: one filled-in copy of the skill per run (`$ARGUMENTS`, `${CLAUDE_SKILL_DIR}`, secrets left out, `` !`command` `` listed for the host) — those substitutions are Claude Code only, Codex prints them as text.
+- Added `ask.sh --read-dir <dir>`: one extra folder every participant may read — OpenCode refuses paths outside the repo without it (measured 2026-10-04).
+
 ## 1.16.0 — 2026-10-04
 
 - Per-model reasoning effort (#38): `effort = { "model" = "level" }` in a backend's table, passed to Codex, OpenCode (`--variant`) and claude-headless (`output_config.effort`). Order: the effort you named in the request, then the model's entry, then Codex's old `medium` and nothing for the rest. Why: models behave differently at the same level, and every backend except Codex silently dropped `--effort`. Skills now pass `--effort` only when you name one. Gemini is not supported: its CLI has no effort control.

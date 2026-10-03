@@ -1,8 +1,8 @@
 {
   "name": "multi",
   "displayName": "Multi",
-  "version": "1.16.0",
-  "description": "Several models on the same question at once — Claude sub-agents, OpenAI Codex and a cheap third via OpenCode. Review code (`code-review`), check whether the work is actually finished rather than finished-looking (`check-if-done`), brainstorm wide with a different model per cognitive frame (`adhd`), or just ask all of them something (`ask`). Missing reviewers degrade honestly instead of silently.",
+  "version": "1.17.0",
+  "description": "Several models on the same question at once — Claude sub-agents, OpenAI Codex and a cheap third via OpenCode. Review code (`code-review`), check whether the work is actually finished rather than finished-looking (`check-if-done`), brainstorm wide with a different model per cognitive frame (`adhd`), just ask all of them something (`ask`), or run any installed skill on all of them (`skill`). Missing reviewers degrade honestly instead of silently.",
   "author": {
     "name": "Sergei Shatrov",
     "url": "https://github.com/szarkans"
