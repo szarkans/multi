@@ -63,8 +63,16 @@ offer to run something else.
 
 ```bash
 RUN="$($SCRIPTS/run-dir.sh --slug <two-to-four words: the project and the skill>)"
+```
+
+Write the skill's arguments, exactly as the user gave them, to
+`$RUN/args.txt` with your **file-writing tool**, not with a shell command —
+the user's words may hold `$`, quotes or backticks, and a shell would expand
+them. No arguments: skip the file and the flag.
+
+```bash
 $SCRIPTS/prepare-skill.sh --skill "<path to the skill folder or SKILL.md>" \
-                          --into "$RUN" --args "<the arguments, verbatim>"
+                          --into "$RUN" --args-file "$RUN/args.txt"
 ```
 
 It makes a fresh copy of the skill in the run directory — a new one every run —
@@ -74,15 +82,18 @@ and the skill-folder one), and prints:
 - `skill-dir: <copy>` — the folder every participant reads;
 - `withheld: <file> (<why>)` — left out of the copy: a secret-looking name, a
   symlink, a `.git`;
-- `host-command: <command>` — a command the skill embeds in its own text
-  (Claude Code's exclamation-mark-and-backticks form), which Claude Code would
-  have run before showing the skill to its model.
+- `unfilled: <placeholder>` — another Claude Code placeholder, not filled in;
+  participants will see it as plain text;
+- `host-commands: <n> in <copy>.commands.json` — commands the skill embeds in
+  its own text, which Claude Code would have run before showing the skill to
+  its model. Exit code 3 means the skill is multi's own: see above.
 
-For each `host-command`, run the command yourself with your shell tool — the
-user gets the same permission prompt as when they run the skill directly —
-and in `<copy>/SKILL.md` replace the whole marker (the exclamation mark, the
-backticks and the command between them) with its output. If the user
-declines, replace it with one line saying the command was not run. Then:
+When there are host commands, read `<copy>.commands.json` (a list of
+`{"marker", "run"}`). For each entry, run `run` yourself with your shell
+tool — the user gets the same permission prompt as when they run the skill
+directly — then, with your file-editing tool, replace the exact `marker` text
+in `<copy>/SKILL.md` with the command's output. If the user declines, replace
+it with one line saying the command was not run. Then:
 
 ```bash
 $SCRIPTS/prepare-skill.sh --verify "<copy>"
@@ -106,15 +117,23 @@ skill asks:
   servers, other skills);
 - files outside the skill folder that it points to (`../` paths, a plugin
   root) — only the copy is readable to every participant;
+- every `unfilled:` placeholder — the arguments it stands for reach nobody;
 - every `withheld:` file.
 
 Nothing on that list? Say so in one line. The point is that nobody reads the
 answers believing the skill ran exactly as it would locally.
 
+If changing state is the whole point of the skill — a deploy, a release, a
+commit — ask the user whether a dry run is still worth it before launching;
+every participant costs time and some cost money. Otherwise go straight on.
+
 ## 4. Run it
 
+Write the instruction below, with the copy's path filled in, to
+`<copy>.question.md` with your file-writing tool, then:
+
 ```bash
-$SCRIPTS/ask.sh --question "<the instruction below, with the copy's path>" \
+$SCRIPTS/ask.sh --question-file "<copy>.question.md" \
                 --read-dir "<copy>" --out-prefix "<copy>.out/skill" \
                 > "<copy>.out.log" 2>&1
 ```
@@ -146,8 +165,9 @@ above the configured one.
 While they run, follow the same copy yourself, under the same rules: read-only,
 changes described rather than made. Write your answer before you read theirs —
 otherwise it is not an independent one. Then collect theirs with
-`$SCRIPTS/wait.sh --prefix "<copy>.out/skill" --max 540`, called again while
-it exits 1.
+`$SCRIPTS/wait.sh --prefix "<copy>.out/skill" --max 540` (`--max 100` on a
+host whose shell call is capped at two minutes), called again while it
+exits 1.
 
 ## Report
 

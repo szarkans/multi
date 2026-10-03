@@ -112,5 +112,18 @@ mkdir -p "$TMP/sk*ll"
 rc=$?
 [ $rc -eq 2 ] && grep -q 'wildcard' "$TMP/glob.err" && ok "wildcard in --read-dir refused" || bad "wildcard --read-dir: rc=$rc $(head -1 "$TMP/glob.err")"
 
+# OpenCode's matcher also turns a backslash into a slash: /tmp/a\b would open
+# /tmp/a/b. Only plain path characters pass.
+mkdir -p "$TMP/a\\b"
+"$HERE/ask.sh" --question q --out-prefix "$TMP/bs" --backend codex --read-dir "$TMP/a\\b" >/dev/null 2>"$TMP/bs.err"
+rc=$?
+[ $rc -eq 2 ] && ok "backslash in --read-dir refused" || bad "backslash --read-dir: rc=$rc"
+
+# A folder named -P must be the folder, not a cd option (cd -P == cd $HOME).
+mkdir -p "$TMP/cwd/-P"
+rm -f "$REC"/*
+(cd "$TMP/cwd" && "$HERE/ask.sh" --question q --out-prefix "$TMP/dashp" --backend "openrouter:pinned/model" --read-dir "-P" >/dev/null 2>&1)
+has_pair "$REC/claude.argv" --add-dir "$(cd "$TMP/cwd/-P" && pwd -P)" && ok "--read-dir -P is the folder named -P" || bad "--read-dir -P: $(tr '\n' ' ' < "$REC/claude.argv" 2>/dev/null)"
+
 [ $fail -eq 0 ] && echo "ALL PASS" || echo "FAILURES"
 exit $fail

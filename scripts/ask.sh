@@ -138,10 +138,15 @@ REPO_DIR="${REPO:-.}"
 MULTI_READ_DIR=""
 if [ -n "$READ_DIR" ]; then
   [ -d "$READ_DIR" ] || { echo "--read-dir is not a directory: $READ_DIR" >&2; exit 2; }
-  MULTI_READ_DIR="$(cd "$READ_DIR" && pwd -P)"
-  # It becomes an opencode permission glob, "<dir>/*": a wildcard in the
-  # resolved name would open sibling folders too. Refused rather than escaped.
-  case "$MULTI_READ_DIR" in *[*?[]*) echo "--read-dir: refusing a wildcard (* ? [) in the path: $MULTI_READ_DIR" >&2; exit 2 ;; esac
+  # `cd --`: a folder named -P is a folder, not `cd -P` (which goes to $HOME).
+  MULTI_READ_DIR="$(cd -- "$READ_DIR" && pwd -P)" && [ -n "$MULTI_READ_DIR" ] \
+    || { echo "--read-dir: cannot enter $READ_DIR" >&2; exit 2; }
+  # It becomes an opencode permission glob, "<dir>/*", and opencode's matcher
+  # gives meaning to more than * ? [ (a backslash turns into a slash: a\b opens
+  # a/b). Only plain path characters pass; the prepared copy never needs more.
+  case "$MULTI_READ_DIR" in
+    *[!A-Za-z0-9._/+@:~\ -]*) echo "--read-dir: refusing a wildcard or other special character in the path (allowed: letters, digits, space and ._/+@:~-): $MULTI_READ_DIR" >&2; exit 2 ;;
+  esac
 fi
 [ -n "$PREFIX" ] || { echo "--out-prefix is required" >&2; exit 2; }
 # Make the output prefix absolute BEFORE any backend cd's into --repo: the codex

@@ -33,7 +33,7 @@ codex plugin add multi@szkills
 ```
 
 Codex reads the repo's `.claude-plugin/marketplace.json` as the marketplace. Skills appear as `$multi:code-review`, `$multi:check-if-done`, `$multi:adhd`,
-`$multi:ask`, `$multi:setup`. Codex installs a copy: after a `git pull` of the
+`$multi:ask`, `$multi:skill`, `$multi:setup`. Codex installs a copy: after a `git pull` of the
 clone, run `codex plugin remove multi@szkills` and `codex plugin add
 multi@szkills` again.
 
@@ -53,7 +53,7 @@ it exists):
 ```
 
 Restart OpenCode. The `skill` tool then lists `code-review`, `check-if-done`,
-`adhd`, `ask`, `setup`. Skills are named by their frontmatter `name`, so
+`adhd`, `ask`, `skill`, `setup`. Skills are named by their frontmatter `name`, so
 another `code-review` skill on the machine collides with this one; if that
 happens, say so to the person.
 
