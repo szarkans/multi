@@ -187,18 +187,6 @@ multi_deny_rule() { # multi_deny_rule <path> -> prints the rule that withholds i
   local p="$1" b rule=""
   b="${p##*/}"
 
-  # Same guard as --paths, and for the same reason: this list is pasted into a
-  # prompt an external model acts on, and OpenCode runs with tool calls
-  # pre-approved -- so a backtick in a filename is a command it runs while
-  # trying to open the file we named. Measured 2026-08-20: without this,
-  # `id`.py and $(id).py reached the prompt verbatim.
-  multi_check_paths "$p" 2>/dev/null || { echo "unsafe-name"; return 0; }
-
-  # Whitespace anywhere in the PATH, not just in the basename: the list is
-  # space-separated, so `My Project/notes.md` breaks it exactly as `my notes.md`
-  # does. Checking the basename alone withheld one and waved the other through.
-  case "$p" in *[[:space:]]*) echo "unquotable-name"; return 0 ;; esac
-
   # Case-insensitive from here down. On Linux `.ENV` and `.env` are different
   # files and the same secret, and every pattern below was bypassed by holding
   # shift -- measured 2026-08-20: .ENV, ID_RSA, SECRETS.JSON, .NETRC and
@@ -247,7 +235,23 @@ multi_deny_rule() { # multi_deny_rule <path> -> prints the rule that withholds i
   fi
 
   shopt -u nocasematch
-  [ -z "$rule" ] || printf '%s\n' "$rule"
+  # The secret category is decided FIRST. The name checks below used to come
+  # first and return early, and snapshot.sh -- which only cares about the
+  # category -- read "unquotable-name" as "not a secret": `My Project/.env`
+  # shipped with its password (F1, audit 2026-10-03).
+  [ -z "$rule" ] || { printf '%s\n' "$rule"; return 0; }
+
+  # Same guard as --paths, and for the same reason: this list is pasted into a
+  # prompt an external model acts on, and OpenCode runs with tool calls
+  # pre-approved -- so a backtick in a filename is a command it runs while
+  # trying to open the file we named. Measured 2026-08-20: without this,
+  # `id`.py and $(id).py reached the prompt verbatim.
+  multi_check_paths "$p" 2>/dev/null || { echo "unsafe-name"; return 0; }
+
+  # Whitespace anywhere in the PATH, not just in the basename: the list is
+  # space-separated, so `My Project/notes.md` breaks it exactly as `my notes.md`
+  # does. Checking the basename alone withheld one and waved the other through.
+  case "$p" in *[[:space:]]*) echo "unquotable-name"; return 0 ;; esac
   return 0
 }
 

@@ -195,6 +195,20 @@ say "tracked secret file not copied" "$([ -e "$TS/config.env" ] && echo present 
 say "  its uncommitted secret not in review.diff" \
   "$(grep -c 'liveTrackedSecret99' "$TS/review.diff" 2>/dev/null | awk '{print ($1>0)?"leaked":"clean"}')" "clean"
 
+# F1 (2026-10-03 audit): a secret inside a folder whose name has a space or a
+# shell metacharacter. multi_deny_rule answered "unquotable-name" before it
+# ever looked at the secret rules, snapshot treats that as "not a secret", and
+# `My Project/.env` shipped with its password. The category must win.
+mkdir -p "$SRC/My Project" "$SRC/odd(dir)"
+printf 'DB_PASSWORD=spacedSecret77\n' > "$SRC/My Project/.env"
+printf 'KEY=metaSecret88\n' > "$SRC/odd(dir)/id_rsa"
+SP="$(bash "$SNAP" --repo "$SRC" --diff uncommitted --dest "$TMP/spaced" 2>/dev/null)"
+say "secret in a spaced folder not copied" "$([ -e "$SP/My Project/.env" ] && echo present || echo absent)" "absent"
+say "secret in a metachar folder not copied" "$([ -e "$SP/odd(dir)/id_rsa" ] && echo present || echo absent)" "absent"
+say "  neither value in review.diff" \
+  "$(grep -cE 'spacedSecret77|metaSecret88' "$SP/review.diff" 2>/dev/null | awk '{print ($1>0)?"leaked":"clean"}')" "clean"
+rm -rf "$SRC/My Project" "$SRC/odd(dir)"
+
 # The secret filter must NOT eat a legitimate file just because its name has a
 # space or a shell metacharacter — snapshot handles names safely, and JS/TS repos
 # are full of `New Component.tsx`. Withholding those would silently blind the review.
