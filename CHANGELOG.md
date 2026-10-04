@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.17.1 — 2026-10-04
+
+- Fixed (#43): the OpenCode participant could read any file on the disk through `head`, `tail`, `grep`, `wc`, `stat` and `ls` in its bash allowlist, `.env` and multi's own `providers.env` included — OpenCode keeps its read tools inside the repo but not bash. Those commands are gone, and so are `git blame` (`--contents=<file>` prints any file) and `git grep` (`-f <file>` reads one; bundled short flags defeat any pattern) — the read, grep, glob and list tools do the same inside the repo. `git diff` is limited to forms with a revision or flag (`git diff`, `git diff HEAD`, `--cached`, `--staged`, `--stat`; history through `git show` and `git log -p`): with two plain paths git switches to `--no-index` by itself and reads any file. Nothing to do on your side: update the plugin.
+
 ## 1.17.0 — 2026-10-04
 
 - Added `/multi:skill <name|path> [args]` (#39): any installed skill runs on every participant, answers side by side — one model's reading of a skill is one opinion.
