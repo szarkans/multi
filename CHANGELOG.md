@@ -3,6 +3,7 @@
 ## 1.17.2 — 2026-10-04
 
 - Fixed: a secret file inside a folder whose name has a space or a shell metacharacter (`My Project/.env`, `odd(dir)/id_rsa`) went to the reviewers with its contents — the secret check now runs before the name check. Nothing to do on your side: update the plugin.
+- Fixed (#42): `test-target-anchor.sh` failed on macOS, where `/var` is a link to `/private/var` — the test now compares physical paths. Tests only, nothing changes for users.
 
 ## 1.17.1 — 2026-10-04
 
