@@ -46,7 +46,7 @@ except ModuleNotFoundError:  # python < 3.11
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "_vendor"))
     import tomli as tomllib  # type: ignore
 
-TYPES = ("claude-headless", "codex", "opencode", "gemini")
+TYPES = ("claude-headless", "codex", "opencode", "kilo", "gemini")
 BACKEND_KEYS = {"type", "models", "base_url", "api_key_env", "timeout", "stall", "avoid", "effort"}
 TOP_KEYS = {"backends", "profiles", "default_profile", "verbose_prompt"}
 DEFAULT_TIMEOUT = 300
@@ -65,9 +65,12 @@ HEADLESS_TIMEOUT = 1800
 DEFAULT_TOML = """\
 # multi — who answers when several models are asked the same thing.
 #
-# backends: named ways to run a model. Four types exist:
+# backends: named ways to run a model. Five types exist:
 #   codex            the Codex CLI, read-only sandbox
 #   opencode         the OpenCode CLI with the plugin's read-only agent
+#   kilo             the Kilo Code CLI (an OpenCode fork), same read-only agent;
+#                    free models work without a login; not in the built-in
+#                    config, setup adds it (or add [backends.kilo] by hand)
 #   claude-headless  `claude -p` pointed at any Anthropic-compatible endpoint
 #                    (OpenRouter, 9router, z.ai, Moonshot, a self-hosted router)
 #   gemini           the Gemini CLI
@@ -76,15 +79,15 @@ DEFAULT_TOML = """\
 #
 # models: ordered fallback chain, first entry preferred. An empty list means
 # the CLI's own default (codex, gemini) or a free model picked from
-# `opencode models` at run time (opencode). claude-headless needs at least one.
-# Only opencode and claude-headless walk a chain today; codex and gemini take
+# `opencode models` / `kilo models` at run time (opencode, kilo). claude-headless needs at least one.
+# Only opencode, kilo and claude-headless walk a chain today; codex and gemini take
 # at most one model, and the config says so instead of ignoring the rest.
 # base_url: claude-headless only.
 # api_key_env: the variable in providers.env holding the key; defaults to
 #   <NAME>_API_KEY, e.g. OPENROUTER_API_KEY. Set it with: setup.sh set <NAME>
 # timeout: seconds per run, default 300 (claude-headless: 1800, a ceiling).
 #   ask.sh --timeout N raises every backend to at least N for that run (the
-#   review skill passes 2400) and never lowers one. stall (opencode,
+#   review skill passes 2400) and never lowers one. stall (opencode, kilo,
 #   claude-headless): seconds of silence before the model is declared dead,
 #   default 180 (claude-headless: 600 without its transcript growing).
 #
@@ -303,9 +306,9 @@ def validate(raw, where):
         elif "base_url" in b:
             raise ConfigError("%s: base_url only applies to type = \"claude-headless\"" % w)
         if t in ("codex", "gemini") and len(models) > 1:
-            raise ConfigError("%s: type %s takes at most one model — fallback chains are walked by opencode and claude-headless only, and the rest of this list would be silently ignored" % (w, t))
-        if "stall" in b and t not in ("opencode", "claude-headless"):
-            raise ConfigError("%s: stall only applies to type = \"opencode\" or \"claude-headless\"" % w)
+            raise ConfigError("%s: type %s takes at most one model — fallback chains are walked by opencode, kilo and claude-headless only, and the rest of this list would be silently ignored" % (w, t))
+        if "stall" in b and t not in ("opencode", "kilo", "claude-headless"):
+            raise ConfigError("%s: stall only applies to type = \"opencode\", \"kilo\" or \"claude-headless\"" % w)
         key_env = b.get("api_key_env", name.upper().replace("-", "_") + "_API_KEY")
         # It is expanded by name in bash (eval "key=\${$key_env:-}"), so it must
         # be a plain identifier — anything else is a shell injection waiting

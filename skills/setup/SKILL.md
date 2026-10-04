@@ -18,7 +18,8 @@ argument-hint: "[nothing needed — just run it]"
 `$SCRIPTS` is whatever the probe printed as `scripts-dir:`. The probe already
 ran above — read it, do not run it again. It detected everything detectable:
 which CLIs are installed, who is logged in, which keys exist, whether the
-OpenCode paid channel is available, and what other AI CLIs live on this
+OpenCode paid channel is available, whether `kilo-available:` was printed (offer
+Kilo Code, `references/kilo.md`), and what other AI CLIs live on this
 machine. **Never ask the user about anything the probe already answered.**
 
 **On any host other than Claude Code** the line above is plain text, nothing
@@ -101,6 +102,7 @@ For each backend, read its reference file first and follow it:
 
 - **Codex (GPT)** — `references/codex.md`
 - **OpenCode** — `references/opencode.md`
+- **Kilo Code** — `references/kilo.md`
 - **OpenRouter / 9router / z.ai / any compatible endpoint** — `references/openrouter.md`
 - **Gemini** — `references/gemini.md`
 
@@ -154,7 +156,7 @@ Report one short block — who's connected, and what each missing one would add:
 
 ```
 Connected: Claude, Codex, OpenRouter (endpoint: 9router)
-Not yet:   OpenCode (free extra reviewer), Gemini (free extra reviewer)
+Not yet:   OpenCode / Kilo Code (free extra reviewers), Gemini (free extra reviewer)
 
 /multi:code-review works — you have non-Claude reviewers. Each missing
 backend is one more independent opinion, most at no extra cost.

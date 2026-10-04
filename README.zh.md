@@ -16,6 +16,7 @@
 - claude 子代理
 - codex
 - opencode
+- kilo code (free models, no login)
 - gemini
 - github copilot
 - headless claude code + 你自己提供的任意 API key 或 base URL（比如 GLM/DeepSeek/Qwen/[openrouter](https://openrouter.ai/) 的 key、[9router](https://9router.com/)，只要有 anthropic 兼容端点就行）
@@ -234,7 +235,7 @@ Fetch and follow instructions from https://raw.githubusercontent.com/szarkans/mu
 
 跑过一次 `/multi:setup` 之后，会生成两个文件：`~/.config/multi/config.toml` —— 谁来评审、用什么模型、什么顺序、默认跑什么，以及 `~/.config/multi/providers.env` —— 如果你有的话，各家 provider 的 api key。
 
-一个 backend 就是一个名字加一个类型。四种类型：`codex`、`opencode`、`claude-headless`（拿 claude code 当 API 的外壳。以后可能换成 opencode 或 vercel-fx，因为 claude code 太臃肿了）、`gemini`。想要两个端点？开两张 `claude-headless` 表。profile 就是「谁一起跑」。
+一个 backend 就是一个名字加一个类型。五种类型：`codex`、`opencode`、`kilo`（Kilo Code CLI，opencode 的分支：`type = "kilo"`，不写 `models` = 免费模型，不在内置配置里，由 setup 添加）、`claude-headless`（拿 claude code 当 API 的外壳。以后可能换成 opencode 或 vercel-fx，因为 claude code 太臃肿了）、`gemini`。想要两个端点？开两张 `claude-headless` 表。profile 就是「谁一起跑」。
 
 <h2 align="center">评测</h3>
 

@@ -16,6 +16,7 @@ currently supports as `multi`-backends:
 - claude subagents
 - codex
 - opencode
+- kilo code (free models, no login)
 - gemini
 - github copilot
 - headless claude code with any API key or base URL you provide (e.g. GLM/DeepSeek/Qwen/[openrouter](https://openrouter.ai/) api key, [9router url](https://9router.com/), anything with an anthropic-compatible endpoint)
@@ -234,7 +235,7 @@ then run `/multi:setup` or `$multi:setup` or however your harness registers comm
 
 once you run `/multi:setup`, two files will be created: `~/.config/multi/config.toml` - who reviews, which models, in what order, and what runs by default and `~/.config/multi/providers.env` - api keys for your providers if you have any. 
 
-a backend is a name + a type. four types: `codex`, `opencode`, `claude-headless` (claude code as the harness for an API. might switch to opencode or vercel-fx in the future, since claude code is bulky) and `gemini`. want two endpoints? two `claude-headless` tables. a profile is who runs together.
+a backend is a name + a type. five types: `codex`, `opencode`, `kilo` (the Kilo Code CLI, an opencode fork: `type = "kilo"`, no `models` = a free one, not in the built-in config; setup adds it), `claude-headless` (claude code as the harness for an API. might switch to opencode or vercel-fx in the future, since claude code is bulky) and `gemini`. want two endpoints? two `claude-headless` tables. a profile is who runs together.
 
 <h2 align="center">evals</h3>
 

@@ -125,6 +125,7 @@ snap_is_stripped() { # snap_is_stripped <path> -> 0 for a harness rule/config fi
   case "$1" in
     .opencode|.opencode/*|opencode.json|*/.opencode|*/.opencode/*|*/opencode.json) r=0 ;;
     opencode.jsonc|*/opencode.jsonc|opencode.config.*|*/opencode.config.*|.mcp.json|*/.mcp.json) r=0 ;;
+    .kilo|.kilo/*|*/.kilo|*/.kilo/*|.kilocode|.kilocode/*|*/.kilocode|*/.kilocode/*|kilo.json|kilo.jsonc|*/kilo.json|*/kilo.jsonc|.kilocodemodes|*/.kilocodemodes|.kilocoderules|*/.kilocoderules) r=0 ;;  # Kilo (an OpenCode fork): exact names only
     .claude|.claude/*|*/.claude|*/.claude/*|.gemini|.gemini/*|*/.gemini|*/.gemini/*) r=0 ;;
     CLAUDE.md|CLAUDE.local.md|AGENTS.md|AGENTS.override.md|GEMINI.md) r=0 ;;
     */CLAUDE.md|*/CLAUDE.local.md|*/AGENTS.md|*/AGENTS.override.md|*/GEMINI.md) r=0 ;;
@@ -136,7 +137,7 @@ snap_is_stripped() { # snap_is_stripped <path> -> 0 for a harness rule/config fi
 copy_one() { # copy_one <path>
   local f="$1" src="$ROOT/$1" dst="$DEST/$1" sz
   # Strip the reviewed repo's own opencode config from the copy (#12), any depth.
-  case "$f" in .opencode/*|opencode.json|*/.opencode/*|*/opencode.json) return ;; esac
+  case "$f" in .opencode/*|opencode.json|*/.opencode/*|*/opencode.json|.kilo|.kilo/*|*/.kilo|*/.kilo/*|.kilocode|.kilocode/*|*/.kilocode|*/.kilocode/*|kilo.json|kilo.jsonc|*/kilo.json|*/kilo.jsonc|.kilocodemodes|*/.kilocodemodes|.kilocoderules|*/.kilocoderules) return ;; esac
   # Same hole, other harnesses: since the runners cd into the copy, a bare
   # `claude -p` auto-loads .claude/settings.json (hooks, permissions) and
   # CLAUDE.md/AGENTS.md as trusted instructions, gemini loads .gemini/ and
@@ -185,6 +186,8 @@ git -C "$ROOT" ls-files -z --cached --others --exclude-standard | while IFS= rea
 # case-insensitively, at any depth, whatever slipped through.
 find "$DEST" \( -iname '.opencode' -o -iname 'opencode.json' -o -iname 'opencode.jsonc' \
                 -o -iname 'opencode.config.*' \
+                -o -iname '.kilo' -o -iname '.kilocode' -o -iname 'kilo.json' -o -iname 'kilo.jsonc' \
+                -o -iname '.kilocodemodes' -o -iname '.kilocoderules' \
                 -o -iname '.claude' -o -iname '.gemini' -o -iname '.mcp.json' \
                 -o -iname 'CLAUDE.md' -o -iname 'CLAUDE.local.md' \
                 -o -iname 'AGENTS.md' -o -iname 'AGENTS.override.md' -o -iname 'GEMINI.md' \
@@ -223,8 +226,8 @@ build_excludes() { # build_excludes <rev> <checksize:0|1>
   EXARGS=(); local f rev="$1" checksize="$2" sz
   while IFS= read -r -d '' f; do
     case "$f" in
-      .opencode/*|opencode.json|*/.opencode/*|*/opencode.json)
-        EXARGS+=(":(exclude,literal)$f"); printf '%s (opencode config, held out of the diff)\n' "$f" >> "$skipped"; continue ;;
+      .opencode/*|opencode.json|*/.opencode/*|*/opencode.json|.kilo|.kilo/*|*/.kilo|*/.kilo/*|.kilocode|.kilocode/*|*/.kilocode|*/.kilocode/*|kilo.json|kilo.jsonc|*/kilo.json|*/kilo.jsonc|.kilocodemodes|*/.kilocodemodes|.kilocoderules|*/.kilocoderules)
+        EXARGS+=(":(exclude,literal)$f"); printf '%s (opencode/kilo config, held out of the diff)\n' "$f" >> "$skipped"; continue ;;
     esac
     # Harness instruction files (CLAUDE.md, AGENTS.md, .claude/*, …) STAY in the
     # diff on purpose: there they are inert text, and a change that edits the
@@ -251,7 +254,7 @@ if [ "$DIFF" = "uncommitted" ]; then
   # Untracked-not-ignored files are additions: git diff vs HEAD never shows them.
   git -C "$ROOT" ls-files -z --others --exclude-standard \
   | while IFS= read -r -d '' f; do
-      case "$f" in .opencode/*|opencode.json|*/.opencode/*|*/opencode.json) continue ;; esac
+      case "$f" in .opencode/*|opencode.json|*/.opencode/*|*/opencode.json|.kilo|.kilo/*|*/.kilo|*/.kilo/*|.kilocode|.kilocode/*|*/.kilocode|*/.kilocode/*|kilo.json|kilo.jsonc|*/kilo.json|*/kilo.jsonc|.kilocodemodes|*/.kilocodemodes|.kilocoderules|*/.kilocoderules) continue ;; esac
       # A control character (newline, tab) in a name is attacker-controlled and
       # would forge a second manifest line (`A\tevil<NL>D\tfake` reads as two
       # rows). git C-quotes such names in the diff, but our printf does not — skip
@@ -349,10 +352,10 @@ for p in $PATHS; do
     echo "snapshot: $p is not in the copy: $why" >&2; missing=1; continue
   fi
   case "$p" in
-    .opencode|.opencode/*|opencode.json*|opencode.config.*|*/.opencode|*/.opencode/*|*/opencode.json*|*/opencode.config.*)
+    .opencode|.opencode/*|opencode.json*|opencode.config.*|*/.opencode|*/.opencode/*|*/opencode.json*|*/opencode.config.*|.kilo|.kilo/*|*/.kilo|*/.kilo/*|.kilocode|.kilocode/*|*/.kilocode|*/.kilocode/*|kilo.json|kilo.jsonc|*/kilo.json|*/kilo.jsonc|.kilocodemodes|*/.kilocodemodes|.kilocoderules|*/.kilocoderules)
       # Held out of the copy AND of review.diff (#12): there is nothing of it
       # for a reviewer to read, so naming it is a stop, not a note.
-      why="opencode config is withheld from reviewers on purpose, from the copy and from review.diff (#12)"
+      why="opencode/kilo config is withheld from reviewers on purpose, from the copy and from review.diff (#12)"
       printf '%s (requested via --paths, NOT in the copy: %s)\n' "$p" "$why" >> "$skipped"
       echo "snapshot: $p is not in the copy: $why" >&2; missing=1; continue ;;
   esac

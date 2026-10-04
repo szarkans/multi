@@ -104,8 +104,9 @@ while IFS="$(printf '\t')" read -r name type chain url keyenv timeout stall avoi
       else
         say "$name: MISSING"
       fi ;;
-    opencode)
-      if ! command -v opencode >/dev/null 2>&1; then
+    opencode|kilo)
+      if [ "$type" = kilo ]; then cands="$MULTI_KILO_CANDIDATES"; else cands="$MULTI_OPENCODE_CANDIDATES"; fi
+      if ! command -v "$type" >/dev/null 2>&1; then
         say "$name: MISSING (third reviewer will be skipped)"
       elif [ -n "$chain" ]; then
         set -- $chain; picked="$1"; shift; fallback="$(printf '%s' "$*" | tr ' ' ',')"
@@ -117,12 +118,12 @@ while IFS="$(printf '\t')" read -r name type chain url keyenv timeout stall avoi
         # The default candidate order puts the free model first on purpose: it is
         # the one measured working here, and a review is not worth burning paid
         # usage on by default. List a paid model in config.toml to spend it.
-        auto="$(multi_opencode_autodetect)" || auto=""
+        auto="$(multi_opencode_autodetect "$type")" || auto=""
         picked="${auto%% *}"; fallback="${auto#* }"; [ "$fallback" != "$auto" ] || fallback=""
         if [ -n "$picked" ]; then
           say "$name: OK — ${picked}${fallback:+ (fallback: ${fallback})}"
         else
-          say "$name: NO USABLE MODEL — none of [$MULTI_OPENCODE_CANDIDATES] is available; set models under [backends.$name] in config.toml to one of: $(multi_opencode_catalogue | head -5 | tr '\n' ' ')"
+          say "$name: NO USABLE MODEL — none of [$cands] is available; set models under [backends.$name] in config.toml to one of: $(multi_opencode_catalogue "$type" | head -5 | tr '\n' ' ')"
         fi
         configured_models=""
       fi
@@ -136,9 +137,9 @@ while IFS="$(printf '\t')" read -r name type chain url keyenv timeout stall avoi
       # this probe runs before every skill invocation; 2.9s each time is the
       # price, and it was not judged worth it.
       paid_seen="$(printf '%s\n' "$configured_models" | tr ' ' '\n')"
-      [ -s "$MULTI_HOME/opencode-models.cache" ] \
+      [ -s "$MULTI_HOME/$type-models.cache" ] \
         && paid_seen="$paid_seen
-$(cat "$MULTI_HOME/opencode-models.cache" 2>/dev/null)"
+$(cat "$MULTI_HOME/$type-models.cache" 2>/dev/null)"
       if grep -q '^opencode-go/' <<<"$paid_seen"; then
         say "opencode-paid-channel: available (opencode-go/* listed)"
       fi
@@ -172,6 +173,11 @@ $(cat "$MULTI_HOME/opencode-models.cache" 2>/dev/null)"
 done <<EOF
 $BACKENDS
 EOF
+
+# kilo installed but not configured: the setup skill offers it (references/kilo.md).
+if command -v kilo >/dev/null 2>&1 && ! printf '%s\n' "$BACKENDS" | cut -f2 | grep -qx kilo; then
+  say "kilo-available: kilo CLI is installed, no type = \"kilo\" backend configured — setup can offer it as a free extra reviewer"
+fi
 
 # --- other AI CLIs (not reviewers yet) ----------------------------------
 # Raw detection for the setup skill: what else on this machine could one day

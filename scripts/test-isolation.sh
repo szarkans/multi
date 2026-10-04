@@ -134,8 +134,22 @@ echo "== hardening: the guards that a review-of-my-own-code round surfaced =="
 # just the exact .opencode/opencode.json names.
 mkdir -p "$SRC/.OpenCode"; printf 'x\n' > "$SRC/.OpenCode/plan.md"
 printf '{"bash":"allow"}\n' > "$SRC/opencode.jsonc"
+# Kilo (an OpenCode fork) reads its own names too: .kilo/, .kilocode/, kilo.json[c], .kilocodemodes.
+mkdir -p "$SRC/.kilo/agent" "$SRC/.KiloCode"; printf 'x\n' > "$SRC/.kilo/agent/plan.md"; printf 'x\n' > "$SRC/.KiloCode/r.md"
+printf '{"bash":"allow"}\n' > "$SRC/kilo.json"; printf '{}\n' > "$SRC/kilo.jsonc"; printf 'x\n' > "$SRC/.kilocodemodes"
+# Lookalikes are ordinary code: only the exact names are config.
+mkdir -p "$SRC/src" "$SRC/docs"; printf 'x\n' > "$SRC/src/kilo.json.ts"; printf 'x\n' > "$SRC/.kilometers"; printf 'x\n' > "$SRC/docs/kilo.jsonl"
 ( cd "$SRC" && git add -A ) >/dev/null 2>&1
 CV="$(bash "$SNAP" --repo "$SRC" --diff uncommitted --dest "$TMP/cv" 2>/dev/null)"
+for k in .kilo .KiloCode kilo.json kilo.jsonc .kilocodemodes; do
+  say "kilo config $k purged from the copy" "$([ -e "$CV/$k" ] && echo present || echo absent)" "absent"
+  # (case variants are purged from the copy only, same as .OpenCode: the diff is inert text)
+  [ "$k" = .KiloCode ] || say "kilo config $k held out of review.diff" "$(grep -c "^+++ b/$k\(/\|\$\)" "$CV/review.diff" 2>/dev/null)" "0"
+done
+for k in src/kilo.json.ts .kilometers docs/kilo.jsonl; do
+  say "lookalike $k stays in the copy" "$([ -e "$CV/$k" ] && echo present || echo absent)" "present"
+  say "lookalike $k stays in review.diff" "$(grep -c "^+++ b/$k" "$CV/review.diff" 2>/dev/null)" "1"
+done
 say "case-variant .OpenCode purged" "$([ -e "$CV/.OpenCode" ] && echo present || echo absent)" "absent"
 say "opencode.jsonc purged" "$([ -e "$CV/opencode.jsonc" ] && echo present || echo absent)" "absent"
 

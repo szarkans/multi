@@ -86,7 +86,7 @@ cmd_status() {
         if [ -n "$key" ]; then printf '%s — ' "$(mask "$key")"; multi_check_gemini "$key"
         else echo "not configured (setup.sh set $keyenv)"; fi ;;
       codex)    command -v codex >/dev/null 2>&1 && codex --version 2>/dev/null | head -1 || echo "CLI MISSING" ;;
-      opencode) command -v opencode >/dev/null 2>&1 && echo "CLI present${chain:+ — $chain}" || echo "CLI MISSING" ;;
+      opencode|kilo) command -v "$type" >/dev/null 2>&1 && echo "CLI present${chain:+ — $chain}" || echo "CLI MISSING" ;;
     esac
   done <<EOF
 $(multi_config backends)

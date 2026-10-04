@@ -239,12 +239,13 @@ fi
 # its own opencode config. The stubs above ignore flags, so only this source guard
 # catches a silent revert of the safety mechanism.
 # Herestrings, not pipes: `grep -q` in a pipe dies of SIGPIPE under pipefail.
-oc_cmds="$(grep -nE 'multi_timeout .*opencode run' "$HERE/ask.sh")"
-n_cmds="$(grep -c 'opencode run' <<<"$oc_cmds")"
+oc_cmds="$(grep -nE 'multi_timeout .*"\$bin" run' "$HERE/ask.sh")"
+n_cmds="$(grep -c '"\$bin" run' <<<"$oc_cmds")"
 n_ro="$(grep -c -- '--agent multi-readonly' <<<"$oc_cmds")"
 if [ "$n_cmds" -ge 1 ] && ! grep -q -- '--auto' <<<"$oc_cmds" \
    && [ "$n_ro" -eq "$n_cmds" ] \
-   && grep -q 'OPENCODE_DISABLE_PROJECT_CONFIG=1' "$HERE/ask.sh"; then
+   && grep -q 'OPENCODE_DISABLE_PROJECT_CONFIG=1' "$HERE/ask.sh" \
+   && grep -q 'KILO_DISABLE_PROJECT_CONFIG=1' "$HERE/ask.sh"; then
   echo "ok   opencode stays read-only (--agent multi-readonly, project config disabled, no --auto) on all $n_cmds invocation(s)"
 else
   echo "FAIL opencode not read-only: every 'opencode run' needs --agent multi-readonly + OPENCODE_DISABLE_PROJECT_CONFIG=1 and no --auto (found $n_cmds cmd(s), $n_ro read-only)"; fail=1
