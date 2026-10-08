@@ -9,11 +9,13 @@ the plugin runs on a built-in default (codex, opencode, openrouter);
 ```toml
 default_profile = "normal"
 # verbose_prompt = false  # true: show each full prompt before sending, without waiting for approval
+# no_train = false        # true: only models with training verdict no run
 
 [backends.openrouter]
 type = "claude-headless"          # claude -p against an Anthropic-compatible endpoint
 base_url = "https://openrouter.ai/api"
 models = ["z-ai/glm-5.2:free", "poolside/laguna-s-2.1:free"]
+# trains = false         # account override, any backend; true = may train
 # api_key_env defaults to OPENROUTER_API_KEY (name upper-cased + _API_KEY)
 
 [backends.zcode]
@@ -50,6 +52,27 @@ normal = ["openrouter:x-ai/grok-4.5", "zcode", "codex"]
 
 Rules that matter when editing on a user's behalf:
 
+- Top-level `no_train` is a boolean, off by default; `ask.sh --no-train` enables
+  it for one call only (it must be passed every time); `no_train = true` in
+  config is the durable switch. Keep only verdict `no` models in chain order, including
+  autodetection and fallbacks; `yes` and `unknown` sit out with a `.dead`
+  marker and stay in the roster. `probe.sh` prints `no-train: on`.
+- `trains = true|false` under any backend overrides every model's built-in
+  verdict. Set `false` only when the user knows their account does not train
+  (e.g. OpenRouter data_collection deny, ChatGPT training off); this asserts
+  an account policy, it does not change a provider setting. Without an
+  override: Codex unknown; Anthropic API no; OpenRouter `:free` yes, others
+  unknown; DeepSeek and z.ai/BigModel yes; OpenCode `opencode/*` yes, others
+  unknown; Gemini yes. Other headless hosts are unknown. Kilo uses the public
+  gateway's `mayTrainOnYourPrompts`, cached in `$MULTI_HOME/kilo-training.cache`
+  for `MULTI_PROBE_CACHE_MIN` minutes (default 60); unavailable or missing flag
+  means `:free` yes, others unknown. Delete the cache or set the minutes to 0
+  to refresh. `MULTI_KILO_TRAINING_FIXTURE` points to a JSON fixture for offline
+  checks and bypasses network and cache. Every model sent the prompt
+  gets a line in the runner-written `<answer>.trains` (`yes|no|unknown <model>`),
+  fallbacks included, worst verdict counts; skills name yes/unknown destinations on one report line. `<default>`
+  labels an unpinned CLI default. No second family after filtering means the
+  review stops; explain `trains = false` or offer `/multi:setup`.
 - Five types only: `claude-headless`, `codex`, `opencode`, `kilo`, `gemini`. The same
   type may appear under several names — that is how a second endpoint is added.
 - `models` is an ordered fallback chain for `opencode`, `kilo` and `claude-headless`.

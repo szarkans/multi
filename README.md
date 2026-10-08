@@ -237,6 +237,23 @@ once you run `/multi:setup`, two files will be created: `~/.config/multi/config.
 
 a backend is a name + a type. five types: `codex`, `opencode`, `kilo` (the Kilo Code CLI, an opencode fork: `type = "kilo"`, no `models` = a free one, not in the built-in config; setup adds it), `claude-headless` (claude code as the harness for an API. might switch to opencode or vercel-fx in the future, since claude code is bulky) and `gemini`. want two endpoints? two `claude-headless` tables. a profile is who runs together.
 
+code-review, check-if-done and ask report where code went that may be used for training, or whose policy is unknown. each runner appends one line to `<answer>.trains`, `yes|no|unknown <model>`, for every model it sent the prompt to, fallbacks included; the report counts the worst line. an unpinned CLI default is labelled `<default>`.
+
+say "no-train" (or "без обучающих моделей") for one run: the skill passes `ask.sh --no-train`. a one-off `--no-train` only works if it is passed on every call; for every run, put `no_train = true` at the top of `config.toml`, before backend tables. only verdict `no` survives, including fallbacks and autodetected lists; `yes` and `unknown` sit out. a backend with nothing left stays in the roster as `SAT OUT`, with a hint to set `trains = false` under `[backends.<name>]` if your account does not train. `trains = true` also overrides the rules, for every model of that backend. these flags describe your account; they do not change the provider's privacy setting. the review stops if no second reviewer family remains. by default the switch is off and the same reviewers run.
+
+| reviewer | built-in training verdict |
+| --- | --- |
+| Codex | unknown: ChatGPT login follows the account's improve-the-model setting, on by default for Plus |
+| Claude headless at `api.anthropic.com` | no |
+| Claude headless at `openrouter.ai` | `:free` yes; others unknown, depending on the account's privacy setting |
+| Claude headless at `api.deepseek.com`, `api.z.ai`, `open.bigmodel.cn` | yes |
+| Claude headless at any other host | unknown |
+| OpenCode | `opencode/*` yes (free channel); others unknown |
+| Kilo | gateway `mayTrainOnYourPrompts`; unavailable or missing flag: `:free` yes, others unknown |
+| Gemini | yes (free CLI tier) |
+
+Kilo's public, unauthenticated [model catalogue](https://api.kilo.ai/api/gateway/models) is cached in `$MULTI_HOME/kilo-training.cache` for `MULTI_PROBE_CACHE_MIN` minutes (default 60). only clean results are cached; delete that file or set the minutes to 0 to refresh. tests use `MULTI_KILO_TRAINING_FIXTURE=/path/to/models.json` to bypass network and cache. verdict rules live in `scripts/training.py`. a verdict describes training use; `no` does not promise zero retention.
+
 <h2 align="center">evals</h3>
 
 tldr: `multi` found more at about the same cost, but obviously takes longer. and those aren't even the best models i could put in its profile!

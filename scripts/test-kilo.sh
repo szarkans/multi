@@ -30,7 +30,11 @@ case "${MODE:-ok}" in
 esac
 STUB
 chmod +x "$TMP/bin/kilo"
-export KILO_TEST_DIR="$TMP" MULTI_HOME="$TMP/h" PATH="$TMP/bin:$PATH"
+# No network, ever: the training catalogue comes from a fixture, and a curl on
+# PATH only records that someone tried (asserted at the end).
+printf '{"data":[{"id":"qwen/qwen3.8-27b:free","mayTrainOnYourPrompts":true}]}\n' > "$TMP/models.json"
+printf '#!/usr/bin/env bash\necho "$*" >> "$KILO_TEST_DIR/curl-called"\nexit 7\n' > "$TMP/bin/curl"; chmod +x "$TMP/bin/curl"
+export KILO_TEST_DIR="$TMP" MULTI_HOME="$TMP/h" PATH="$TMP/bin:$PATH" MULTI_KILO_TRAINING_FIXTURE="$TMP/models.json"
 # kilo is not in the built-in config, so the run tests bring their own.
 printf 'default_profile = "p"\n[backends.kilo]\ntype = "kilo"\nmodels = []\n[profiles]\np = ["kilo"]\n' > "$TMP/kcfg.toml"
 export MULTI_CONFIG="$TMP/kcfg.toml"
@@ -50,9 +54,13 @@ say "KILO_CONFIG_CONTENT is the read-only agent config" "$(python3 -c '
 import json,sys
 p=json.load(open(sys.argv[1]))["agent"]["multi-readonly"]["permission"]
 print(p.get("edit"), p["bash"].get("*"))' "$TMP/config")" "deny deny"
-say "  and equals opencode-readonly.json" "$(python3 -c '
+say "  and equals opencode-readonly.json plus small_model" "$(python3 -c '
 import json,sys
-print(json.load(open(sys.argv[1]))==json.load(open(sys.argv[2])))' "$TMP/config" "$TREE/scripts/opencode-readonly.json")" "True"
+c=json.load(open(sys.argv[1])); c.pop("small_model", None)
+print(json.load(open(sys.argv[2]))==c)' "$TMP/config" "$TREE/scripts/opencode-readonly.json")" "True"
+say "small_model is the model in use (-m)" "$(python3 -c '
+import json,sys
+print(json.load(open(sys.argv[1]))["small_model"])' "$TMP/config")" "kilo/qwen/qwen3.8-27b:free"
 
 echo "== --read-dir reaches kilo too =="
 bash "$TREE/scripts/ask.sh" --question q --out-prefix "$TMP/r2" --backend kilo:kilo/qwen/qwen3.8-27b:free --repo "$TMP/repo" --read-dir "$TMP/repo" >/dev/null 2>&1
@@ -118,6 +126,8 @@ printf 'default_profile = "p"\n[backends.kilo]\ntype = "kilo"\nmodels = []\n[pro
 say "probe picks a free kilo model" "$(bash "$TREE/scripts/probe.sh" 2>/dev/null | grep '^kilo:')" "kilo: OK — kilo/qwen/qwen3.8-27b:free (fallback: kilo/nvidia/nemotron-3-super-120b-a12b:free,kilo/other/x:free)"
 printf 'default_profile = "p"\n[backends.opencode]\ntype = "opencode"\nmodels = ["x"]\n[profiles]\np = ["opencode"]\n' > "$TMP/h/config.toml"
 say "kilo installed but unconfigured is announced for setup" "$(bash "$TREE/scripts/probe.sh" 2>/dev/null | grep -c '^kilo-available:')" "1"
+
+say "nothing in this suite touched the network" "$([ -e "$TMP/curl-called" ] && cat "$TMP/curl-called" || echo none)" none
 
 [ $fail -eq 0 ] && echo "ALL PASS" || echo "FAILURES"
 exit $fail

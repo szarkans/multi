@@ -172,6 +172,8 @@ clown = [
 
 每个类型、每个字段都带注释：[`config.example.toml`](config.example.toml)。需要 `python3`。
 
+code-review、check-if-done 和 ask 会用一行列出可能将代码用于训练（`yes`）或政策未知（`unknown`）的模型。运行器为每个收到提示的模型（包括 fallback）在 `<answer>.trains` 追加一行，报告取最差判定；`no` 不代表零保留。说「no-train」或「без обучающих моделей」会传入 `ask.sh --no-train`；一次性的 `--no-train` 必须每次调用都传；长期开关是配置顶部的 `no_train = true`。只保留 `no`，空后端仍在 roster 中显示 `SAT OUT`。若账户确实不训练，可在 `[backends.<name>]` 下设置 `trains = false` 覆盖规则；`true` 表示可能训练。它不会更改供应商账户设置。没有第二个模型家族时评审停止。默认关闭，运行名单不变。规则和 Kilo 缓存见 [英文 README](README.md)。
+
 <h2 align="center">code-review</h2>
 
 重头戏。流程是这样的：

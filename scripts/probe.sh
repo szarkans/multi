@@ -52,6 +52,7 @@ elif ! VERBOSE_PROMPT="$(multi_config verbose-prompt 2>&1)"; then
 else
   say "$CONFIG"
   [ "$VERBOSE_PROMPT" != "true" ] || say "verbose-prompt: on"
+  [ "$(multi_config no-train)" != true ] || say "no-train: on — only models with verdict no will run; yes and unknown sit out"
   BACKENDS="$(multi_config backends)" || { say "config: BROKEN — backends could not be listed"; BACKENDS=""; }
 fi
 # 1.15 moved the config dir out of ~/.claude. Nothing is migrated: one line
