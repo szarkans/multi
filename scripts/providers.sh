@@ -364,7 +364,7 @@ MULTI_CHILD_HOME="${MULTI_CHILD_HOME:-$MULTI_HOME/child-home}"
 MULTI_BACKEND_TIMEOUT="${MULTI_BACKEND_TIMEOUT:-300}"
 # A healthy OpenCode run writes its first JSON event within seconds. Give slow
 # startup 180s, but do not spend the full backend timeout on a zero-byte stream.
-MULTI_OPENCODE_STALL="${MULTI_OPENCODE_STALL:-180}"
+MULTI_OPENCODE_STALL="${MULTI_OPENCODE_STALL:-180}"  # kilo reads the same variable
 # THE REVIEW TIMEOUT IS NOT SET HERE, deliberately. skills/code-review/SKILL.md
 # is markdown that cannot source this file -- it evaluates its own
 # `${MULTI_REVIEW_TIMEOUT:-2400}` in the agent's shell and passes the result as
@@ -428,7 +428,7 @@ multi_effort() {
     }
   fi
   if [ -z "$effort" ] && [ "$type" = codex ]; then effort=medium; fi
-  if [ "$type" = opencode ] && [ -n "$effort" ]; then
+  if { [ "$type" = opencode ] || [ "$type" = kilo ]; } && [ -n "$effort" ]; then
     # OpenCode 1.18.34 merges model.variants[variant] || {}; an unknown
     # variant leaves the harness options alone, it does not reject the run.
     note=" (requested variant; unavailable variants use harness defaults)"
@@ -443,20 +443,28 @@ multi_effort() {
 # free (opencode/*) model in catalogue order as fallbacks. Prints
 # "<picked> <fallback,csv>" (second word may be empty), or nothing.
 MULTI_OPENCODE_CANDIDATES="${MULTI_OPENCODE_CANDIDATES:-opencode/deepseek-v4-flash-free opencode-go/deepseek-v4-flash}"
+# Kilo: free ids only, nemotron last (NVIDIA's free pool queues big models for
+# minutes). kilo/kilo-auto/* and kilo/openrouter/* are ROUTERS -- the answering
+# model varies per call -- never picked, not even as fallbacks: they are named
+# .../free, not :free, so the ^kilo/.*:free$ filter already excludes them.
+MULTI_KILO_CANDIDATES="${MULTI_KILO_CANDIDATES:-kilo/poolside/laguna-s-2.1:free kilo/qwen/qwen3.8-27b:free kilo/cohere/north-mini-code:free kilo/nvidia/nemotron-3-super-120b-a12b:free}"
 # `opencode --pure models` is the whole cost: 2.9s against 49ms for the codex
 # check, measured 2026-08-20 -- and the probe runs before every single skill
 # invocation. The list is a catalogue, not a live state, so it is cached; a
 # model that disappeared mid-hour is already handled, since the runner falls
 # back when its first choice dies. Delete the file or set MULTI_PROBE_CACHE_MIN=0
 # to force a fresh read.
+# Both take the binary (opencode|kilo) as $1, default opencode; one cache file each.
 multi_opencode_catalogue() {
-  local models_cache="$MULTI_HOME/opencode-models.cache" cache_min="${MULTI_PROBE_CACHE_MIN:-60}" available="" models_rc cache_tmp
+  local bin="${1:-opencode}" models_cache="$MULTI_HOME/${1:-opencode}-models.cache" cache_min="${MULTI_PROBE_CACHE_MIN:-60}" available="" models_rc cache_tmp
   # `find -mmin` rather than stat: stat's flags differ between GNU and BSD.
   [ "$cache_min" != "0" ] && [ -s "$models_cache" ] \
     && [ -n "$(find "$models_cache" -mmin "-${cache_min}" 2>/dev/null)" ] \
     && available="$(cat "$models_cache")"
   if [ -z "$available" ]; then
-    available="$(multi_timeout 20 opencode --pure models 2>/dev/null)"; models_rc=$?
+    # Neutral cwd + project config off: a reviewed repo's kilo.json/opencode.json
+    # must be neither read nor rewritten (kilo's loader writes $schema into it).
+    available="$(cd "$MULTI_HOME" 2>/dev/null || cd /; OPENCODE_DISABLE_PROJECT_CONFIG=1 KILO_DISABLE_PROJECT_CONFIG=1 multi_timeout 20 "$bin" --pure models 2>/dev/null)"; models_rc=$?
     # Only a run that finished cleanly may be cached. A listing that printed
     # half its models and then timed out is non-empty, and caching it would
     # pin a truncated catalogue for the next hour -- long enough to make the
@@ -474,15 +482,16 @@ multi_opencode_catalogue() {
   printf '%s\n' "$available"
 }
 multi_opencode_autodetect() {
-  local available picked="" fallback="" m
-  available="$(multi_opencode_catalogue)"
-  for m in $MULTI_OPENCODE_CANDIDATES; do
+  local bin="${1:-opencode}" available picked="" fallback="" m cands="$MULTI_OPENCODE_CANDIDATES" free='^opencode/'
+  [ "$bin" != kilo ] || { cands="$MULTI_KILO_CANDIDATES"; free='^kilo/.*:free$'; }
+  available="$(multi_opencode_catalogue "$bin")"
+  for m in $cands; do
     printf '%s\n' "$available" | grep -qxF "$m" && { picked="$m"; break; }
   done
   [ -n "$picked" ] || return 1
   # `opencode/` is the free channel; `opencode-go/` is not. Keep every free
   # model in the catalogue's order, except the already-selected primary.
-  for m in $(printf '%s\n' "$available" | grep '^opencode/'); do
+  for m in $(printf '%s\n' "$available" | grep "$free"); do
     [ "$m" = "$picked" ] || fallback="${fallback}${fallback:+,}${m}"
   done
   printf '%s %s\n' "$picked" "$fallback"

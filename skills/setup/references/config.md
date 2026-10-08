@@ -37,7 +37,7 @@ timeout = 600                     # seconds; default 300 (claude-headless: 1800,
 [backends.opencode]
 type = "opencode"
 models = ["opencode-go/glm-5.3-flash", "opencode/deepseek-v4-flash"]
-stall = 180                       # opencode/claude-headless: silence before it is declared dead (headless default 600)
+stall = 180                       # opencode/kilo/claude-headless: silence before it is declared dead (headless default 600)
 
 [backends.gemini]
 type = "gemini"
@@ -50,12 +50,13 @@ normal = ["openrouter:x-ai/grok-4.5", "zcode", "codex"]
 
 Rules that matter when editing on a user's behalf:
 
-- Four types only: `claude-headless`, `codex`, `opencode`, `gemini`. The same
+- Five types only: `claude-headless`, `codex`, `opencode`, `kilo`, `gemini`. The same
   type may appear under several names — that is how a second endpoint is added.
-- `models` is an ordered fallback chain for `opencode` and `claude-headless`.
+- `models` is an ordered fallback chain for `opencode`, `kilo` and `claude-headless`.
   `claude-headless` needs at least one; `codex` and `gemini` take at most one;
   an empty list is the CLI default, or for opencode a free model picked from
-  `opencode models`.
+  `opencode models` (`kilo models` for kilo; its `kilo-auto/*` and
+  `openrouter/*` routers are never auto-picked).
 - `timeout` is per backend. `ask.sh --timeout N` raises every backend to at
   least N for that run and never lowers one.
 - `effort` maps exact model names to non-empty levels without whitespace.

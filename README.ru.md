@@ -16,6 +16,7 @@
 - суб-агентов claude
 - codex
 - opencode
+- kilo code (free models, no login)
 - gemini
 - github copilot
 - headless claude code с любым API-ключом или base URL, который ты дашь (например ключ GLM/DeepSeek/Qwen/[openrouter](https://openrouter.ai/), [9router](https://9router.com/) — что угодно с anthropic-совместимым эндпоинтом)
@@ -234,7 +235,7 @@ Fetch and follow instructions from https://raw.githubusercontent.com/szarkans/mu
 
 как только запустишь `/multi:setup`, создадутся два файла: `~/.config/multi/config.toml` - кто ревьюит, какие модели, в каком порядке, и что запускается по умолчанию и `~/.config/multi/providers.env` - api-ключи для твоих провайдеров, если они у тебя есть. 
 
-бэкенд - это имя + тип. четыре типа: `codex`, `opencode`, `claude-headless` (claude code как обвязка для API. в будущем может переехать на opencode или vercel-fx, потому что claude code громоздкий) и `gemini`. нужно два эндпоинта? две таблицы `claude-headless`. профиль - это кто ревьюит вместе.
+бэкенд - это имя + тип. пять типов: `codex`, `opencode`, `kilo` (Kilo Code CLI, форк opencode: `type = "kilo"`, без `models` = бесплатная модель, во встроенном конфиге его нет, добавляет setup), `claude-headless` (claude code как обвязка для API. в будущем может переехать на opencode или vercel-fx, потому что claude code громоздкий) и `gemini`. нужно два эндпоинта? две таблицы `claude-headless`. профиль - это кто ревьюит вместе.
 
 <h2 align="center">почему README написан вот так?</h3>
 

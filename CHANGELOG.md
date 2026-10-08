@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Added a `kilo` backend type: the Kilo Code CLI (an OpenCode fork) runs through the same read-only runner as OpenCode. `[backends.kilo]` with no `models` picks a free `kilo/...:free` model from `kilo models`; the `kilo-auto/*` and `openrouter/*` routers are never picked on their own, because the model that answers changes from call to call. It is not in the built-in config: `/multi:setup` offers it when the `kilo` CLI is installed, or add a `[backends.kilo]` table and put `"kilo"` into a profile. Free models need no login; if you are logged in to Kilo, your account is used. Why: one more free reviewer family. Read-only rests on the same plugin config as OpenCode (passed in `KILO_CONFIG_CONTENT`), and the snapshot copy now also drops `.kilo/`, `.kilocode/`, `kilo.json[c]`, `.kilocodemodes` and `.kilocoderules`.
+- Fixed: the diff handed to reviewers took its format from your own git config — with `diff.noprefix`, `diff.mnemonicPrefix`, an external diff tool, `textconv` or forced color, `review.diff` came out in a shape reviewers and the plugin's own checks do not expect. The format is now fixed. Nothing to do on your side.
+
 ## 1.17.2 — 2026-10-04
 
 - Fixed: a secret file inside a folder whose name has a space or a shell metacharacter (`My Project/.env`, `odd(dir)/id_rsa`) went to the reviewers with its contents — the secret check now runs before the name check. Nothing to do on your side: update the plugin.

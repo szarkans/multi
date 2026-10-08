@@ -320,7 +320,7 @@ printf '%s\n' 'default_profile="p"' '[backends.x]' 'type="codex"' 'avoid=["Mon-F
 
 echo "== the repo's example config is valid and exercises every type =="
 MULTI_CONFIG="$TREE/config.example.toml" "$py" "$CFG" check >/dev/null 2>"$TMP/err"; say "config.example.toml validates" "$?:$(cat "$TMP/err")" "0:"
-say "every type appears in it" "$(MULTI_CONFIG="$TREE/config.example.toml" "$py" "$CFG" backends | cut -f2 | sort -u | tr '\n' ' ')" "claude-headless codex gemini opencode "
+say "every type appears in it" "$(MULTI_CONFIG="$TREE/config.example.toml" "$py" "$CFG" backends | cut -f2 | sort -u | tr '\n' ' ')" "claude-headless codex gemini kilo opencode "
 say "every key name in providers.example.env is read by some backend" "$(comm -23 <(grep -o '^export [A-Z_]*' "$TREE/providers.example.env" | sed 's/export //' | sort) <(MULTI_CONFIG="$TREE/config.example.toml" "$py" "$CFG" backends | cut -f5 | sort -u) | tr '\n' ' ')" ""
 
 echo "== the vendored parser is the same parser =="

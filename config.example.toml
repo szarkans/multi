@@ -16,7 +16,11 @@ timeout = 600                        # seconds for one run; default 300 (claude-
 [backends.opencode]                  # type "opencode": OpenCode CLI, plugin's read-only agent
 type = "opencode"
 models = []                          # empty = a free model from `opencode models`, others as fallback
-stall = 180                          # opencode, claude-headless: seconds of silence before it counts as dead (headless default 600)
+stall = 180                          # opencode, kilo, claude-headless: seconds of silence before it counts as dead (headless default 600)
+
+[backends.kilo]                      # type "kilo": Kilo Code CLI (an opencode fork), same read-only agent; not in the default profile
+type = "kilo"
+models = []                          # empty = a free kilo/...:free model from `kilo models` (never the kilo-auto / openrouter routers)
 
 [backends.opencode-paid]             # the same type twice, under another name
 type = "opencode"

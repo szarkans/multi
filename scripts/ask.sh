@@ -243,12 +243,13 @@ c["agent"]["multi-readonly"]["permission"]["external_directory"] = {sys.argv[2] 
 print(json.dumps(c))' "$SELF_DIR/opencode-readonly.json" "$MULTI_READ_DIR"
 }
 
-run_opencode_one() {
-  local out="$1" model="$2" fallback="$3" name="$4" effort
+run_opencode_one() { # run_opencode_one <out> <model> <fallback,csv> <name> [opencode|kilo]
+  local out="$1" model="$2" fallback="$3" name="$4" bin="${5:-opencode}" effort cands="$MULTI_OPENCODE_CANDIDATES"
+  [ "$bin" != kilo ] || cands="$MULTI_KILO_CANDIDATES"
   local raw="${out}.jsonl"
   rm -f "${out}.dead" "${out}.log" "${raw}.first" "${out}.partial" "${out}.partial.calls"
-  command -v opencode >/dev/null 2>&1 || { multi_fail_backend "$out" "opencode: MISSING"; return 0; }
-  [ -n "$model" ] || { multi_fail_backend "$out" "opencode: NO MODEL — none of [$MULTI_OPENCODE_CANDIDATES] is in \`opencode models\`; list models under this backend's table in config.toml, or pass --model"; return 0; }
+  command -v "$bin" >/dev/null 2>&1 || { multi_fail_backend "$out" "$bin: MISSING"; return 0; }
+  [ -n "$model" ] || { multi_fail_backend "$out" "$bin: NO MODEL — none of [$cands] is in \`$bin models\`; list models under this backend's table in config.toml, or pass --model"; return 0; }
   # --format json rather than the terminal transcript: the transcript mixes the
   # model's answer with every file it opened, and the reader downstream cannot
   # tell those apart. The JSON events can. opencode-report.py turns them into
@@ -272,16 +273,18 @@ run_opencode_one() {
     case ",$attempted," in *",$candidate,"*) continue ;; esac
     [ -z "$retry_note" ] || echo "$retry_note — retrying on $candidate" >&2
     used="$candidate"
-    effort="$(multi_effort "$name" "$used" opencode "$out")" || return 2
+    effort="$(multi_effort "$name" "$used" "$bin" "$out")" || return 2
     attempted="${attempted}${attempted:+,}${used}"
     attempted_count=$((attempted_count+1))
     stalled=0
     elapsed=0
     : > "$raw"
-    OPENCODE_DISABLE_PROJECT_CONFIG=1 \
-      OPENCODE_CONFIG_CONTENT="$(opencode_config)" \
+    local cfg; cfg="$(opencode_config)"
+    # Kilo is an OpenCode fork with KILO_* names; both sets are harmless to either.
+    OPENCODE_DISABLE_PROJECT_CONFIG=1 KILO_DISABLE_PROJECT_CONFIG=1 \
+      OPENCODE_CONFIG_CONTENT="$cfg" KILO_CONFIG_CONTENT="$cfg" \
       GIT_OPTIONAL_LOCKS=0 \
-      multi_timeout "$MULTI_BACKEND_TIMEOUT" opencode run --pure --agent multi-readonly --format json \
+      multi_timeout "$MULTI_BACKEND_TIMEOUT" "$bin" run --pure --agent multi-readonly --format json \
       -m "$used" ${effort:+--variant "$effort"} --dir "$REPO_DIR" "$QUESTION" > "$raw" 2>&1 &
     candidate_pid=$!
     while kill -0 "$candidate_pid" 2>/dev/null; do
@@ -339,58 +342,58 @@ run_opencode_one() {
     cp "${out}.partial" "$out"
     rm -f "${out}.calls"
     [ ! -e "${out}.partial.calls" ] || cp "${out}.partial.calls" "${out}.calls"
-    { echo "opencode: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s — model=$used (partial; run was cut off)"
+    { echo "$bin: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s — model=$used (partial; run was cut off)"
       cat "$out"
     } > "${out}.tmp" && mv "${out}.tmp" "$out"
   elif [ "$answered" -eq 0 ] && [ "$attempted_count" -gt 1 ]; then
     local calls_note=""
     [ ! -e "${out}.calls" ] || calls_note="; what it did is in ${out}.calls"
     if [ "$silent_count" -eq "$attempted_count" ]; then
-      multi_fail_backend "$out" "opencode: FALLBACK CHAIN EXHAUSTED — tried $attempted; every model was SILENT/stalled after ${effective_stall}s with no events${calls_note}" "$raw"
+      multi_fail_backend "$out" "$bin: FALLBACK CHAIN EXHAUSTED — tried $attempted; every model was SILENT/stalled after ${effective_stall}s with no events${calls_note}" "$raw"
     elif [ "$silent_count" -gt 0 ]; then
       if [ "$timeout_count" -gt 0 ]; then
-        multi_fail_backend "$out" "opencode: FALLBACK CHAIN EXHAUSTED — tried $attempted; every model ended in TIMEOUT, NO ANSWER, or SILENT/stalled ($silent_count wrote no events for ${effective_stall}s; last exit=$rc${failure_error:+; one model reported: $failure_error})${calls_note}" "$raw"
+        multi_fail_backend "$out" "$bin: FALLBACK CHAIN EXHAUSTED — tried $attempted; every model ended in TIMEOUT, NO ANSWER, or SILENT/stalled ($silent_count wrote no events for ${effective_stall}s; last exit=$rc${failure_error:+; one model reported: $failure_error})${calls_note}" "$raw"
       else
-        multi_fail_backend "$out" "opencode: FALLBACK CHAIN EXHAUSTED — tried $attempted; every model ended in NO ANSWER or SILENT/stalled ($silent_count wrote no events for ${effective_stall}s; last exit=$rc${failure_error:+; one model reported: $failure_error})${calls_note}" "$raw"
+        multi_fail_backend "$out" "$bin: FALLBACK CHAIN EXHAUSTED — tried $attempted; every model ended in NO ANSWER or SILENT/stalled ($silent_count wrote no events for ${effective_stall}s; last exit=$rc${failure_error:+; one model reported: $failure_error})${calls_note}" "$raw"
       fi
     else
-      multi_fail_backend "$out" "opencode: FALLBACK CHAIN EXHAUSTED — tried $attempted; every model ended in TIMEOUT or NO ANSWER (last exit=$rc${failure_error:+; one model reported: $failure_error})${calls_note}" "$raw"
+      multi_fail_backend "$out" "$bin: FALLBACK CHAIN EXHAUSTED — tried $attempted; every model ended in TIMEOUT or NO ANSWER (last exit=$rc${failure_error:+; one model reported: $failure_error})${calls_note}" "$raw"
     fi
   elif [ "$stalled" -eq 1 ]; then
-    multi_fail_backend "$out" "opencode: SILENT — model=$used wrote no events for ${effective_stall}s (out of quota, or the CLI never started)" "$raw"
+    multi_fail_backend "$out" "$bin: SILENT — model=$used wrote no events for ${effective_stall}s (out of quota, or the CLI never started)" "$raw"
   elif [ "$rc" -eq 124 ]; then
     if [ "$rrc" = 0 ] && [ -s "$out" ]; then
-      { echo "opencode: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s — model=$used (partial; run was cut off)"
+      { echo "$bin: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s — model=$used (partial; run was cut off)"
         cat "$out"
       } > "${out}.tmp" && mv "${out}.tmp" "$out"
     else
-      multi_fail_backend "$out" "opencode: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s — model=$used (partial capture in $raw)" "$raw"
+      multi_fail_backend "$out" "$bin: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s — model=$used (partial capture in $raw)" "$raw"
     fi
   elif [ "$rrc" = 3 ]; then
     if [ -n "$last_error" ]; then
-      multi_fail_backend "$out" "opencode: NO ANSWER — model=$used exit=$rc — $last_error; what it did is in ${out}.calls" "$raw"
+      multi_fail_backend "$out" "$bin: NO ANSWER — model=$used exit=$rc — $last_error; what it did is in ${out}.calls" "$raw"
     else
-      multi_fail_backend "$out" "opencode: NO ANSWER — model=$used exit=$rc — it ran but said nothing; what it did is in ${out}.calls" "$raw"
+      multi_fail_backend "$out" "$bin: NO ANSWER — model=$used exit=$rc — it ran but said nothing; what it did is in ${out}.calls" "$raw"
     fi
   elif [ "$rrc" = 2 ] && [ "$rc" -ne 0 ]; then
-    multi_fail_backend "$out" "opencode: NO OUTPUT — model=$used exit=$rc" "$raw"
+    multi_fail_backend "$out" "$bin: NO OUTPUT — model=$used exit=$rc" "$raw"
   elif [ "$rrc" = 2 ] || [ "$rrc" = 4 ]; then
-    local why="an opencode without --format json"; [ "$rrc" = 4 ] && why="no python3 on this machine"
+    local why="a $bin without --format json"; [ "$rrc" = 4 ] && why="no python3 on this machine"
     # Not a dead backend: the model answered, the answer is just unstructured
     # text the caller must read raw. No marker — one here would read a real
     # answer as "no backend alive".
-    { echo "opencode: RAW CAPTURE ONLY — model=$used exit=$rc ($why)"
+    { echo "$bin: RAW CAPTURE ONLY — model=$used exit=$rc ($why)"
       tail -n 80 "$raw" 2>/dev/null | sed "s/$(printf '\033')\[[0-9;]*[a-zA-Z]//g" | sed 's/^/raw| /'
     } > "$out"
   elif [ ! -s "$out" ]; then
-    multi_fail_backend "$out" "opencode: NO OUTPUT — model=$used exit=$rc" "$raw"
+    multi_fail_backend "$out" "$bin: NO OUTPUT — model=$used exit=$rc" "$raw"
   fi
   # A silent model swap is exactly the failure the user fears: the report header
   # now carries the fallback's name, but nothing says the model they ASKED for
   # died. Announce it loud, at the TOP where the reader lands — not a line
   # appended to the very bottom that the eye skates past.
   if [ "$used" != "$model" ] && [ -s "$out" ] && [ ! -e "${out}.dead" ]; then
-    { echo "opencode: $model ${primary_failure:-produced no answer} — fell back to $used"; echo
+    { echo "$bin: $model ${primary_failure:-produced no answer} — fell back to $used"; echo
       cat "$out"
     } > "${out}.tmp" && mv "${out}.tmp" "$out"
   fi
@@ -559,20 +562,21 @@ for i in "${!NAMES[@]}"; do
     codex)
       ( MULTI_BACKEND_TIMEOUT="${TIMEOUTS[$i]}"; started "$out" && cd "$REPO_DIR" \
         && run_codex_one "$out" "${model:-${CODEX_MODEL:-$(first_of "$chain")}}" "$name"; finished "${SUFFIXES[$i]}" "$out" "$t0" "$name" ) & ;;
-    opencode)
+    opencode|kilo)
       # Pinned: exactly that model. --model/--fallback: this run's chain.
       # Otherwise the config chain, or, when it is empty, a free model from the
       # catalogue with every other free one as fallback.
+      oc_fb="$FALLBACK"; [ "$type" = opencode ] || oc_fb=""  # --model/--fallback are opencode-only
       if [ -n "$model" ]; then oc_model="$model"; oc_fallback=""
-      elif [ -n "$MODEL" ]; then oc_model="$MODEL"; oc_fallback="$FALLBACK"
-      elif [ -n "$chain" ]; then oc_model="$(first_of "$chain")"; oc_fallback="${FALLBACK:-$(rest_csv "$chain")}"
+      elif [ -n "$MODEL" ] && [ "$type" = opencode ]; then oc_model="$MODEL"; oc_fallback="$FALLBACK"
+      elif [ -n "$chain" ]; then oc_model="$(first_of "$chain")"; oc_fallback="${oc_fb:-$(rest_csv "$chain")}"
       else
-        auto="$(multi_opencode_autodetect 2>/dev/null)" || auto=""
+        auto="$(multi_opencode_autodetect "$type" 2>/dev/null)" || auto=""
         oc_model="${auto%% *}"; oc_fallback="${auto#* }"; [ "$oc_fallback" != "$auto" ] || oc_fallback=""
-        [ -z "$FALLBACK" ] || oc_fallback="$FALLBACK"
+        [ -z "$oc_fb" ] || oc_fallback="$oc_fb"
       fi
       ( MULTI_BACKEND_TIMEOUT="${TIMEOUTS[$i]}"; MULTI_OPENCODE_STALL="${STALLS[$i]}"; started "$out" && cd "$REPO_DIR" \
-        && run_opencode_one "$out" "$oc_model" "$oc_fallback" "$name"; finished "${SUFFIXES[$i]}" "$out" "$t0" "$name" ) & ;;
+        && run_opencode_one "$out" "$oc_model" "$oc_fallback" "$name" "$type"; finished "${SUFFIXES[$i]}" "$out" "$t0" "$name" ) & ;;
     claude-headless)
       ( MULTI_BACKEND_TIMEOUT="${TIMEOUTS[$i]}"; MULTI_BACKEND_STALL="${STALLS[$i]}"; started "$out" && cd "$REPO_DIR" \
         && multi_run_headless "$name" "$QUESTION" "$out" "$model" "$chain" "${URLS[$i]}" "${KEYENVS[$i]}"; finished "${SUFFIXES[$i]}" "$out" "$t0" "$name" ) & ;;
