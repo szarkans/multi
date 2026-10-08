@@ -243,13 +243,16 @@ build_excludes() { # build_excludes <rev> <checksize:0|1>
   done < <(git -C "$ROOT" -c core.quotePath=false diff "$rev" --name-only -z 2>/dev/null)
 }
 
+# Pinned patch format for every write to review.diff: the user's diff.mnemonicPrefix,
+# noprefix, external, textconv or color config must not reshape what reviewers read.
+PIN=(--no-ext-diff --no-textconv --no-color --src-prefix=a/ --dst-prefix=b/)
 if [ "$DIFF" = "uncommitted" ]; then
   # Tracked changes: working tree vs HEAD covers staged AND unstaged in one pass.
   # No commit yet? Diff against the empty tree so everything reads as added.
   base="$EMPTY_TREE"
   git -C "$ROOT" rev-parse --verify -q HEAD >/dev/null 2>&1 && base="HEAD"
   build_excludes "$base" 1
-  git -C "$ROOT" -c core.quotePath=false diff "$base" -- . ${EXARGS[@]+"${EXARGS[@]}"} >> "$DIFFOUT" 2>/dev/null || true
+  git -C "$ROOT" -c core.quotePath=false diff "${PIN[@]}" "$base" -- . ${EXARGS[@]+"${EXARGS[@]}"} >> "$DIFFOUT" 2>/dev/null || true
   git -C "$ROOT" -c core.quotePath=false diff "$base" --name-status -- . ${EXARGS[@]+"${EXARGS[@]}"} >> "$MANOUT" 2>/dev/null || true
   # Untracked-not-ignored files are additions: git diff vs HEAD never shows them.
   git -C "$ROOT" ls-files -z --others --exclude-standard \
@@ -279,7 +282,7 @@ if [ "$DIFF" = "uncommitted" ]; then
       fi
       # --no-index against /dev/null renders the file as a brand-new addition.
       # It exits 1 when they differ (they always do) — that is success here.
-      git -C "$ROOT" -c core.quotePath=false diff --no-index -- /dev/null "$f" >> "$DIFFOUT" 2>/dev/null || true
+      git -C "$ROOT" -c core.quotePath=false diff "${PIN[@]}" --no-index -- /dev/null "$f" >> "$DIFFOUT" 2>/dev/null || true
       printf 'A\t%s\n' "$f" >> "$MANOUT"
     done
 else
@@ -299,7 +302,7 @@ else
   # inner name-only is empty, EXARGS stays empty, and the resolve check below
   # still fails correctly.
   build_excludes "$DIFF" 0
-  if git -C "$ROOT" -c core.quotePath=false diff "$DIFF" -- . ${EXARGS[@]+"${EXARGS[@]}"} > "$DIFFOUT.try" 2>/dev/null; then
+  if git -C "$ROOT" -c core.quotePath=false diff "${PIN[@]}" "$DIFF" -- . ${EXARGS[@]+"${EXARGS[@]}"} > "$DIFFOUT.try" 2>/dev/null; then
     if [ -s "$DIFFOUT.try" ]; then
       mv "$DIFFOUT.try" "$DIFFOUT"
       git -C "$ROOT" -c core.quotePath=false diff "$DIFF" --name-status -- . ${EXARGS[@]+"${EXARGS[@]}"} >> "$MANOUT" 2>/dev/null || true
@@ -307,7 +310,7 @@ else
       # Valid revision, empty diff. Two sub-cases: a single commit on a clean tree
       # (its patch is via `git show`), or a range that genuinely changed nothing.
       rm -f "$DIFFOUT.try"
-      if git -C "$ROOT" -c core.quotePath=false show "$DIFF" -- . ${EXARGS[@]+"${EXARGS[@]}"} > "$DIFFOUT" 2>/dev/null && [ -s "$DIFFOUT" ]; then
+      if git -C "$ROOT" -c core.quotePath=false show "${PIN[@]}" "$DIFF" -- . ${EXARGS[@]+"${EXARGS[@]}"} > "$DIFFOUT" 2>/dev/null && [ -s "$DIFFOUT" ]; then
         git -C "$ROOT" -c core.quotePath=false show --name-status --format="" "$DIFF" -- . ${EXARGS[@]+"${EXARGS[@]}"} >> "$MANOUT" 2>/dev/null || true
       else
         # Genuinely no changes on a valid revision — leave review.diff empty and
