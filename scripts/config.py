@@ -11,6 +11,8 @@
     config.py init                                      write the default file
     config.py path                                      where the file is
     config.py verbose-prompt                            true or false, for skills
+    config.py no-train                                  true or false, for runner and skills
+    config.py trains BACKEND                            account override: true, false, unknown
 
 The file is $MULTI_HOME/config.toml ($MULTI_CONFIG overrides the path). When
 it does not exist the built-in default below is used — the plugin works out of
@@ -47,8 +49,8 @@ except ModuleNotFoundError:  # python < 3.11
     import tomli as tomllib  # type: ignore
 
 TYPES = ("claude-headless", "codex", "opencode", "kilo", "gemini")
-BACKEND_KEYS = {"type", "models", "base_url", "api_key_env", "timeout", "stall", "avoid", "effort"}
-TOP_KEYS = {"backends", "profiles", "default_profile", "verbose_prompt"}
+BACKEND_KEYS = {"type", "models", "base_url", "api_key_env", "timeout", "stall", "avoid", "effort", "trains"}
+TOP_KEYS = {"backends", "profiles", "default_profile", "verbose_prompt", "no_train"}
 DEFAULT_TIMEOUT = 300
 DEFAULT_STALL = 180
 # claude-headless is killed for silence, not for the clock: its transcript
@@ -100,12 +102,14 @@ DEFAULT_TOML = """\
 
 default_profile = "default"
 # verbose_prompt = false  # true: show each full prompt before sending, without waiting for approval
+# no_train = false        # true: run only models whose training verdict is no
 
 [backends.codex]
 type = "codex"
 models = []
 timeout = 600            # codex is the slow one
 # effort = { "exact/model" = "high" }  # explicit --effort overrides; Gemini unsupported
+# trains = false         # account override, any backend: false = no training; true = may train
 
 [backends.opencode]
 type = "opencode"
@@ -263,6 +267,9 @@ def validate(raw, where):
     verbose_prompt = raw.get("verbose_prompt", False)
     if not isinstance(verbose_prompt, bool):
         raise ConfigError("%s: verbose_prompt must be a boolean, got %r" % (where, verbose_prompt))
+    no_train = raw.get("no_train", False)
+    if not isinstance(no_train, bool):
+        raise ConfigError("%s: no_train must be a boolean, got %r" % (where, no_train))
     backends_raw = raw.get("backends")
     if not isinstance(backends_raw, dict) or not backends_raw:
         raise ConfigError("%s: [backends.<name>] — at least one backend is required" % where)
@@ -279,6 +286,8 @@ def validate(raw, where):
         unknown = set(b) - BACKEND_KEYS
         if unknown:
             raise ConfigError("%s: unknown key(s): %s (allowed: %s)" % (w, ", ".join(sorted(unknown)), ", ".join(sorted(BACKEND_KEYS))))
+        if "trains" in b and not isinstance(b["trains"], bool):
+            raise ConfigError("%s: trains must be a boolean, got %r" % (w, b["trains"]))
         t = b.get("type")
         if t not in TYPES:
             raise ConfigError("%s: type must be one of %s, got %r" % (w, ", ".join(TYPES), t))
@@ -319,6 +328,7 @@ def validate(raw, where):
         if not isinstance(avoid, list):
             raise ConfigError("%s: avoid must be a list of windows, e.g. [\"Mon-Fri 06:00-10:00 UTC\"]" % w)
         backends[name] = {
+            "trains": b.get("trains"),
             "effort": _efforts(w, t, b.get("effort", {})),
             "avoid": [_parse_window(w, a) for a in avoid],
             "type": t,
@@ -354,7 +364,7 @@ def validate(raw, where):
     if default_profile not in profiles:
         raise ConfigError("%s: default_profile = %r names a profile that does not exist (have: %s)" % (where, default_profile, ", ".join(profiles) or "none"))
     return {"backends": backends, "profiles": profiles, "default_profile": default_profile,
-            "verbose_prompt": verbose_prompt}
+            "verbose_prompt": verbose_prompt, "no_train": no_train}
 
 
 def resolve(cfg, spec=None, now=None, ignore_avoid=False):
@@ -446,6 +456,15 @@ def main(argv):
         cfg, source = load()
         if cmd == "verbose-prompt":
             print("true" if cfg["verbose_prompt"] else "false")
+            return 0
+        if cmd == "no-train":
+            print("true" if cfg["no_train"] else "false")
+            return 0
+        if cmd == "trains":
+            if len(args) != 1:
+                raise ConfigError("trains: expected BACKEND")
+            trains = cfg["backends"].get(args[0], {}).get("trains")
+            print("unknown" if trains is None else ("true" if trains else "false"))
             return 0
         if cmd == "check":
             print("config: %s" % source)

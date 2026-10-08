@@ -481,6 +481,90 @@ multi_opencode_catalogue() {
   fi
   printf '%s\n' "$available"
 }
+# Kilo publishes training flags separately from the CLI's model list. No key,
+# no prompts: only this public GET. A fixture path bypasses network and cache.
+# Prints the validated rows ("id<TAB>yes|no"); the cache holds the raw JSON and
+# is re-validated on every read, so a poisoned cache file is just a miss.
+multi_kilo_training_catalogue() {
+  local py cache="$MULTI_HOME/kilo-training.cache" cache_min="${MULTI_PROBE_CACHE_MIN:-60}" tmp rows
+  py="$(multi_python)" || return 1
+  if [ -n "${MULTI_KILO_TRAINING_FIXTURE:-}" ]; then
+    "$py" "$MULTI_SCRIPTS_DIR/training.py" catalogue < "$MULTI_KILO_TRAINING_FIXTURE" 2>/dev/null
+    return $?
+  fi
+  if [ "$cache_min" != "0" ] && [ -s "$cache" ] && [ -n "$(find "$cache" -mmin "-${cache_min}" 2>/dev/null)" ]; then
+    rows="$("$py" "$MULTI_SCRIPTS_DIR/training.py" catalogue < "$cache" 2>/dev/null)" && { printf '%s\n' "$rows"; return 0; }
+  fi
+  tmp="$(mktemp "${TMPDIR:-/tmp}/multi-kilo-training.XXXXXX")" || return 1
+  # -q first: curl reads ~/.curlrc only if it is the first argument.
+  if ! curl -q --proto =https --max-time 20 -fsS https://api.kilo.ai/api/gateway/models > "$tmp" 2>/dev/null; then
+    rm -f "$tmp"; return 1
+  fi
+  rows="$("$py" "$MULTI_SCRIPTS_DIR/training.py" catalogue < "$tmp" 2>/dev/null)" || { rm -f "$tmp"; return 1; }
+  # Only completed HTTP responses with valid IDs and boolean flags are cached.
+  # mktemp also keeps simultaneous refreshes from sharing a temporary file.
+  if mkdir -p "$MULTI_HOME" 2>/dev/null; then
+    mv -f "$tmp" "$cache.$$" 2>/dev/null && mv -f "$cache.$$" "$cache" 2>/dev/null || rm -f "$tmp" "$cache.$$"
+  else
+    rm -f "$tmp"
+  fi
+  printf '%s\n' "$rows"
+}
+
+# Fetch the catalogue into <file>; empty file and rc 1 when unavailable.
+multi_kilo_training_load() { # <file>
+  multi_kilo_training_catalogue > "$1" 2>/dev/null || { : > "$1"; return 1; }
+}
+
+# One python call for a whole chain: <type> <base_url> <model>... -> one verdict
+# per line. The Kilo rows come from the file MULTI_KILO_TRAINING_FILE (if any),
+# the account override from MULTI_TRAINING_OVERRIDE (set by ask.sh).
+multi_training_verdicts() {
+  local py t="$1" url="$2" m rows=""; shift 2
+  [ -z "${MULTI_KILO_TRAINING_FILE:-}" ] || [ ! -s "$MULTI_KILO_TRAINING_FILE" ] || rows="$MULTI_KILO_TRAINING_FILE"
+  if py="$(multi_python)" && "$py" "$MULTI_SCRIPTS_DIR/training.py" "$t" "$url" "${MULTI_TRAINING_OVERRIDE:-unknown}" "$rows" "$@" 2>/dev/null; then
+    return 0
+  fi
+  for m in "$@"; do echo unknown; done
+}
+multi_training_verdict() { # <type> <model> [base_url]
+  multi_training_verdicts "$1" "${3:-}" "${2:-<default>}"
+}
+
+# Append "<verdict> <model>" for a model that is about to be sent the prompt:
+# a chain that walks several models leaves one line each.
+multi_record_training() { # <out> <type> <model> [base_url]
+  printf '%s %s\n' "$(multi_training_verdict "$2" "${3:-<default>}" "${4:-}")" "${3:-<default>}" >> "${1}.trains"
+}
+
+# Set the kept chain in the caller. An empty CLI default has a visible name for
+# the verdict, then becomes empty again; no invented model is passed to a CLI.
+multi_filter_training() { # <out> <name> <type> <chain> [base_url]
+  local model denied="" kept="" chain="${4:-<default>}" verdicts verdict
+  MULTI_SAFE_CHAIN="$4"
+  [ "${MULTI_NO_TRAIN:-false}" = true ] || return 0
+  # No model resolved for opencode/kilo: the runner reports its own NO MODEL.
+  case "$3" in opencode|kilo) [ -n "$4" ] || return 0 ;; esac
+  # shellcheck disable=SC2086
+  verdicts="$(multi_training_verdicts "$3" "${5:-}" $chain)"
+  for model in $chain; do
+    verdict="${verdicts%%
+*}"; verdicts="${verdicts#*
+}"
+    if [ "$verdict" = no ]; then
+      kept="${kept}${kept:+ }$model"
+    else
+      denied="${denied}${denied:+, }$model: $verdict"
+    fi
+  done
+  if [ -z "$kept" ]; then
+    multi_fail_backend "$1" "$2: SAT OUT — may train on prompts ($denied); if your account does not, set trains = false under [backends.$2]"
+    return 1
+  fi
+  MULTI_SAFE_CHAIN="$kept"
+  [ "$kept" != '<default>' ] || MULTI_SAFE_CHAIN=""
+}
+
 multi_opencode_autodetect() {
   local bin="${1:-opencode}" available picked="" fallback="" m cands="$MULTI_OPENCODE_CANDIDATES" free='^opencode/'
   [ "$bin" != kilo ] || { cands="$MULTI_KILO_CANDIDATES"; free='^kilo/.*:free$'; }
@@ -804,6 +888,7 @@ PY
   # grants written by whoever authored the code under review. User settings
   # come from CLAUDE_CONFIG_DIR, the empty child home, so nothing hostile loads.
   local sid; sid="$(multi_uuid)"
+  multi_record_training "$out" claude-headless "$model" "$base_url"
   (
   # No effort entry: leave the inherited environment and CLI argv untouched.
   [ -z "$effort" ] || export CLAUDE_CODE_EXTRA_BODY="$extra_body"
@@ -918,6 +1003,7 @@ multi_run_gemini() {
     multi_fail_backend "$out" "$name: NO KEY — ask the user to run scripts/setup.sh set $key_env in their own terminal (it prompts for the key)"; return 0
   fi
   command -v gemini >/dev/null 2>&1 || { multi_fail_backend "$out" "$name: MISSING (npm i -g @google/gemini-cli)"; return 0; }
+  multi_record_training "$out" gemini "$model"
   GEMINI_API_KEY="$key" \
     multi_timeout "$MULTI_BACKEND_TIMEOUT" gemini -p "$prompt" \
       ${model:+-m "$model"} --approval-mode plan \

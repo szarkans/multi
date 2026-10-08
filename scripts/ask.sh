@@ -27,6 +27,9 @@
 # about peak hours, run it" -- the config is not touched.
 # One backend at a time is what lets a caller send a DIFFERENT question to
 # each model in parallel instead of the same one to all.
+# --no-train (or top-level no_train = true) keeps only verdict no models in
+# each effective chain. A backend with none stays in the roster as SAT OUT.
+# trains = true|false under a backend overrides its built-in training rules.
 #
 # --model/--fallback (opencode) and --codex-model set the model for a bare
 # (no-colon) entry of that type for this run only, over the config's chain.
@@ -48,6 +51,7 @@
 #                                        runner> <start epoch> <timeout s>", so
 #                                        an `ls` says how long it has been going
 #   <prefix>-<backend>.txt.dead         one line saying why it failed
+#   <prefix>-<backend>.txt.trains       one "yes|no|unknown <model>" line per model sent the prompt
 #   <prefix>.run                        the roster: one "<backend>" line per
 #                                        participant at launch, then a
 #                                        "<backend> <seconds>" line as each ends
@@ -81,7 +85,7 @@ MULTI_CONFIG="$(multi_config path)" || exit 2
 case "$MULTI_CONFIG" in /*|[A-Za-z]:[/\\]*) ;; *) MULTI_CONFIG="$PWD/$MULTI_CONFIG" ;; esac  # C:/ is absolute on Windows
 export MULTI_CONFIG
 
-QUESTION=""; QFILE=""; PREFIX=""; EFFORT=""; MODEL=""; FALLBACK=""; CODEX_MODEL=""; BACKEND=""; REPO=""; READ_DIR=""; TIMEOUT=""; IGNORE_AVOID=""
+QUESTION=""; QFILE=""; PREFIX=""; EFFORT=""; MODEL=""; FALLBACK=""; CODEX_MODEL=""; BACKEND=""; REPO=""; READ_DIR=""; TIMEOUT=""; IGNORE_AVOID=""; NO_TRAIN=""
 need() { [ "$1" -ge 2 ] || { echo "missing value for $2" >&2; exit 2; }; }
 DETACH_ARGS=()
 for a in "$@"; do [ "$a" = "--detach" ] || DETACH_ARGS+=("$a"); done
@@ -104,6 +108,7 @@ while [ $# -gt 0 ]; do
     # run only. The config stays as it is -- the alternative was commenting the
     # line out and never putting it back.
     --ignore-avoid)  IGNORE_AVOID=1; shift ;;
+    --no-train)      NO_TRAIN=1; shift ;;
     # Where the CLI reviewers run git and read files: the review target, not the
     # process cwd. Default cwd, so /ask and /adhd (no repo) are unaffected.
     --repo)          need $# "$1"; REPO="$2"; shift 2 ;;
@@ -167,6 +172,8 @@ fi
 # or a broken config stops everything here, before anything is launched.
 # Empty fields come as "-" so a whitespace IFS cannot collapse them.
 RESOLVED="$(multi_config resolve ${BACKEND:+--backend "$BACKEND"} ${TIMEOUT:+--timeout "$TIMEOUT"} ${IGNORE_AVOID:+--ignore-avoid})" || exit 2
+MULTI_NO_TRAIN="$(multi_config no-train)" || exit 2
+[ -z "$NO_TRAIN" ] || MULTI_NO_TRAIN=true
 # Parallel arrays rather than one associative one: bash 3.2 -- the /bin/bash
 # every stock macOS ships -- has no `declare -A`, and it fails there at run
 # time, mid-script, with exit 0: ask.sh printed "declare: -A: invalid option"
@@ -187,6 +194,26 @@ done <<EOF
 $RESOLVED
 EOF
 [ "${#NAMES[@]}" -gt 0 ] || { echo "--backend: nothing to run" >&2; exit 2; }
+# Every account override is read here, before the roster is published, so a
+# config failure stops the run before anything launches.
+TRAINS=()
+for i in "${!NAMES[@]}"; do
+  t="$(multi_config trains "${NAMES[$i]}")" || exit 2
+  TRAINS+=("$t")
+done
+# Filtering needs Kilo's catalogue: fetch it ONCE, now. With no-train off the
+# verdict is only recorded, so the Kilo runner fetches it in its own subshell
+# and nothing else waits for the network.
+MULTI_KILO_TRAINING_FILE=""
+if [ "$MULTI_NO_TRAIN" = true ]; then
+  for i in "${!NAMES[@]}"; do
+    if [ "${TYPES[$i]}" = kilo ] && [ "${TRAINS[$i]}" = unknown ] && [ -z "${CLOSED[$i]}" ]; then
+      MULTI_KILO_TRAINING_FILE="${PREFIX}.kilo-training"
+      multi_kilo_training_load "$MULTI_KILO_TRAINING_FILE" || true
+      break
+    fi
+  done
+fi
 
 # 0 = there is an answer, 3 = the model said nothing, 2 = the capture is not
 # JSON (an opencode older than --format json), 4 = no python3 to read it with.
@@ -215,6 +242,7 @@ run_codex_one() {
   # outside a git repo ("Not inside a trusted directory"). It reads the files and
   # the copy's review.diff; it needs no git history. Harmless when the target IS
   # a repo (/ask, /adhd), so it is unconditional.
+  multi_record_training "$out" codex "$model"
   multi_timeout "$timeout" codex exec \
     ${model:+-m "$model"} \
     -s read-only \
@@ -235,12 +263,15 @@ run_codex_one() {
 # The read-only agent config, plus one external_directory rule when --read-dir
 # is set: without it opencode's read tool refuses any path outside --dir
 # (external_directory defaults to "ask", which a headless run denies).
-opencode_config() {
-  if [ -z "$MULTI_READ_DIR" ]; then cat "$SELF_DIR/opencode-readonly.json"; return; fi
+# small_model is the model in use: title/summary calls otherwise go to the
+# CLI's own small model, which nobody vetted for training.
+opencode_config() { # opencode_config <model>
   "$(multi_python)" -c 'import json, sys
 c = json.load(open(sys.argv[1]))
-c["agent"]["multi-readonly"]["permission"]["external_directory"] = {sys.argv[2] + "/*": "allow"}
-print(json.dumps(c))' "$SELF_DIR/opencode-readonly.json" "$MULTI_READ_DIR"
+c["small_model"] = sys.argv[3]
+if sys.argv[2]:
+    c["agent"]["multi-readonly"]["permission"]["external_directory"] = {sys.argv[2] + "/*": "allow"}
+print(json.dumps(c))' "$SELF_DIR/opencode-readonly.json" "$MULTI_READ_DIR" "$1"
 }
 
 run_opencode_one() { # run_opencode_one <out> <model> <fallback,csv> <name> [opencode|kilo]
@@ -250,6 +281,12 @@ run_opencode_one() { # run_opencode_one <out> <model> <fallback,csv> <name> [ope
   rm -f "${out}.dead" "${out}.log" "${raw}.first" "${out}.partial" "${out}.partial.calls"
   command -v "$bin" >/dev/null 2>&1 || { multi_fail_backend "$out" "$bin: MISSING"; return 0; }
   [ -n "$model" ] || { multi_fail_backend "$out" "$bin: NO MODEL — none of [$cands] is in \`$bin models\`; list models under this backend's table in config.toml, or pass --model"; return 0; }
+  # No-train off: the verdict is only recorded, so the catalogue is fetched
+  # here, in this backend's own subshell, never in front of the other backends.
+  if [ "$bin" = kilo ] && [ -z "$MULTI_KILO_TRAINING_FILE" ] && [ "${MULTI_TRAINING_OVERRIDE:-unknown}" = unknown ]; then
+    MULTI_KILO_TRAINING_FILE="${out}.kilo-training"
+    multi_kilo_training_load "$MULTI_KILO_TRAINING_FILE" || true
+  fi
   # --format json rather than the terminal transcript: the transcript mixes the
   # model's answer with every file it opened, and the reader downstream cannot
   # tell those apart. The JSON events can. opencode-report.py turns them into
@@ -279,7 +316,8 @@ run_opencode_one() { # run_opencode_one <out> <model> <fallback,csv> <name> [ope
     stalled=0
     elapsed=0
     : > "$raw"
-    local cfg; cfg="$(opencode_config)"
+    local cfg; cfg="$(opencode_config "$used")"
+    multi_record_training "$out" "$bin" "$used"
     # Kilo is an OpenCode fork with KILO_* names; both sets are harmless to either.
     OPENCODE_DISABLE_PROJECT_CONFIG=1 KILO_DISABLE_PROJECT_CONFIG=1 \
       OPENCODE_CONFIG_CONTENT="$cfg" KILO_CONFIG_CONTENT="$cfg" \
@@ -507,7 +545,7 @@ started() { # started <out> -> 0 to go on, 1 to stand down
 }
 for i in "${!NAMES[@]}"; do
   out="${PREFIX}-${SUFFIXES[$i]}.txt"
-  rm -f "$out" "${out}.dead" "${out}.dead.log" "${out}.log" "${out}.running"
+  rm -f "$out" "${out}.dead" "${out}.dead.log" "${out}.log" "${out}.running" "${out}.trains" "${out}.kilo-training"
   # Who runs it, since when, and for how long at most: an empty marker said
   # "alive" and nothing else, and a judge looking at an empty answer beside it
   # could not tell three minutes in from thirty (#27). Our pid for now; the
@@ -530,7 +568,7 @@ rm -f "$LOCK"; trap - EXIT
 finished() { # finished <suffix> <out> <start epoch> <name>
   [ -s "$2" ] || [ -e "${2}.dead" ] || multi_fail_backend "$2" "$4: NO OUTPUT"
   echo "$1 $(( $(date +%s) - $3 ))" >> "$ROSTER"
-  rm -f "${2}.running"
+  rm -f "${2}.running" "${2}.kilo-training"
 }
 
 # All backends start at once. OpenCode spends most of a minute waking up and
@@ -558,10 +596,12 @@ for i in "${!NAMES[@]}"; do
     echo "${SUFFIXES[$i]} 0" >> "$ROSTER"; rm -f "${out}.running"
     continue
   fi
+  # Resolve the effective chain before privacy filtering, including CLI flags
+  # and autodetection. Pinned models never gain a fallback here.
   case "$type" in
-    codex)
-      ( MULTI_BACKEND_TIMEOUT="${TIMEOUTS[$i]}"; started "$out" && cd "$REPO_DIR" \
-        && run_codex_one "$out" "${model:-${CODEX_MODEL:-$(first_of "$chain")}}" "$name"; finished "${SUFFIXES[$i]}" "$out" "$t0" "$name" ) & ;;
+    codex) model="${model:-${CODEX_MODEL:-$(first_of "$chain")}}"; effective_chain="$model" ;;
+    gemini) model="${model:-$(first_of "$chain")}"; effective_chain="$model" ;;
+    claude-headless) effective_chain="${model:-$chain}" ;;
     opencode|kilo)
       # Pinned: exactly that model. --model/--fallback: this run's chain.
       # Otherwise the config chain, or, when it is empty, a free model from the
@@ -575,6 +615,26 @@ for i in "${!NAMES[@]}"; do
         oc_model="${auto%% *}"; oc_fallback="${auto#* }"; [ "$oc_fallback" != "$auto" ] || oc_fallback=""
         [ -z "$oc_fb" ] || oc_fallback="$oc_fb"
       fi
+      effective_chain="$oc_model${oc_fallback:+ $(printf '%s' "$oc_fallback" | tr ',' ' ')}" ;;
+    *) effective_chain="" ;;
+  esac
+  MULTI_TRAINING_OVERRIDE="${TRAINS[$i]}"
+  if ! multi_filter_training "$out" "$name" "$type" "$effective_chain" "${URLS[$i]}"; then
+    echo "${SUFFIXES[$i]} 0" >> "$ROSTER"; rm -f "${out}.running"
+    continue
+  fi
+  if [ "$MULTI_NO_TRAIN" = true ]; then
+    case "$type" in
+      opencode|kilo) oc_model="$(first_of "$MULTI_SAFE_CHAIN")"; oc_fallback="$(rest_csv "$MULTI_SAFE_CHAIN")" ;;
+      claude-headless) chain="$MULTI_SAFE_CHAIN"; [ -z "$model" ] || model="$(first_of "$chain")" ;;
+      codex|gemini) model="$MULTI_SAFE_CHAIN" ;;
+    esac
+  fi
+  case "$type" in
+    codex)
+      ( MULTI_BACKEND_TIMEOUT="${TIMEOUTS[$i]}"; started "$out" && cd "$REPO_DIR" \
+        && run_codex_one "$out" "$model" "$name"; finished "${SUFFIXES[$i]}" "$out" "$t0" "$name" ) & ;;
+    opencode|kilo)
       ( MULTI_BACKEND_TIMEOUT="${TIMEOUTS[$i]}"; MULTI_OPENCODE_STALL="${STALLS[$i]}"; started "$out" && cd "$REPO_DIR" \
         && run_opencode_one "$out" "$oc_model" "$oc_fallback" "$name" "$type"; finished "${SUFFIXES[$i]}" "$out" "$t0" "$name" ) & ;;
     claude-headless)
@@ -582,7 +642,7 @@ for i in "${!NAMES[@]}"; do
         && multi_run_headless "$name" "$QUESTION" "$out" "$model" "$chain" "${URLS[$i]}" "${KEYENVS[$i]}"; finished "${SUFFIXES[$i]}" "$out" "$t0" "$name" ) & ;;
     gemini)
       ( MULTI_BACKEND_TIMEOUT="${TIMEOUTS[$i]}"; started "$out" && cd "$REPO_DIR" \
-        && multi_run_gemini "$name" "$QUESTION" "$out" "${model:-$(first_of "$chain")}" "${KEYENVS[$i]}"; finished "${SUFFIXES[$i]}" "$out" "$t0" "$name" ) & ;;
+        && multi_run_gemini "$name" "$QUESTION" "$out" "$model" "${KEYENVS[$i]}"; finished "${SUFFIXES[$i]}" "$out" "$t0" "$name" ) & ;;
     *) multi_fail_backend "$out" "$name: unknown backend type '$type'"; rm -f "${out}.running" ;;
   esac
   pids="$pids $!:${SUFFIXES[$i]}"
@@ -602,5 +662,6 @@ for i in "${!NAMES[@]}"; do
   if [ -s "$f" ] && [ ! -e "${f}.dead" ]; then alive=$((alive+1)); fi
   wrote="$wrote${wrote:+ }$f"
 done
+rm -f "${PREFIX}.kilo-training"
 echo "wrote: $wrote"
 [ "$alive" -gt 0 ]

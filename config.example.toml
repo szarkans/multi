@@ -5,6 +5,9 @@
 
 default_profile = "normal"
 verbose_prompt = false              # true: skills show each full prompt before sending, without waiting for approval
+# no_train = false                  # true: keep only models with training verdict no; unknown sits out too
+# Account overrides apply to every model of a backend, ahead of built-in rules.
+# Put trains = false under that backend only when your account does not train.
 
 # ---- backends: a name, a type, and what that type needs -------------------
 
@@ -12,6 +15,7 @@ verbose_prompt = false              # true: skills show each full prompt before 
 type = "codex"
 models = []                          # empty = the CLI's default; at most one model here
 timeout = 600                        # seconds for one run; default 300 (claude-headless: 1800, a ceiling)
+# trains = false                    # e.g. ChatGPT with training off; true = may train, on any backend
 
 [backends.opencode]                  # type "opencode": OpenCode CLI, plugin's read-only agent
 type = "opencode"
