@@ -26,14 +26,20 @@ if cli == "curl":
     model = json.loads(arg("-d", "{}" )).get("model", "")
     print("429" if model == "busy" else "200", end="")
     sys.exit(0)
-if cli == "opencode" and args == ["models"]:
+if cli == "opencode" and args[:1] == ["models"]:
     print("opencode/free-stub")
     sys.exit(0)
 model = os.environ.get("ANTHROPIC_MODEL", "") if cli == "claude" else arg("-m")
 record = {"argv": args, "model": model}
 if cli == "opencode":
-    # OpenCode merges an absent variant as {} and continues with defaults.
-    record["applied_variant"] = None if model == "oc/no-variants" else arg("--variant", None)
+    model, _, variant = model.partition("#")
+    record.update(model=model, variant=variant or None, applied_variant=variant or None)
+    with open(Path(os.environ["EFFORT_TRACE"]) / ("%s-opencode-%s.calls" % (os.environ["EFFORT_TAG"], model.encode().hex())), "a") as f:
+        f.write(args[args.index("-m") + 1] + "\n")
+    # OpenCode 2.0 refuses a variant the model does not have.
+    if model == "oc/no-variants" and variant:
+        print(json.dumps({"type":"error","error":{"type":"provider.no-route","message":"Variant unavailable for %s: %s" % (model, variant)}}))
+        sys.exit(1)
 if cli == "claude":
     record["extra_body"] = os.environ.get("CLAUDE_CODE_EXTRA_BODY")
 if cli == "gemini":
@@ -133,7 +139,7 @@ def get(tag, cli, model):
 def effort(r):
     return next(x.split('=',1)[1] for x in r['argv'] if x.startswith('model_reasoning_effort='))
 def variant(r):
-    a=r['argv']; return a[a.index('--variant')+1] if '--variant' in a else None
+    return r['variant']
 def normalized(r):
     a=list(r['argv'])
     for flag in ('-o','--session-id'):
@@ -160,7 +166,10 @@ assert variant(get('explicit-no-entry','opencode','no-entry'))=='turbo-v2'
 assert variant(get('override-fallback','opencode','oc/fallback'))=='turbo-v2'
 assert get('unavailable-variant','opencode','oc/no-variants')['applied_variant'] is None
 assert not (root/'unavailable-variant-oc.txt.dead').exists()
-assert 'unavailable variants use harness defaults' in (root/'unavailable-variant-oc.txt.log').read_text()
+log=(root/'unavailable-variant-oc.txt.log').read_text()
+assert 'has no variant high — rerunning it at its default' in log, log
+calls=(trace/('unavailable-variant-opencode-%s.calls' % 'oc/no-variants'.encode().hex())).read_text().split()
+assert calls==['oc/no-variants#high','oc/no-variants'], calls
 print('ok   OpenCode primary, colon-containing model and fallback each select their own variant')
 before=json.loads(get('before','claude','head/model')['extra_body'])
 for tag, model, level in [('configured','head/model','max'),('pools','head/model','max'),('pins','other/model','low'),('overridden','head/model','xhigh'),('explicit-no-entry','no-entry','turbo-v2')]:
@@ -180,7 +189,7 @@ for cli in ('opencode','claude','gemini'):
     r=get('no-entry',cli,'no-entry')
     # Expected historical argv, not just absence of the new flag.
     if cli=='opencode':
-        assert r['argv']==['run','--pure','--agent','multi-readonly','--format','json','-m','no-entry','--dir','.','q']
+        assert r['argv']==['run','--standalone','--agent','multi-readonly','--format','json','-m','no-entry','q']
         assert variant(r) is None
     elif cli=='claude':
         expected=['-p','q','--strict-mcp-config','--mcp-config','{"mcpServers":{}}','--setting-sources','user']
@@ -194,7 +203,7 @@ for cli, model in [('codex','cx-model'),('opencode','oc/model:free'),('claude','
     a=get('before',cli,model); b=get('configured',cli,model)
     if cli=='codex': b['argv']=[x.replace('model_reasoning_effort=high','model_reasoning_effort=medium') for x in b['argv']]
     if cli=='opencode':
-        i=b['argv'].index('--variant'); del b['argv'][i:i+2]
+        i=b['argv'].index('-m'); b['argv'][i+1]=b['argv'][i+1].partition('#')[0]
     assert normalized(a)==normalized(b)
 print('ok   without an entry historical argv/env/settings stay unchanged')
 for tag in ('before','configured','overridden','relative','relative-home','detached'):

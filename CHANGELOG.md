@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.18.1 — 2026-10-20
+
+- Fixed: with OpenCode 2.0 the OpenCode reviewer never ran. 2.0 dropped `--pure`, `--dir` and `--variant` and printed its help instead of an answer. The runner now uses `--standalone`, starts in the repo and passes effort as `model#level`. Nothing to do on your side: update the plugin. Needs OpenCode 2.0 or newer: an older one is reported as `TOO OLD` and is not run. Kilo keeps the old flags. 2.0 has no replacement for `--pure`, so your own global OpenCode plugins now load in the reviewer; the reviewed repo's plugins and config still do not.
+- Fixed: under OpenCode 2.0 the read-only reviewer could not run `git diff` or `git log`. 2.0 renamed the `bash` tool to `shell`, and the old rules stopped matching. The same allowlist now covers both names.
+- Changed: a reasoning level a model does not support no longer knocks that model out. OpenCode 2.0 refuses such a level, so the model reruns at its default and the log says so. Why: one `--effort` for a whole panel used to silently drop every model without that level.
+- Fixed: on a fresh install with no `models` in config, OpenCode found no model. The default candidates are now `deepseek-v4.1-flash`, because the old `v4` names are gone from the catalogue.
+
 ## 1.18.0 — 2026-10-08
 
 - Training verdicts (`no`, `yes`, `unknown`) are written to runner `.trains` sidecars, one line per model sent the prompt (fallbacks included, worst verdict counts); code-review, check-if-done and ask name reviewers that may train or whose policy is unknown on one report line. `ask.sh --no-train` or top-level `no_train = true` keeps only verdict `no` models; an exhausted backend stays in the roster as `SAT OUT`. Per-backend `trains = true|false` overrides the built-in rules for the user's account. Kilo reads the public gateway catalogue's `mayTrainOnYourPrompts` with a clean-result cache. Why: see where code goes and switch those reviewers off; default routing is unchanged.

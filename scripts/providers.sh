@@ -160,15 +160,14 @@ multi_check_paths() {
 # OS-sandboxed and cannot write. `opencode run` withholds write via the plugin's
 # deny-by-default `multi-readonly` agent, and OPENCODE_DISABLE_PROJECT_CONFIG=1
 # stops the reviewed repo's own opencode.json / .opencode/agent/plan.md from
-# overriding it back to write+bash (the #12 hole, now closed); --pure also skips
-# external plugins. Even so, a read-only reviewer can still OPEN and READ a secret
+# overriding it back to write+bash (the #12 hole, now closed). Even so, a read-only reviewer can still OPEN and READ a secret
 # it decides to look at. What this code prevents is narrower and separate: the
 # orchestrator HANDING a secret over -- the prompt used to say "run git status
 # --untracked-files=all and read what you find", which is an invitation to open
 # exactly the files that were never meant to travel. Real isolation -- a reviewer
 # that never sees the real tree -- is the snapshot copy (scripts/snapshot.sh,
 # #14/#12): the allowed files are copied into a scratch tree with the repo's
-# opencode config stripped, and --dir points there instead of the live checkout.
+# opencode config stripped, and the reviewer runs there instead of the live checkout.
 #
 # Untracked files belong in a review: a brand-new file IS the change, and a
 # reviewer that never hears about it reports on half the work.
@@ -429,9 +428,9 @@ multi_effort() {
   fi
   if [ -z "$effort" ] && [ "$type" = codex ]; then effort=medium; fi
   if { [ "$type" = opencode ] || [ "$type" = kilo ]; } && [ -n "$effort" ]; then
-    # OpenCode 1.18.34 merges model.variants[variant] || {}; an unknown
-    # variant leaves the harness options alone, it does not reject the run.
-    note=" (requested variant; unavailable variants use harness defaults)"
+    # Kilo ignores a variant the model lacks; OpenCode 2.0 refuses it, and
+    # ask.sh reruns that model without one.
+    note=" (requested variant; a model without it runs at its default)"
   fi
   printf '[multi] %s model %s effort=%s%s\n' "$name" "${model:-<default>}" "${effort:-harness-default}" "$note" >> "${out}.log"
   printf '%s' "$effort"
@@ -442,14 +441,14 @@ multi_effort() {
 # catalogue: first candidate below that `opencode models` lists, then every
 # free (opencode/*) model in catalogue order as fallbacks. Prints
 # "<picked> <fallback,csv>" (second word may be empty), or nothing.
-MULTI_OPENCODE_CANDIDATES="${MULTI_OPENCODE_CANDIDATES:-opencode/deepseek-v4-flash-free opencode-go/deepseek-v4-flash}"
+MULTI_OPENCODE_CANDIDATES="${MULTI_OPENCODE_CANDIDATES:-opencode/deepseek-v4.1-flash-free opencode-go/deepseek-v4.1-flash}"
 # Kilo: free ids only, nemotron last (NVIDIA's free pool queues big models for
 # minutes). kilo/kilo-auto/* and kilo/openrouter/* are ROUTERS -- the answering
 # model varies per call -- never picked, not even as fallbacks: they are named
 # .../free, not :free, so the ^kilo/.*:free$ filter already excludes them.
 MULTI_KILO_CANDIDATES="${MULTI_KILO_CANDIDATES:-kilo/poolside/laguna-s-2.1:free kilo/qwen/qwen3.8-27b:free kilo/cohere/north-mini-code:free kilo/nvidia/nemotron-3-super-120b-a12b:free}"
-# `opencode --pure models` is the whole cost: 2.9s against 49ms for the codex
-# check, measured 2026-08-20 -- and the probe runs before every single skill
+# Listing the models is the whole cost: 2.9s against 49ms for the codex
+# check, measured 2026-08-20 (1.55s for OpenCode 2.0 --standalone, 2026-10-20) -- and the probe runs before every single skill
 # invocation. The list is a catalogue, not a live state, so it is cached; a
 # model that disappeared mid-hour is already handled, since the runner falls
 # back when its first choice dies. Delete the file or set MULTI_PROBE_CACHE_MIN=0
@@ -462,9 +461,11 @@ multi_opencode_catalogue() {
     && [ -n "$(find "$models_cache" -mmin "-${cache_min}" 2>/dev/null)" ] \
     && available="$(cat "$models_cache")"
   if [ -z "$available" ]; then
+    # OpenCode 2.0 dropped --pure, and only --standalone sees this env.
+    local models_args="models --standalone"; [ "$bin" != kilo ] || models_args="--pure models"
     # Neutral cwd + project config off: a reviewed repo's kilo.json/opencode.json
     # must be neither read nor rewritten (kilo's loader writes $schema into it).
-    available="$(cd "$MULTI_HOME" 2>/dev/null || cd /; OPENCODE_DISABLE_PROJECT_CONFIG=1 KILO_DISABLE_PROJECT_CONFIG=1 multi_timeout 20 "$bin" --pure models 2>/dev/null)"; models_rc=$?
+    available="$(cd "$MULTI_HOME" 2>/dev/null || cd /; OPENCODE_DISABLE_PROJECT_CONFIG=1 KILO_DISABLE_PROJECT_CONFIG=1 multi_timeout 20 "$bin" $models_args 2>/dev/null)"; models_rc=$?
     # Only a run that finished cleanly may be cached. A listing that printed
     # half its models and then timed out is non-empty, and caching it would
     # pin a truncated catalogue for the next hour -- long enough to make the

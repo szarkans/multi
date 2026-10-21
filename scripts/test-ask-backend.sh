@@ -239,10 +239,13 @@ fi
 # its own opencode config. The stubs above ignore flags, so only this source guard
 # catches a silent revert of the safety mechanism.
 # Herestrings, not pipes: `grep -q` in a pipe dies of SIGPIPE under pipefail.
-oc_cmds="$(grep -nE 'multi_timeout .*"\$bin" run' "$HERE/ask.sh")"
-n_cmds="$(grep -c '"\$bin" run' <<<"$oc_cmds")"
+oc_cmds="$(grep -nE 'set -- run |"\$bin" "\$@"' "$HERE/ask.sh")"
+n_cmds="$(grep -c 'set -- run ' <<<"$oc_cmds")"
 n_ro="$(grep -c -- '--agent multi-readonly' <<<"$oc_cmds")"
-if [ "$n_cmds" -ge 1 ] && ! grep -q -- '--auto' <<<"$oc_cmds" \
+# --auto and an inline `"$bin" run` are looked for in all code, not only the
+# matched lines: a revert to the old inline form must not slip past the count.
+oc_code="$(grep -v '^[[:space:]]*#' "$HERE/ask.sh")"
+if [ "$n_cmds" -ge 1 ] && ! grep -qE -- '--auto|"\$bin" run|(opencode|kilo) run' <<<"$oc_code" \
    && [ "$n_ro" -eq "$n_cmds" ] \
    && grep -q 'OPENCODE_DISABLE_PROJECT_CONFIG=1' "$HERE/ask.sh" \
    && grep -q 'KILO_DISABLE_PROJECT_CONFIG=1' "$HERE/ask.sh"; then
@@ -414,6 +417,17 @@ if [ -s "$TMP/det-codex.txt" ] && grep -q '^codex [0-9]' "$TMP/det.run"; then
   echo "ok   --detach: the detached run wrote the answer and the roster"
 else
   echo "FAIL --detach: no answer after ${n}s: $(ls "$TMP" | grep '^det' | tr '\n' ' ')"; fail=1
+fi
+
+# OpenCode 1.x rejects the 2.0 flags with a help dump; say "too old" and never run it.
+mkdir -p "$TMP/old/bin"
+printf '#!/usr/bin/env bash\n[ "$1" = --version ] && { echo 1.18.34; exit 0; }\necho RAN >> "%s/old/ran"\n' "$TMP" > "$TMP/old/bin/opencode"
+chmod +x "$TMP/old/bin/opencode"
+PATH="$TMP/old/bin:$PATH" "$HERE/ask.sh" --question q --out-prefix "$TMP/old/o" --backend opencode --model x/y >/dev/null 2>&1
+if grep -q '^opencode: TOO OLD — 1.18.34' "$TMP/old/o-opencode.txt" && [ ! -e "$TMP/old/ran" ]; then
+  echo "ok   opencode 1.x is reported TOO OLD and never run"
+else
+  echo "FAIL opencode 1.x: $(head -1 "$TMP/old/o-opencode.txt" 2>/dev/null); ran=$([ -e "$TMP/old/ran" ] && echo yes || echo no)"; fail=1
 fi
 
 [ $fail -eq 0 ] && echo "ALL PASS" || echo "FAILURES"

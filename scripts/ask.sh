@@ -69,9 +69,8 @@
 # OpenCode has no OS-level sandbox. Give it a plugin-owned, deny-by-default agent
 # instead: project config is disabled, write/edit/apply_patch stay denied, and
 # only repository reads plus a small read-only shell allowlist run without a
-# prompt. --pure still matters because it disables external plugins; it does not
-# disable configuration. Never add --auto here: it approves every permission
-# which was not explicitly denied.
+# prompt. Never add --auto here: it approves every permission which was not
+# explicitly denied.
 set -uo pipefail
 
 # Keys, the child-process isolation and the non-CLI backends all live here.
@@ -261,7 +260,7 @@ run_codex_one() {
 }
 
 # The read-only agent config, plus one external_directory rule when --read-dir
-# is set: without it opencode's read tool refuses any path outside --dir
+# is set: without it opencode's read tool refuses any path outside the repo
 # (external_directory defaults to "ask", which a headless run denies).
 # small_model is the model in use: title/summary calls otherwise go to the
 # CLI's own small model, which nobody vetted for training.
@@ -269,6 +268,8 @@ opencode_config() { # opencode_config <model>
   "$(multi_python)" -c 'import json, sys
 c = json.load(open(sys.argv[1]))
 c["small_model"] = sys.argv[3]
+p = c["agent"]["multi-readonly"]["permission"]
+p["shell"] = p["bash"]  # OpenCode 2.0 renamed the tool; Kilo still calls it bash
 if sys.argv[2]:
     c["agent"]["multi-readonly"]["permission"]["external_directory"] = {sys.argv[2] + "/*": "allow"}
 print(json.dumps(c))' "$SELF_DIR/opencode-readonly.json" "$MULTI_READ_DIR" "$1"
@@ -280,6 +281,10 @@ run_opencode_one() { # run_opencode_one <out> <model> <fallback,csv> <name> [ope
   local raw="${out}.jsonl"
   rm -f "${out}.dead" "${out}.log" "${raw}.first" "${out}.partial" "${out}.partial.calls"
   command -v "$bin" >/dev/null 2>&1 || { multi_fail_backend "$out" "$bin: MISSING"; return 0; }
+  if [ "$bin" = opencode ]; then
+    local ver; ver="$(multi_timeout 3 opencode --version 2>/dev/null)"; ver="${ver##*[!0-9.]}"
+    case "${ver%%.*}" in 0|1) multi_fail_backend "$out" "opencode: TOO OLD — $ver; the runner needs OpenCode 2.0+ (run \`opencode upgrade\`)"; return 0 ;; esac
+  fi
   [ -n "$model" ] || { multi_fail_backend "$out" "$bin: NO MODEL — none of [$cands] is in \`$bin models\`; list models under this backend's table in config.toml, or pass --model"; return 0; }
   # No-train off: the verdict is only recorded, so the catalogue is fetched
   # here, in this backend's own subshell, never in front of the other backends.
@@ -315,28 +320,49 @@ run_opencode_one() { # run_opencode_one <out> <model> <fallback,csv> <name> [ope
     attempted_count=$((attempted_count+1))
     stalled=0
     elapsed=0
-    : > "$raw"
     local cfg; cfg="$(opencode_config "$used")"
     multi_record_training "$out" "$bin" "$used"
-    # Kilo is an OpenCode fork with KILO_* names; both sets are harmless to either.
-    OPENCODE_DISABLE_PROJECT_CONFIG=1 KILO_DISABLE_PROJECT_CONFIG=1 \
-      OPENCODE_CONFIG_CONTENT="$cfg" KILO_CONFIG_CONTENT="$cfg" \
-      GIT_OPTIONAL_LOCKS=0 \
-      multi_timeout "$MULTI_BACKEND_TIMEOUT" "$bin" run --pure --agent multi-readonly --format json \
-      -m "$used" ${effort:+--variant "$effort"} --dir "$REPO_DIR" "$QUESTION" > "$raw" 2>&1 &
-    candidate_pid=$!
-    while kill -0 "$candidate_pid" 2>/dev/null; do
-      grep -q '^{' "$raw" 2>/dev/null && break
-      if [ "$effective_stall" -gt 0 ] && [ "$elapsed" -ge "$effective_stall" ]; then
-        stalled=1
-        silent_count=$((silent_count+1))
-        multi_kill_tree "$candidate_pid"
-        break
+    while :; do
+      stalled=0
+      elapsed=0
+      : > "$raw"
+      if [ "$bin" = kilo ]; then
+        set -- run --pure --agent multi-readonly --format json -m "$used" ${effort:+--variant "$effort"} --dir "$REPO_DIR"
+      else
+        # OpenCode 2.0's default client talks to a shared background service,
+        # which never sees the env below ("Agent not found: multi-readonly");
+        # --standalone runs a private server that does. 2.0 has no --pure, so
+        # the user's own global plugins load; the reviewed repo's do not, as
+        # OPENCODE_DISABLE_PROJECT_CONFIG drops its whole config. The dispatch
+        # below already runs this in $REPO_DIR, which replaces --dir.
+        set -- run --standalone --agent multi-readonly --format json -m "$used${effort:+#$effort}"
       fi
-      sleep 1
-      elapsed=$((elapsed+1))
+      # Kilo is an OpenCode fork with KILO_* names; both sets are harmless to either.
+      OPENCODE_DISABLE_PROJECT_CONFIG=1 KILO_DISABLE_PROJECT_CONFIG=1 \
+        OPENCODE_CONFIG_CONTENT="$cfg" KILO_CONFIG_CONTENT="$cfg" \
+        GIT_OPTIONAL_LOCKS=0 \
+        multi_timeout "$MULTI_BACKEND_TIMEOUT" "$bin" "$@" "$QUESTION" > "$raw" 2>&1 &
+      candidate_pid=$!
+      while kill -0 "$candidate_pid" 2>/dev/null; do
+        grep -q '^{' "$raw" 2>/dev/null && break
+        if [ "$effective_stall" -gt 0 ] && [ "$elapsed" -ge "$effective_stall" ]; then
+          stalled=1
+          silent_count=$((silent_count+1))
+          multi_kill_tree "$candidate_pid"
+          break
+        fi
+        sleep 1
+        elapsed=$((elapsed+1))
+      done
+      wait "$candidate_pid" 2>/dev/null; rc=$?
+      # OpenCode 2.0 refuses a variant the model lacks instead of ignoring it;
+      # a level set for a whole panel must not knock out every such model.
+      # Only a top-level error event counts: tool output quoting this text does not.
+      [ -n "$effort" ] && [ "$rc" -ne 0 ] && [ "$rc" -ne 124 ] \
+        && grep -q '^{"type": *"error".*"message": *"Variant unavailable for ' "$raw" || break
+      echo "[multi] $used has no variant $effort — rerunning it at its default" | tee -a "${out}.log" >&2
+      effort=""
     done
-    wait "$candidate_pid" 2>/dev/null; rc=$?
     [ "$stalled" -eq 1 ] || [ "$rc" -ne 124 ] || timeout_count=$((timeout_count+1))
     render_opencode "$raw" "$out" "$used"; rrc=$?
     last_error=""

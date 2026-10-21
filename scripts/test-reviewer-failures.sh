@@ -79,6 +79,7 @@ say "read-only dead log keeps other stderr" "$(grep -q 'QWERTY' "$TMP/rh-codex.t
 
 cat > "$TMP/bin/opencode" <<'STUB'
 #!/usr/bin/env bash
+[ "${1:-}" != --version ] || { echo 2.0.32; exit 0; }
 echo "Error: Unexpected error / Unknown: FileSystem.open (/read-only/home)" >&2
 exit 1
 STUB
@@ -89,6 +90,7 @@ say "opencode read-only marker names the diagnosis" "$(grep -q 'could not write 
 
 cat > "$TMP/bin/opencode" <<'STUB'
 #!/usr/bin/env bash
+[ "${1:-}" != --version ] || { echo 2.0.32; exit 0; }
 echo '{"type":"tool_use","part":{"state":{"output":"fixture says Read-only file system but this is repository content"}}}'
 STUB
 chmod +x "$TMP/bin/opencode"
@@ -98,6 +100,7 @@ say "JSON repository text does not trigger HOME diagnosis" "$(grep -q 'could not
 echo "== ask.sh opencode path with opencode hung =="
 cat > "$TMP/bin/opencode" <<'STUB'
 #!/usr/bin/env bash
+[ "${1:-}" != --version ] || { echo 2.0.32; exit 0; }
 exec sleep 300
 STUB
 chmod +x "$TMP/bin/opencode"
@@ -113,6 +116,7 @@ say "dead marker has one-line reason" "$([ -s "$TMP/ro-opencode.txt.dead" ] && [
 echo "== opencode silent stall fails before the backend timeout =="
 cat > "$TMP/bin/opencode" <<'STUB'
 #!/usr/bin/env bash
+[ "${1:-}" != --version ] || { echo 2.0.32; exit 0; }
 echo "$$" > "$STUB_PIDFILE"
 exec sleep 300
 STUB
@@ -131,6 +135,7 @@ say "silent stall process is gone" "$(kill -0 "$pid" 2>/dev/null && echo no || e
 echo "== opencode stderr does not disarm the silent stall watchdog =="
 cat > "$TMP/bin/opencode" <<'STUB'
 #!/usr/bin/env bash
+[ "${1:-}" != --version ] || { echo 2.0.32; exit 0; }
 echo "warning: something" >&2
 echo "$$" > "$STUB_PIDFILE"
 exec sleep 300
@@ -150,6 +155,7 @@ say "stderr-only stalled process is gone" "$(kill -0 "$pid" 2>/dev/null && echo 
 echo "== fallback starts with an empty raw event stream =="
 cat > "$TMP/bin/opencode" <<'STUB'
 #!/usr/bin/env bash
+[ "${1:-}" != --version ] || { echo 2.0.32; exit 0; }
 model=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -177,6 +183,7 @@ say "silent fallback process is gone" "$(kill -0 "$pid" 2>/dev/null && echo no |
 echo "== stall deadline at or past timeout is disabled =="
 cat > "$TMP/bin/opencode" <<'STUB'
 #!/usr/bin/env bash
+[ "${1:-}" != --version ] || { echo 2.0.32; exit 0; }
 exec sleep 300
 STUB
 chmod +x "$TMP/bin/opencode"
@@ -197,6 +204,7 @@ say "nothing was launched" "$([ -e "$TMP/sv-opencode.txt" ] && echo launched || 
 echo "== an initial opencode event disables the stall watchdog =="
 cat > "$TMP/bin/opencode" <<'STUB'
 #!/usr/bin/env bash
+[ "${1:-}" != --version ] || { echo 2.0.32; exit 0; }
 echo '{"type":"step_start","timestamp":1000,"part":{}}'
 exec sleep 300
 STUB
@@ -212,6 +220,7 @@ say "eventful timeout does not say SILENT" "$(grep -q 'SILENT' "$TMP/oe-opencode
 echo "== opencode silent primary falls back to an answer =="
 cat > "$TMP/bin/opencode" <<'STUB'
 #!/usr/bin/env bash
+[ "${1:-}" != --version ] || { echo 2.0.32; exit 0; }
 model=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -242,6 +251,7 @@ exec sleep 300
 STUB
 cat > "$TMP/bin/opencode" <<'STUB'
 #!/usr/bin/env bash
+[ "${1:-}" != --version ] || { echo 2.0.32; exit 0; }
 echo "$$" > "$OPENCODE_STUB_PIDFILE"
 exec sleep 300
 STUB
@@ -282,6 +292,7 @@ echo "finished codex answer" > "$out"
 STUB
 cat > "$TMP/bin/opencode" <<'STUB'
 #!/usr/bin/env bash
+[ "${1:-}" != --version ] || { echo 2.0.32; exit 0; }
 echo "$$" > "$OPENCODE_STUB_PIDFILE"
 exec sleep 300
 STUB
@@ -306,6 +317,7 @@ knobs 3 180
 echo "== opencode walks the fallback list until a later model answers =="
 cat > "$TMP/bin/opencode" <<'STUB'
 #!/usr/bin/env bash
+[ "${1:-}" != --version ] || { echo 2.0.32; exit 0; }
 model=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -344,6 +356,7 @@ say "timeout fallback banner names timeout" "$(sed -n 1p "$TMP/fb-opencode.txt")
 echo "== an opencode too old for --format json still reaches the judge =="
 cat > "$TMP/bin/opencode" <<'STUB'
 #!/usr/bin/env bash
+[ "${1:-}" != --version ] || { echo 2.0.32; exit 0; }
 printf '\033[32m> build - deepseek\033[0m\n'
 echo "I looked at the diff. The retry loop in worker.py can spin forever when"
 echo "the queue is empty, and nobody resets the counter."
@@ -358,6 +371,7 @@ say "raw capture is not marked dead" "$([ ! -e "$TMP/off-opencode.txt.dead" ] &&
 echo "== a hang that printed a header is not an answer =="
 cat > "$TMP/bin/opencode" <<'STUB'
 #!/usr/bin/env bash
+[ "${1:-}" != --version ] || { echo 2.0.32; exit 0; }
 echo "> build - deepseek"   # opencode prints this within a second
 exec sleep 300
 STUB
@@ -370,6 +384,7 @@ say "not counted as a live backend" "$rcode" "1"
 echo "== a timed-out JSON run keeps its rendered partial answer =="
 cat > "$TMP/bin/opencode" <<'STUB'
 #!/usr/bin/env bash
+[ "${1:-}" != --version ] || { echo 2.0.32; exit 0; }
 echo '{"type":"text","timestamp":1000,"part":{"text":"src/partial.py:7 | MEDIUM | rendered before timeout"}}'
 exec sleep 300
 STUB
@@ -383,6 +398,7 @@ say "rendered partial stays live" "$([ ! -e "$TMP/j-opencode.txt.dead" ] && echo
 echo "== a CLI that ignores SIGTERM is still killed =="
 cat > "$TMP/bin/opencode" <<'STUB'
 #!/usr/bin/env bash
+[ "${1:-}" != --version ] || { echo 2.0.32; exit 0; }
 trap '' TERM
 exec sleep 300
 STUB
