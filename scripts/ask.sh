@@ -41,6 +41,7 @@
 # same agent loop, different weights. gemini runs the Google CLI, because
 # Google has no Anthropic-compatible endpoint and its own CLI keeps the free
 # daily quota. Both need a key: see scripts/providers.sh and scripts/setup.sh.
+# agy runs the Google Antigravity CLI in an isolated HOME with a read-only hook.
 #
 # Writes:
 #   <prefix>-<backend>.txt              one file per backend instance, or a
@@ -113,7 +114,7 @@ while [ $# -gt 0 ]; do
     --repo)          need $# "$1"; REPO="$2"; shift 2 ;;
     # One extra directory every participant may read besides --repo: the
     # prepared skill copy of /multi:skill. Each harness gets it its own way
-    # (claude --add-dir, gemini --include-directories, an opencode
+    # (claude and agy --add-dir, gemini --include-directories, an opencode
     # external_directory rule); codex reads outside its cwd under -s read-only
     # already, so its launch does not change.
     --read-dir)      need $# "$1"; READ_DIR="$2"; shift 2 ;;
@@ -626,7 +627,7 @@ for i in "${!NAMES[@]}"; do
   # and autodetection. Pinned models never gain a fallback here.
   case "$type" in
     codex) model="${model:-${CODEX_MODEL:-$(first_of "$chain")}}"; effective_chain="$model" ;;
-    gemini) model="${model:-$(first_of "$chain")}"; effective_chain="$model" ;;
+    gemini|agy) model="${model:-$(first_of "$chain")}"; effective_chain="$model" ;;
     claude-headless) effective_chain="${model:-$chain}" ;;
     opencode|kilo)
       # Pinned: exactly that model. --model/--fallback: this run's chain.
@@ -653,7 +654,7 @@ for i in "${!NAMES[@]}"; do
     case "$type" in
       opencode|kilo) oc_model="$(first_of "$MULTI_SAFE_CHAIN")"; oc_fallback="$(rest_csv "$MULTI_SAFE_CHAIN")" ;;
       claude-headless) chain="$MULTI_SAFE_CHAIN"; [ -z "$model" ] || model="$(first_of "$chain")" ;;
-      codex|gemini) model="$MULTI_SAFE_CHAIN" ;;
+      codex|gemini|agy) model="$MULTI_SAFE_CHAIN" ;;
     esac
   fi
   case "$type" in
@@ -669,6 +670,9 @@ for i in "${!NAMES[@]}"; do
     gemini)
       ( MULTI_BACKEND_TIMEOUT="${TIMEOUTS[$i]}"; started "$out" && cd "$REPO_DIR" \
         && multi_run_gemini "$name" "$QUESTION" "$out" "$model" "${KEYENVS[$i]}"; finished "${SUFFIXES[$i]}" "$out" "$t0" "$name" ) & ;;
+    agy)
+      ( MULTI_BACKEND_TIMEOUT="${TIMEOUTS[$i]}"; started "$out" && cd "$REPO_DIR" \
+        && multi_run_agy "$name" "$QUESTION" "$out" "$model"; finished "${SUFFIXES[$i]}" "$out" "$t0" "$name" ) & ;;
     *) multi_fail_backend "$out" "$name: unknown backend type '$type'"; rm -f "${out}.running" ;;
   esac
   pids="$pids $!:${SUFFIXES[$i]}"

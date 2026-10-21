@@ -170,6 +170,16 @@ $(cat "$MULTI_HOME/$type-models.cache" 2>/dev/null)"
         say "$name: MISSING"
       fi
       ;;
+    agy)
+      # No key: agy signs in itself and keeps the token under the user's HOME.
+      if command -v agy >/dev/null 2>&1 && [ -e "$MULTI_AGY_TOKEN" ]; then
+        say "$name: configured (agy signed in, not checked here)${chain:+ — $chain}"
+      elif command -v agy >/dev/null 2>&1; then
+        say "$name: NOT LOGGED IN (CLI present — ask the user to run agy once in their own terminal to sign in)"
+      else
+        say "$name: MISSING (install the Antigravity CLI: agy)"
+      fi
+      ;;
   esac
 done <<EOF
 $BACKENDS
@@ -178,6 +188,9 @@ EOF
 # kilo installed but not configured: the setup skill offers it (references/kilo.md).
 if command -v kilo >/dev/null 2>&1 && ! printf '%s\n' "$BACKENDS" | cut -f2 | grep -qx kilo; then
   say "kilo-available: kilo CLI is installed, no type = \"kilo\" backend configured — setup can offer it as a free extra reviewer"
+fi
+if command -v agy >/dev/null 2>&1 && ! printf '%s\n' "$BACKENDS" | cut -f2 | grep -qx agy; then
+  say "agy-available: Antigravity CLI is installed, no type = \"agy\" backend configured — setup can offer it as an extra reviewer"
 fi
 
 # --- other AI CLIs (not reviewers yet) ----------------------------------
