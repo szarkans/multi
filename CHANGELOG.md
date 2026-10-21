@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.19.0 — 2026-10-21
+
+- Added an `agy` backend type: the Google Antigravity CLI as a reviewer, with the model ids `agy models` lists (`claude-sonnet-4-6`, `gemini-3.8-flash-high` and others), at most one per backend, no effort setting. It is not in the built-in config: add a `[backends.agy]` table and put `"agy"` into a profile; sign in by running `agy` once. Why: one more reviewer family on an account you may already have.
+- agy has no read-only mode of its own, so each run gets a fresh HOME under `$MULTI_HOME/agy-home`, removed afterwards, and a clean environment: sandboxed settings, a deny-by-default hook that lets through only reads inside the repository and one read-only shell command, and your sign-in token. Your own agy skills and hooks and the keys from `providers.env` never reach it. Why: a reviewer must not change your files or read your keys.
+- The snapshot copy now also drops `.agent/` and `.agents/` folders at any depth. Why: agy loads rules and hooks from them, and hooks run shell commands.
+- agy is marked as training (`yes`) by the Antigravity terms. Why: so a no-train run skips it; set `trains = false` under the backend if your account opted out.
+
 ## 1.18.1 — 2026-10-20
 
 - Fixed: with OpenCode 2.0 the OpenCode reviewer never ran. 2.0 dropped `--pure`, `--dir` and `--variant` and printed its help instead of an answer. The runner now uses `--standalone`, starts in the repo and passes effort as `model#level`. Nothing to do on your side: update the plugin. Needs OpenCode 2.0 or newer: an older one is reported as `TOO OLD` and is not run. Kilo keeps the old flags. 2.0 has no replacement for `--pure`, so your own global OpenCode plugins now load in the reviewer; the reviewed repo's plugins and config still do not.

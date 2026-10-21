@@ -54,7 +54,7 @@ type = "claude-headless"
 base_url = "https://api.deepseek.com/anthropic"
 models = ["deepseek-flash"]          # V4.1 Flash; claude-* names are mapped to it too
 # Exact model only; explicit --effort overrides every supporting backend.
-# No entry: Codex keeps medium, other harnesses decide. Gemini unsupported.
+# No entry: Codex keeps medium, other harnesses decide. Gemini and agy unsupported.
 # effort = { "deepseek-flash" = "low" }
 # Windows this backend sits out, in UTC only (the zone word is required).
 # DeepSeek bills double in these hours (its published peak, as of 2026-09-10 —
@@ -68,6 +68,10 @@ avoid = ["Mon-Fri 01:00-04:00 UTC", "Mon-Fri 06:00-10:00 UTC"]
 [backends.gemini]                    # type "gemini": the Gemini CLI, key GEMINI_API_KEY
 type = "gemini"
 models = []                          # empty = CLI default; at most one model here
+
+[backends.agy]                       # type "agy": the Google Antigravity CLI, no key: run `agy` once to sign in
+type = "agy"
+models = ["claude-sonnet-4-6"]       # at most one; only ids `agy models` lists; effort unsupported
 
 # ---- profiles: who runs, in parallel --------------------------------------
 # An entry is a backend name (its whole models list, in order) or name:model

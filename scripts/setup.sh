@@ -85,6 +85,8 @@ cmd_status() {
       gemini)
         if [ -n "$key" ]; then printf '%s — ' "$(mask "$key")"; multi_check_gemini "$key"
         else echo "not configured (setup.sh set $keyenv)"; fi ;;
+      agy)      printf '%s, ' "$(command -v agy >/dev/null 2>&1 && echo "CLI present" || echo "CLI MISSING")"
+                [ -e "$MULTI_AGY_TOKEN" ] && echo "token present${chain:+ — $chain}" || echo "token absent (run agy once to sign in)" ;;
       codex)    command -v codex >/dev/null 2>&1 && codex --version 2>/dev/null | head -1 || echo "CLI MISSING" ;;
       opencode|kilo) command -v "$type" >/dev/null 2>&1 && echo "CLI present${chain:+ — $chain}" || echo "CLI MISSING" ;;
     esac
@@ -97,7 +99,8 @@ EOF
 # The variables a backend reads its key from, per config.toml — the only names
 # `set` accepts, so a typo cannot store a key nothing will ever read.
 # Only the types that read a key: a stored CODEX_API_KEY would be a secret
-# nothing ever uses.
+# nothing ever uses. agy is not here either: it signs in through its own CLI,
+# and there is no key for setup.sh to store.
 key_names() { multi_config backends | awk -F'\t' '$2=="claude-headless"||$2=="gemini"{print $5}' | sort -u | tr '\n' ' '; }
 
 cmd_set() {

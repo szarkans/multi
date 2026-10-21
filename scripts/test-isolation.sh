@@ -57,6 +57,11 @@ SRC="$TMP/src"; mkdir -p "$SRC/app" "$SRC/node_modules" "$SRC/.opencode/agent"
   printf 'nested instructions\n' > app/sub/CLAUDE.md
   printf 'codex override\n' > AGENTS.override.md
   printf 'app/\n' > .geminiignore
+  # agy loads .agent/ and .agents/ rules and hooks (hooks run shell commands)
+  mkdir -p .agents sub/.agent/rules .Agents
+  printf '{"x":{"PreToolUse":[]}}\n' > .agents/hooks.json
+  printf 'agy rule\n' > sub/.agent/rules/r.md
+  printf 'agy rule\n' > .Agents/rules.md
   # a big binary — reviewers never read it; the copy must skip it
   head -c 3000000 /dev/zero > app/blob.bin
 ) >/dev/null 2>&1
@@ -94,6 +99,9 @@ say "nested CLAUDE.md gone" "$([ -e "$COPY/app/sub/CLAUDE.md" ] && echo present 
 say "AGENTS.override.md gone" "$([ -e "$COPY/AGENTS.override.md" ] && echo present || echo absent)" "absent"
 say ".gitignore gone" "$([ -e "$COPY/.gitignore" ] && echo present || echo absent)" "absent"
 say ".geminiignore gone" "$([ -e "$COPY/.geminiignore" ] && echo present || echo absent)" "absent"
+say ".agents/ gone" "$([ -e "$COPY/.agents" ] && echo present || echo absent)" "absent"
+say "nested .agent/ gone" "$([ -e "$COPY/sub/.agent" ] && echo present || echo absent)" "absent"
+say "mixed-case .Agents/ gone" "$([ -e "$COPY/.Agents" ] && echo present || echo absent)" "absent"
 
 # The flip side, guarded on purpose: those files leave the COPY (there they
 # would load as trusted config) but their content STAYS in review.diff — in a

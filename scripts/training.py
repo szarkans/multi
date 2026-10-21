@@ -32,6 +32,8 @@ RULES = (
     ("kilo", "*", "kilo/*:free", "yes"),
     # https://ai.google.dev/gemini-api/terms (checked 2026-10-04)
     ("gemini", "*", "*", "yes"),
+    # https://antigravity.google/terms §5: Interactions improve Google models, opt-out in settings (checked 2026-10-21)
+    ("agy", "*", "*", "yes"),
     ("*", "*", "*", "unknown"),
 )
 

@@ -355,6 +355,11 @@ MULTI_PROVIDERS_ENV="${MULTI_PROVIDERS_ENV:-$MULTI_HOME/providers.env}"
 # and session memory — minutes of startup and a pile of borrowed context that
 # has nothing to do with the question.
 MULTI_CHILD_HOME="${MULTI_CHILD_HOME:-$MULTI_HOME/child-home}"
+# agy is not read-only on its own, so it runs with a HOME of its own under
+# here: an empty .gemini carrying one deny-by-default PreToolUse hook, and
+# nothing of the user's config. Built (idempotently) by multi_agy_home.
+MULTI_AGY_HOME="${MULTI_AGY_HOME:-$MULTI_HOME/agy-home}"
+MULTI_AGY_TOKEN="${MULTI_AGY_TOKEN:-$HOME/.gemini/antigravity-cli/antigravity-oauth-token}"
 
 # Backends, models, endpoints and timeouts live in $MULTI_HOME/config.toml,
 # read by scripts/config.py. ask.sh resolves it once per run and sets the two
@@ -988,6 +993,65 @@ PY
     [ -z "$skipped" ] || echo "[multi] $name pools skipped before it: $skipped" >> "$out"
   fi
   multi_keep_pool_log "$out" "$probe_log"
+  return "$rc"
+}
+
+# multi_agy_home: build a fresh HOME for ONE agy run under $MULTI_AGY_HOME and
+# print its path. agy has no read-only mode of its own: in print mode it writes
+# files without asking. The guarantee is this HOME — an empty .gemini with ONE
+# PreToolUse hook (scripts/agy-gate.py, deny by default) and none of the user's
+# own hooks, skills or rules. Per run, never shared: two agy reviewers at once
+# must not rewrite each other's hook file, and agy's history must not carry
+# from one reviewed repo to the next.
+multi_agy_home() {
+  local h py
+  mkdir -p "$MULTI_AGY_HOME" && h="$(mktemp -d "$MULTI_AGY_HOME/run.XXXXXX")" || return 1
+  mkdir -p "$h/.gemini/antigravity-cli" "$h/.gemini/config" || return 1
+  printf '%s\n' '{"enableTerminalSandbox": true, "toolPermission": "proceed-in-sandbox"}' \
+    > "$h/.gemini/antigravity-cli/settings.json" || return 1
+  py="$(multi_python)" || return 1
+  # Built by python (json.dumps + shlex.quote), never by string concatenation:
+  # the plugin path has spaces on many machines, and a hook file that does not
+  # parse is a hook that silently does not run.
+  "$py" -c 'import json, shlex, sys
+print(json.dumps({"multi-readonly": {"PreToolUse": [{"matcher": "*", "hooks": [
+    {"command": "python3 -I " + shlex.quote(sys.argv[1]), "timeout": 10}]}]}}))' \
+    "$MULTI_SCRIPTS_DIR/agy-gate.py" > "$h/.gemini/config/hooks.json" || return 1
+  # A link, not a copy: a refresh agy writes through it reaches the user's own token.
+  ln -s "$MULTI_AGY_TOKEN" "$h/.gemini/antigravity-cli/antigravity-oauth-token" || return 1
+  printf '%s\n' "$h"
+}
+
+# multi_run_agy <name> <prompt> <outfile> <model>
+# Google Antigravity CLI. Read-only is not agy's own: it comes from the
+# isolated HOME above and its PreToolUse hook (scripts/agy-gate.py). Never
+# --mode plan (a prompt wrapper the model may ignore), --disable-slash-commands,
+# --effort or --dangerously-skip-permissions. env -i: providers.env exports
+# every key to child CLIs, and agy's shell can read /proc/self/environ
+# (measured 2026-10-21).
+multi_run_agy() {
+  local name="$1" prompt="$2" out="$3" model="${4:-}" rc=0 h
+  local log="${out}.log"
+  rm -f "${out}.dead"
+  command -v agy >/dev/null 2>&1 || { multi_fail_backend "$out" "$name: MISSING (install the Antigravity CLI: agy)"; return 0; }
+  [ -e "$MULTI_AGY_TOKEN" ] \
+    || { multi_fail_backend "$out" "$name: NOT LOGGED IN — run agy once in your own terminal to sign in"; return 0; }
+  h="$(multi_agy_home)" \
+    || { multi_fail_backend "$out" "$name: FAILED — could not prepare an isolated HOME under $MULTI_AGY_HOME" "$log"; return 0; }
+  multi_record_training "$out" agy "$model"
+  multi_timeout "$MULTI_BACKEND_TIMEOUT" env -i PATH="$PATH" HOME="$h" LANG="${LANG:-C.UTF-8}" \
+    agy -p "$prompt" ${model:+--model "$model"} ${MULTI_READ_DIR:+--add-dir "$MULTI_READ_DIR"} \
+    < /dev/null > "$out" 2> "$log"
+  rc=$?
+  rm -rf "$h"
+  printf '[multi] %s model %s effort=unsupported (Antigravity CLI has no effort control)\n' "$name" "${model:-<default>}" >> "$log"
+  if [ "$rc" -eq 124 ]; then
+    multi_fail_backend "$out" "$name: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s${model:+ — model=$model}" "$log"
+  elif [ ! -s "$out" ]; then
+    multi_fail_backend "$out" "$name: NO OUTPUT${model:+ — model=$model} exit=$rc (stderr in $log)" "$log"
+  elif [ "$rc" -ne 0 ]; then
+    multi_fail_backend "$out" "$name: FAILED${model:+ — model=$model} exit=$rc (stderr in $log)" "$log"
+  fi
   return "$rc"
 }
 
