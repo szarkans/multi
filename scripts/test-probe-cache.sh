@@ -12,7 +12,7 @@ mkdir -p "$TMP/bin"
 cat > "$TMP/bin/opencode" <<'STUB'
 #!/usr/bin/env bash
 echo "CALLED" >> "$MARKER"
-echo "opencode/deepseek-v4-flash-free"
+echo "opencode/deepseek-v4.1-flash-free"
 echo "opencode/other-free"
 STUB
 printf '#!/usr/bin/env bash\necho "Logged in using ChatGPT"\n' > "$TMP/bin/codex"
@@ -50,12 +50,12 @@ oc_config ''
 rm -f "$MULTI_HOME/opencode-models.cache"
 : > "$MARKER"
 commas_only="$(bash "$TREE/scripts/probe.sh" 2>/dev/null | grep '^opencode:')"
-say "empty list uses auto-detection" "$commas_only" "opencode: OK — opencode/deepseek-v4-flash-free (fallback: opencode/other-free)"
+say "empty list uses auto-detection" "$commas_only" "opencode: OK — opencode/deepseek-v4.1-flash-free (fallback: opencode/other-free)"
 say "empty list reads the catalogue" "$(grep -c CALLED "$MARKER")" "1"
 
 rm -f "$CONFIG"
 automatic="$(bash "$TREE/scripts/probe.sh" 2>/dev/null | grep '^opencode:')"
-say "missing config restores auto-detection" "$automatic" "opencode: OK — opencode/deepseek-v4-flash-free (fallback: opencode/other-free)"
+say "missing config restores auto-detection" "$automatic" "opencode: OK — opencode/deepseek-v4.1-flash-free (fallback: opencode/other-free)"
 say "auto-detection reads the catalogue" "$(grep -c CALLED "$MARKER")" "1"
 
 echo "== the pre-config models file is reported, not read =="
@@ -69,7 +69,7 @@ echo "== a listing that failed halfway is not cached =="
 rm -f "$MULTI_HOME/opencode-models.cache"
 cat > "$TMP/bin/opencode" <<'STUB'
 #!/usr/bin/env bash
-echo "opencode/deepseek-v4-flash-free"
+echo "opencode/deepseek-v4.1-flash-free"
 exit 1
 STUB
 chmod +x "$TMP/bin/opencode"

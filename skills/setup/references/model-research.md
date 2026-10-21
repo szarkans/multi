@@ -6,10 +6,11 @@ every claim in a live source**: the CLI's own catalogue and the web.
 
 ## For OpenCode
 
-1. Read the live catalogue — both, `--pure` keeps plugin noise out:
+1. Read the live catalogue. `--standalone` reads your config rather than the
+   background service's (OpenCode 2.0 has no `--verbose`, so costs come from
+   the web):
    ```
-   opencode --pure models
-   opencode --pure models --verbose      # includes costs
+   opencode models --standalone
    ```
 2. For names you don't recognize, web-search what they are: quality,
    benchmarks, current standing. Do not guess from the name.

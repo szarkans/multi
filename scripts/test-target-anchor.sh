@@ -72,9 +72,9 @@ echo "== ask.sh runs the backend in --repo, not cwd =="
 STUB="$TMP/bin"; mkdir -p "$STUB"
 cat > "$STUB/opencode" <<EOF
 #!/usr/bin/env bash
-# record the --dir we were handed, then emit a minimal json answer
-d=""; while [ \$# -gt 0 ]; do [ "\$1" = "--dir" ] && { d="\$2"; shift 2; continue; }; shift; done
-printf 'DIR=%s\n' "\$d" >> "$TMP/opencode-dir.log"
+# OpenCode 2.0 has no --dir: record the cwd it was started in, then emit a minimal json answer
+[ "\${1:-}" != --version ] || { echo 2.0.32; exit 0; }
+printf 'DIR=%s\n' "\$(pwd -P)" >> "$TMP/opencode-dir.log"
 printf '{"parts":[{"type":"text","text":"No issues found."}]}\n'
 EOF
 chmod +x "$STUB/opencode"

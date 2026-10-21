@@ -38,7 +38,8 @@ STUB
 cat > "$TMP/bin/opencode" <<'STUB'
 #!/usr/bin/env bash
 bin="${0##*/}"
-if [ "${2:-}" = models ]; then
+[ "${1:-}" != --version ] || { echo 2.0.32; exit 0; }
+if [ "${1:-}" = models ] || [ "${2:-}" = models ]; then
   if [ "$bin" = kilo ]; then
     printf '%s\n' kilo/train:free kilo/safe:free kilo/safe-two:free
   else

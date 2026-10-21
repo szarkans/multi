@@ -54,10 +54,11 @@ say "KILO_CONFIG_CONTENT is the read-only agent config" "$(python3 -c '
 import json,sys
 p=json.load(open(sys.argv[1]))["agent"]["multi-readonly"]["permission"]
 print(p.get("edit"), p["bash"].get("*"))' "$TMP/config")" "deny deny"
-say "  and equals opencode-readonly.json plus small_model" "$(python3 -c '
+say "  and equals opencode-readonly.json plus small_model and shell = bash" "$(python3 -c '
 import json,sys
 c=json.load(open(sys.argv[1])); c.pop("small_model", None)
-print(json.load(open(sys.argv[2]))==c)' "$TMP/config" "$TREE/scripts/opencode-readonly.json")" "True"
+p=c["agent"]["multi-readonly"]["permission"]; same=p.pop("shell")==p["bash"]
+print(same and json.load(open(sys.argv[2]))==c)' "$TMP/config" "$TREE/scripts/opencode-readonly.json")" "True"
 say "small_model is the model in use (-m)" "$(python3 -c '
 import json,sys
 print(json.load(open(sys.argv[1]))["small_model"])' "$TMP/config")" "kilo/qwen/qwen3.8-27b:free"

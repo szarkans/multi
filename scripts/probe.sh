@@ -134,7 +134,7 @@ while IFS="$(printf '\t')" read -r name type chain url keyenv timeout stall avoi
       # ponytail: the cache is only ever WRITTEN by the autodetect path, so a
       # user who listed free opencode/* models in the config before ever probing
       # without one never sees this line -- the exact user it is for. Closing
-      # that needs a real `opencode --pure models` call on the config path, and
+      # that needs a real `opencode models` call on the config path, and
       # this probe runs before every skill invocation; 2.9s each time is the
       # price, and it was not judged worth it.
       paid_seen="$(printf '%s\n' "$configured_models" | tr ' ' '\n')"
