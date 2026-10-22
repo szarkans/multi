@@ -48,7 +48,11 @@ and empty-collection paths nobody considered · off-by-one and boundary handling
 · error paths that swallow, mask, or mis-classify failures · resources never
 released · races, re-entrancy, ordering assumptions · async that is not actually
 awaited · API and schema changes that break existing callers · migrations that
-cannot run against real data.
+cannot run against real data · code that is fine for one user and wrong at
+the load this repo expects (check-then-write races, the same work done by every
+process, lists or caches that only grow, a query per item). Find the expected
+load in the README or deploy config and name the load you assumed; a load
+figure the change itself adds is a claim to check, not evidence.
 
 **Small defects count**, at `LOW`: a wrong id in a log line that will mislead
 during an incident, a typo in a dict key on a rare branch, an edge case that

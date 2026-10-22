@@ -112,8 +112,9 @@ PROMPT="You are a code reviewer. ${TARGET_LINE}
 ${ANGLE}
 
 Report everything you would raise: logic bugs, security holes, data loss,
-resource leaks, unhandled errors, race conditions, violations of the project
-rules below. Small defects count too, marked LOW — a wrong id in a log line, an
+resource leaks, unhandled errors, race conditions, code that is fine for one
+user and wrong at the load this repo expects (say which load you assumed),
+violations of the project rules below. Small defects count too, marked LOW — a wrong id in a log line, an
 edge case that bites once a year. Losing one because it looked minor is worse
 than a line the reader skips.
 

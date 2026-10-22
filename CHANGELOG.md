@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.20.0 — 2026-10-22
+
+- Fixed: since ponytail 5, `ponytail:ponytail-review` reports bugs, security, load and tests too, not only extra code, and code-review filed all of it under the simplicity section as "what to delete". Now only its simplifications go there; its defects are checked against the cited code, and one that another reviewer also found becomes a note on that finding instead of a second opinion. Nothing to do on your side: update the plugin.
+- Changed: reviewers now also look for code that works for one user and breaks at the load the repo expects (races between check and write, lists that only grow, a query per item), and say which load they assumed. Why: the prompts named races but not load, so these slipped through.
+- Changed: a single-reviewer finding in the report says what stays broken if it is not fixed. Why: easier to decide what to fix first.
+
 ## 1.19.0 — 2026-10-21
 
 - Added an `agy` backend type: the Google Antigravity CLI as a reviewer, with the model ids `agy models` lists (`claude-sonnet-4-6`, `gemini-3.8-flash-high` and others), at most one per backend, no effort setting. It is not in the built-in config: add a `[backends.agy]` table and put `"agy"` into a profile; sign in by running `agy` once. Why: one more reviewer family on an account you may already have.
