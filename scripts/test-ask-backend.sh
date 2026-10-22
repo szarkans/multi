@@ -430,5 +430,24 @@ else
   echo "FAIL opencode 1.x: $(head -1 "$TMP/old/o-opencode.txt" 2>/dev/null); ran=$([ -e "$TMP/old/ran" ] && echo yes || echo no)"; fail=1
 fi
 
+# Keys in providers.env must not reach a reviewer CLI's environment: its model
+# can read them back through `env` or /proc/self/environ.
+mkdir -p "$TMP/leak/bin" "$TMP/leak/h"
+printf "export LEAK_PROBE_KEY='s3cret' LEAK2_PROBE_KEY='s3cret'\ndeclare -x DECL_PROBE_KEY='s3cret'\n" > "$TMP/leak/h/providers.env"
+cat > "$TMP/leak/bin/codex" <<'STUB'
+#!/usr/bin/env bash
+out=""; while [ $# -gt 0 ]; do case "$1" in -o) out="$2"; shift 2 ;; *) shift ;; esac; done
+echo "KEYS=${LEAK_PROBE_KEY:-none},${LEAK2_PROBE_KEY:-none},${DECL_PROBE_KEY:-none}" > "$out"
+STUB
+chmod +x "$TMP/leak/bin/codex"
+# MULTI_PROVIDERS_ENV explicitly: an inherited one would point providers.sh at
+# another file, and the stub would see no key with or without the fix.
+PATH="$TMP/leak/bin:$PATH" MULTI_HOME="$TMP/leak/h" MULTI_PROVIDERS_ENV="$TMP/leak/h/providers.env" "$HERE/ask.sh" --question q --out-prefix "$TMP/leak/r" --backend codex >/dev/null 2>&1
+if grep -qx 'KEYS=none,none,none' "$TMP/leak/r-codex.txt" 2>/dev/null; then
+  echo "ok   providers.env keys never reach a reviewer's environment"
+else
+  echo "FAIL providers.env key leaked to codex: $(head -1 "$TMP/leak/r-codex.txt" 2>/dev/null)"; fail=1
+fi
+
 [ $fail -eq 0 ] && echo "ALL PASS" || echo "FAILURES"
 exit $fail

@@ -347,8 +347,21 @@ MULTI_PROVIDERS_ENV="${MULTI_PROVIDERS_ENV:-$MULTI_HOME/providers.env}"
 
 # Keys live outside the plugin on purpose: the plugin directory is a git clone,
 # and a key committed once is a key leaked forever.
-# shellcheck disable=SC1090
-[ -r "$MULTI_PROVIDERS_ENV" ] && . "$MULTI_PROVIDERS_ENV"
+# The file says `export`, but no reviewer CLI needs a key from it in its
+# environment: the runners hand each one its own key inline. An exported key
+# reaches every child -- codex, opencode, kilo, headless claude -- and any of
+# them can read it back through `env` or /proc/self/environ (measured
+# 2026-10-22). Un-export every NAME= the file mentions, whatever the form --
+# `export A=1 B=2`, `declare -x`, a conditional -- they stay shell vars here.
+# Over-matching a token inside a value only un-exports a name nobody uses.
+if [ -r "$MULTI_PROVIDERS_ENV" ]; then
+  # shellcheck disable=SC1090
+  . "$MULTI_PROVIDERS_ENV"
+  for _multi_v in $(grep -v '^[[:space:]]*#' "$MULTI_PROVIDERS_ENV" | grep -o '[A-Za-z_][A-Za-z0-9_]*=' | tr -d =); do
+    export -n "$_multi_v"
+  done
+  unset _multi_v
+fi
 
 # A child `claude` must not inherit this machine's config. Without an isolated
 # config dir every reviewer would drag in the user's hooks, MCP servers, plugins
@@ -1026,9 +1039,9 @@ print(json.dumps({"multi-readonly": {"PreToolUse": [{"matcher": "*", "hooks": [
 # Google Antigravity CLI. Read-only is not agy's own: it comes from the
 # isolated HOME above and its PreToolUse hook (scripts/agy-gate.py). Never
 # --mode plan (a prompt wrapper the model may ignore), --disable-slash-commands,
-# --effort or --dangerously-skip-permissions. env -i: providers.env exports
-# every key to child CLIs, and agy's shell can read /proc/self/environ
-# (measured 2026-10-21).
+# --effort or --dangerously-skip-permissions. env -i: keys the user's own
+# shell exports would still reach it, and agy's shell can read
+# /proc/self/environ (measured 2026-10-21).
 multi_run_agy() {
   local name="$1" prompt="$2" out="$3" model="${4:-}" rc=0 h
   local log="${out}.log"
