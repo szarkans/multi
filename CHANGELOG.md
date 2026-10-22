@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.20.1 — 2026-10-22
+
+- Fixed: every reviewer CLI (Codex, OpenCode, Kilo, headless Claude) got all the keys from `providers.env` in its environment, and its model could print them with `env`. Now each reviewer gets only its own key; agy was already covered. Nothing to do on your side: update the plugin. Keys exported in your own shell profile still reach the reviewers — keep them in `providers.env` instead.
+
 ## 1.20.0 — 2026-10-22
 
 - Fixed: since ponytail 5, `ponytail:ponytail-review` reports bugs, security, load and tests too, not only extra code, and code-review filed all of it under the simplicity section as "what to delete". Now only its simplifications go there; its defects are checked against the cited code, and one that another reviewer also found becomes a note on that finding instead of a second opinion. Nothing to do on your side: update the plugin.
