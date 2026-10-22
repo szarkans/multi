@@ -264,10 +264,19 @@ what separates this from three models guessing: an external reviewer that does
 not know the project's settled decisions spends its findings re-litigating them.
 
 **The ponytail lens** — invoke the `ponytail:ponytail-review` skill on the same
-target whenever the probe found it. It hunts one thing, over-engineering, and
-that keeps the defect reviewers out of matters of taste entirely (see below).
-Its findings are a different kind of thing and never mix with defects: they get
-their own section and cannot corroborate or contradict a bug. Invoking a skill
+target whenever the probe found it. Since ponytail 5 that skill is a full
+review, not only an over-engineering hunt. Split what it says by content, not by
+its headings: anything that would make code that does not need to exist smaller
+or gone fills the simplicity section; anything that is a defect (a bug, a
+security hole, a load problem, a missing test for a path it names) goes to the
+inventory as `[ponytail]`. A `[ponytail]` defect never corroborates: when
+another reviewer named the same mechanism, it rides on that finding as a note
+— `(#3; note #12)` — which places its number and adds no weight. Otherwise it
+is checked at any size by re-opening the cited lines and quoting the code that
+proves it (in `ultra`, by its own `verify`), then bucketed like any
+single-source finding, Minor included. One the cited code does not show — only
+a comment or a doc says so — goes to Dropped with that reason. Simplifications
+are not inventory lines and stay out of the count. Invoking a skill
 loads it into *you*: the lens is your own read under a different ruleset, in a
 context that has already seen every other reviewer's findings — not a fourth
 independent reviewer. The report labels it that way; do not count it as one.
@@ -398,7 +407,8 @@ line, a merge costs them a bug.
 - **Minor** — a real defect that is simply small. Not verified — that costs more
   than it is worth — and listed at the bottom, one line each.
 - **Dropped** — only two things belong here: the code contradicts it, or (in a
-  diff review) it predates the change. "Too small" is never a reason. A dropped
+  diff review) it predates the change. A `[ponytail]` defect the cited code does
+  not show is the one addition (see the ponytail lens). "Too small" is never a reason. A dropped
   finding keeps its own text and gets its own reason, and the reason cites the
   line that contradicts *this* finding — not a neighbour's. Two findings
   dropped for one reason is the merge above wearing a different hat.
@@ -442,6 +452,7 @@ Families that ran: <k> — <e.g. Claude, OpenAI, OpenCode/free> · missing: <who
 
 ## 🔸 Single-source, verified (<m>)
 - **MEDIUM** `path/file.py:88` — <what is wrong> (#3) — [OpenCode] verified: <what you confirmed>
+  If not fixed: <what stays broken, one line>
 
 ## ⚖️ Reviewers disagreed (<k>)
 - `path/file.py:44` — Codex calls it a race (#5); correctness says the caller holds the lock (#11). <Your call, and why.>
