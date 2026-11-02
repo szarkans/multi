@@ -4,21 +4,23 @@
 // The skill bodies come from this repository at load time, so there is one copy
 // of each instruction and no `!`-substitution on the way in: the body is text,
 // and the probe inside it runs wherever the model runs it.
-import { readFileSync } from "node:fs";
 import { Plugin, Skill } from "@opencode/plugin";
-import { CATALOG, skillPath, skillPrompt, stripFrontmatter } from "../shared/skills.mjs";
+import { CATALOG, skillPrompt, skillText } from "../shared/skills.mjs";
 
 export default Plugin.define({
   id: "multi",
   async setup(ctx) {
     const skills = CATALOG.map((entry) => {
-      const file = skillPath(entry.skill);
+      const text = skillText(entry);
       return {
         id: Skill.ID.make(entry.command),
         name: Skill.Name.make(entry.command),
         description: entry.description,
-        path: Skill.Info.fields.path.make(file),
-        content: stripFrontmatter(readFileSync(file, "utf8")),
+        path: Skill.Info.fields.path.make(text.file),
+        // The body already ends with its `[Skill directory: …]` line: the
+        // skill path OpenCode shows the model is not guaranteed, and the body's
+        // first step resolves the probe from that directory.
+        content: text.text,
       };
     });
 

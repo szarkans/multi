@@ -1,9 +1,16 @@
 # Changelog
 
+## 1.21.1 — 2026-11-02
+
+- Fixed: `host:` named the wrong harness when one CLI was started from another — a `codex` run inside an omp session inherited `OMPCODE=1` and was reported as omp. The parent process now answers first, and the markers it falls back to are the ones the harnesses really set (`OPENCODE_PID`, `CODEX_THREAD_ID`, `CLAUDE_CODE_ENTRYPOINT`), with `CODEX_HOME` last because a shell profile can export it anywhere. Nothing to do on your side: update the plugin.
+- Fixed: the OpenCode skill reached the model without its `[Skill directory: …]` line, so the skill's first step had no directory to resolve `scripts/probe.sh` from. Both adapters now build the text in `harnesses/shared/skills.mjs`. Tests only beyond that.
+- Fixed: an omp command that failed while no UI existed threw a `TypeError` on the missing notify surface and lost the real error. It now logs the original message.
+- Changed (tests): `test-portable.sh` no longer pins the catalog to six entries — adding a skill and its catalog entry is the documented way to add one, and the pinned count turned that into a red suite. `test-host-detect.sh` covers the nested-harness case.
+
 ## 1.21.0 — 2026-11-02
 
 - Added: omp and OpenCode install multi from this same repository as a native plugin, so all four harnesses now run the same skills — Claude `/multi:<name>`, Codex `$multi:<name>`, OpenCode `@multi-<name>` or `/multi-<name>`, omp `/multi-<name>`. On omp run `omp plugin link ~/.claude/skills/multi`; on OpenCode list the clone under `plugins` in `opencode.json`. Why: the plugin only worked as a Claude plugin and as Codex's skill namespace.
-- Changed: one command list, `harnesses/skills.json`, drives both new adapters, and the probe now prints `host:`. Each skill names its own command per harness from that line instead of hardcoding `/multi:`, so the instruction to run is the instruction that exists on the host. Nothing to do on your side: update the plugin.
+- Changed: one command list, `harnesses/skills.json`, drives both new adapters, and the probe now prints `host:`. Each skill names its own command per harness from that line instead of telling the user to type `/multi:<name>` on every host. Nothing to do on your side: update the plugin.
 - Added: a `test` profile in `config.example.toml` with one subscription model, `opencode-go/deepseek-v4.1-flash`, for cheap smoke runs (`--backend test`). `default_profile` is unchanged.
 - Changed: skill descriptions say "the host model" instead of "Claude sub-agents", report headers label the host's own answer with its model instead of "Claude", and no skill body hardcodes a `/multi:` command any more. Why: the same text is now read on four harnesses, and a report that says "Checked by: Claude" on omp or OpenCode is wrong about who checked.
 

@@ -26,7 +26,11 @@ export default function multi(pi) {
           );
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
-          ctx.ui.notify(`multi ${entry.command}: ${message}`, "error");
+          // Print mode and headless hosts have no notify surface; losing the
+          // original message to a TypeError on a missing UI would hide why the
+          // command failed.
+          if (ctx?.ui?.notify) ctx.ui.notify(`multi ${entry.command}: ${message}`, "error");
+          else console.error(`multi ${entry.command}: ${message}`);
         }
       },
     });

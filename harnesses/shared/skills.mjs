@@ -17,16 +17,24 @@ export function stripFrontmatter(text) {
   return text.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, "");
 }
 
-// The body is inserted as text. Nothing here expands `!` lines or shell
+// The body plus the one line that says where the skill lives: its first step
+// is `<dir of this SKILL.md>/../../scripts/probe.sh`, and a host that does not
+// echo the skill's path into the model's context would leave that step with no
+// directory to resolve. Nothing here expands `!` lines or shell
 // substitutions: a host without them still gets the whole instruction.
-export function skillPrompt(entry, args) {
+export function skillText(entry) {
   const file = skillPath(entry.skill);
   const dir = dirname(file);
   const body = stripFrontmatter(readFileSync(file, "utf8")).trim();
+  return { file, dir, text: `${body}\n\n[Skill directory: ${dir}]\n` };
+}
+
+export function skillPrompt(entry, args) {
+  const { file, dir, text } = skillText(entry);
   const tail = String(args ?? "").trim();
-  const text =
-    `The user invoked the multi skill "${entry.skill}".\n\n${body}\n\n` +
-    `[Skill directory: ${dir}]\n` +
-    (tail ? `\nUser: ${tail}\n` : "");
-  return { file, dir, text };
+  return {
+    file,
+    dir,
+    text: `The user invoked the multi skill "${entry.skill}".\n\n${text}` + (tail ? `\nUser: ${tail}\n` : ""),
+  };
 }

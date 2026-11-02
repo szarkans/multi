@@ -81,9 +81,11 @@ except Exception as error:
     print("FAIL\tskills.json parses\t%s" % error)
     raise SystemExit(0)
 
-# 1. exactly the six user-facing commands, all named for the host's sigil.
-if len(catalog) != 6:
-    problems.append(("six entries", "found %d" % len(catalog)))
+# 1. one command per user-facing skill, all named for the host's sigil. The
+#    count is not pinned: adding a skill means adding its catalog entry, and
+#    that is check 3's job, not a number to keep in two places.
+if not catalog:
+    problems.append(("catalog is not empty", "no entries"))
 commands = [entry.get("command") for entry in catalog]
 if len(set(commands)) != len(commands):
     problems.append(("commands are unique", str(commands)))
@@ -122,7 +124,7 @@ except Exception as error:
     problems.append(("codex plugin.json parses", str(error)))
 
 if not problems:
-    print("ok\tcatalog: 6 commands, each with its skill and frontmatter")
+    print("ok\tcatalog: %d commands, each with its skill and frontmatter" % len(catalog))
 for name, detail in problems:
     print("FAIL\t%s\t%s" % (name, detail))
 PY
