@@ -178,13 +178,15 @@ $(cat "$MULTI_HOME/$type-models.cache" 2>/dev/null)"
       fi
       ;;
     agy)
-      # No key: agy signs in itself and keeps the token under the user's HOME.
-      if command -v agy >/dev/null 2>&1 && [ -e "$MULTI_AGY_TOKEN" ]; then
-        say "$name: configured (agy signed in, not checked here)${chain:+ — $chain}"
-      elif command -v agy >/dev/null 2>&1; then
-        say "$name: NOT LOGGED IN (CLI present — ask the user to run agy once in their own terminal to sign in)"
-      else
+      # No key: agy signs in itself. Older builds dropped the token under the
+      # user's HOME; 1.4 keeps it outside HOME, so a missing file proves nothing
+      # (measured 2026-11-02: a run with an empty HOME still answers).
+      if ! command -v agy >/dev/null 2>&1; then
         say "$name: MISSING (install the Antigravity CLI: agy)"
+      elif [ -e "$MULTI_AGY_TOKEN" ]; then
+        say "$name: configured (agy signed in, not checked here)${chain:+ — $chain}"
+      else
+        say "$name: configured (agy CLI present — its sign-in is outside HOME, not checked here; a failed run says why)${chain:+ — $chain}"
       fi
       ;;
   esac

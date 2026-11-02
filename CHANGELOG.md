@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.21.2 — 2026-11-02
+
+Found by a live review of 1.21.0+1.21.1 by three models (OpenCode Go beam, OpenCode Go deepseek-flash, Antigravity Gemini 3.8 Flash).
+
+- Fixed: `agy` could not run at all on a version-manager install. The runner demanded a token file that agy 1.4 no longer writes, and then called the mise shim under `env -i` with a throwaway HOME, where mise refuses its own config (`Config files … are not trusted`) and exits before agy starts. The token file is now optional and the runner invokes the real binary (`mise which`). Nothing to do on your side: update the plugin.
+- Fixed: `host:` matched ancestor processes by substring, so an ancestor named `composer`, `compton`, or living under any path containing `omp` (macOS prints full paths) answered `omp`. The match is anchored to the basename now.
+- Fixed: a Claude session was reported as `codex` where `CLAUDE_CODE_SESSION_ID` was set but not `CLAUDECODE`; that variable is checked now, before `CODEX_HOME`.
+- Fixed: every omp session shared one `shared--*` run directory, because omp's session id was not in the identity chain — two omp reviews overwrote each other's files. `PI_SESSION_ID` is used now.
+- Fixed (tests): the probe's `host: omp` assertion and the unknown-host case depended on which harness ran the suite; both are guarded. `test-portable.sh` counted a crashed catalog check as a pass; a non-zero exit now fails it.
+- Added: a `universal` profile in `config.example.toml` — one reviewer per pool you already pay for (Codex, OpenCode Go flash, the Go free models, Gemini via Antigravity).
+
 ## 1.21.1 — 2026-11-02
 
 - Fixed: `host:` named the wrong harness when one CLI was started from another — a `codex` run inside an omp session inherited `OMPCODE=1` and was reported as omp. The parent process now answers first, and the markers it falls back to are the ones the harnesses really set (`OPENCODE_PID`, `CODEX_THREAD_ID`, `CLAUDE_CODE_ENTRYPOINT`), with `CODEX_HOME` last because a shell profile can export it anywhere. Nothing to do on your side: update the plugin.

@@ -1030,9 +1030,33 @@ multi_agy_home() {
 print(json.dumps({"multi-readonly": {"PreToolUse": [{"matcher": "*", "hooks": [
     {"command": "python3 -I " + shlex.quote(sys.argv[1]), "timeout": 10}]}]}}))' \
     "$MULTI_SCRIPTS_DIR/agy-gate.py" > "$h/.gemini/config/hooks.json" || return 1
-  # A link, not a copy: a refresh agy writes through it reaches the user's own token.
-  ln -s "$MULTI_AGY_TOKEN" "$h/.gemini/antigravity-cli/antigravity-oauth-token" || return 1
+  # A link, not a copy: a refresh agy writes through it reaches the user's own
+  # token. Older agy (1.19 and before) kept that file; from 1.4 the sign-in
+  # lives outside HOME and the file is simply absent — the run works without it
+  # (measured 2026-11-02: an empty HOME still answers), so its absence is not an
+  # error.
+  if [ -e "$MULTI_AGY_TOKEN" ]; then
+    ln -s "$MULTI_AGY_TOKEN" "$h/.gemini/antigravity-cli/antigravity-oauth-token" || return 1
+  fi
   printf '%s\n' "$h"
+}
+
+# multi_real_binary <name>: the path to run under `env -i`, past a version-manager
+# shim. The run's HOME is a throwaway directory, and a mise shim resolves its
+# own config from HOME — under env -i it refuses with "Config files … are not
+# trusted" and exits before the tool starts (measured 2026-11-02 on agy 1.4.12).
+# The real binary needs none of that.
+multi_real_binary() {
+  local name="$1" p real
+  p="$(command -v "$name" 2>/dev/null)" || return 1
+  case "$p" in
+    */mise/shims/*|*/.local/share/mise/shims/*)
+      if real="$(mise which "$name" 2>/dev/null)" && [ -n "$real" ] && [ -x "$real" ]; then
+        printf '%s\n' "$real"
+        return 0
+      fi ;;
+  esac
+  printf '%s\n' "$p"
 }
 
 # multi_run_agy <name> <prompt> <outfile> <model>
@@ -1043,17 +1067,20 @@ print(json.dumps({"multi-readonly": {"PreToolUse": [{"matcher": "*", "hooks": [
 # shell exports would still reach it, and agy's shell can read
 # /proc/self/environ (measured 2026-10-21).
 multi_run_agy() {
-  local name="$1" prompt="$2" out="$3" model="${4:-}" rc=0 h
+  local name="$1" prompt="$2" out="$3" model="${4:-}" rc=0 h bin
   local log="${out}.log"
   rm -f "${out}.dead"
   command -v agy >/dev/null 2>&1 || { multi_fail_backend "$out" "$name: MISSING (install the Antigravity CLI: agy)"; return 0; }
-  [ -e "$MULTI_AGY_TOKEN" ] \
-    || { multi_fail_backend "$out" "$name: NOT LOGGED IN — run agy once in your own terminal to sign in"; return 0; }
+  bin="$(multi_real_binary agy)" || bin="agy"
+  # No token-file check: agy 1.4 keeps its sign-in outside HOME, and a run with a
+  # fresh HOME still authenticates (measured 2026-11-02). An install that is not
+  # signed in says so in its own stderr and lands in the FAILED path below with
+  # that log, which is the honest report.
   h="$(multi_agy_home)" \
     || { multi_fail_backend "$out" "$name: FAILED — could not prepare an isolated HOME under $MULTI_AGY_HOME" "$log"; return 0; }
   multi_record_training "$out" agy "$model"
   multi_timeout "$MULTI_BACKEND_TIMEOUT" env -i PATH="$PATH" HOME="$h" LANG="${LANG:-C.UTF-8}" \
-    agy -p "$prompt" ${model:+--model "$model"} ${MULTI_READ_DIR:+--add-dir "$MULTI_READ_DIR"} \
+    "$bin" -p "$prompt" ${model:+--model "$model"} ${MULTI_READ_DIR:+--add-dir "$MULTI_READ_DIR"} \
     < /dev/null > "$out" 2> "$log"
   rc=$?
   rm -rf "$h"

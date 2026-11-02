@@ -35,7 +35,11 @@ BASE="${MULTI_RUN_BASE:-${TMPDIR:-/tmp}/multi}"
 # id and must not share its run directory (Codex exports a thread id, OpenCode
 # its server pid -- one per run, coarser than a session). With none of them a
 # bare 'shared' would make every concurrent run collide in one directory.
+# PI_SESSION_ID is omp's own session id, on the same footing as the two above:
+# without it every omp session shares one `shared--*` directory, and two reviews
+# overwrite each other's files.
 ID="${MULTI_RUN_ID:-${CODEX_THREAD_ID:-${OPENCODE_PID:+oc-$OPENCODE_PID}}}"
+ID="${ID:-${PI_SESSION_ID:-}}"
 ID="${ID:-${CLAUDE_CODE_SESSION_ID:-shared}}"
 mkdir -p "$BASE" 2>/dev/null || { echo "cannot create $BASE" >&2; exit 2; }
 

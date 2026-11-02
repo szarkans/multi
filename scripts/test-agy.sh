@@ -68,10 +68,13 @@ bash "$TREE/scripts/ask.sh" --question q --out-prefix "$TMP/r2" --backend agy --
 say "--add-dir <dir> in argv" "$(grep -A1 -x -- --add-dir "$TMP/argv" | tail -1)" "$(cd "$TMP/repo" && pwd -P)"
 
 echo "== failures =="
+# agy 1.4 keeps its sign-in outside HOME, so a missing token file is not a
+# failure: the run still answers. Proven here by removing the file the old
+# builds wrote and expecting a normal answer.
 mv "$TMP/user/.gemini/antigravity-cli/antigravity-oauth-token" "$TMP/tok.bak"
 bash "$TREE/scripts/ask.sh" --question q --out-prefix "$TMP/r3" --backend agy --repo "$TMP/repo" >/dev/null 2>&1
-say "no token -> dead" "$([ -e "$TMP/r3-agy.txt.dead" ] && echo dead || echo alive)" "dead"
-say "  says NOT LOGGED IN" "$(grep -c 'NOT LOGGED IN' "$TMP/r3-agy.txt")" "1"
+say "no token file -> still runs" "$([ -e "$TMP/r3-agy.txt.dead" ] && echo dead || echo alive)" "alive"
+say "  and no token link was made" "$([ -e "$TMP/user/.gemini/antigravity-cli/antigravity-oauth-token" ] && echo present || echo absent)" "absent"
 mv "$TMP/tok.bak" "$TMP/user/.gemini/antigravity-cli/antigravity-oauth-token"
 ( PATH="/usr/bin:/bin"; bash "$TREE/scripts/ask.sh" --question q --out-prefix "$TMP/r4" --backend agy --repo "$TMP/repo" >/dev/null 2>&1 )
 say "no agy binary -> dead" "$([ -e "$TMP/r4-agy.txt.dead" ] && echo dead || echo alive)" "dead"

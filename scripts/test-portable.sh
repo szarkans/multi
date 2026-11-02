@@ -129,6 +129,14 @@ for name, detail in problems:
     print("FAIL\t%s\t%s" % (name, detail))
 PY
 )"
+# A crashing check is a failing check: without this, a traceback leaves the
+# output empty, the loop below prints nothing, and the suite still says ALL PASS
+# — exactly the broken catalog this block exists to catch.
+rc=$?
+if [ "$rc" -ne 0 ]; then
+  echo "  FAIL catalog check crashed (exit $rc)"
+  fail=1
+fi
 while IFS="$(printf '\t')" read -r st name err; do
   [ -n "$st" ] || continue
   if [ "$st" = ok ]; then echo "  ok   $name"; else echo "  FAIL $name: $err"; fail=1; fi

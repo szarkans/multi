@@ -30,9 +30,9 @@ cat > "$BIN/inner.sh" <<'EOS'
 host_detect
 EOS
 chmod +x "$BIN/inner.sh"
-cp "$(command -v bash)" "$BIN/zz-neutral"
-cp "$(command -v bash)" "$BIN/zz-codex-zz"
-cp "$(command -v bash)" "$BIN/zz-opencode-zz"
+cp "$(command -v bash)" "$BIN/neutral"
+cp "$(command -v bash)" "$BIN/codex-zz"
+cp "$(command -v bash)" "$BIN/opencode-zz"
 
 echo "== markers, most specific first =="
 say "OPENCODE_PID" "$(run host_from_markers OPENCODE_PID=4242)" "opencode"
@@ -54,23 +54,32 @@ echo "== ancestors: nearest harness name wins =="
 # Copied shells under harness-like names: the marker-free case must not borrow
 # the developer's own session.
 say "the parent decides" \
-  "$($CLEAR BIN="$BIN" DET="$TREE" "$BIN/zz-codex-zz" -c 'bash "$BIN/inner.sh" "$DET"; :')" "codex"
+  "$($CLEAR BIN="$BIN" DET="$TREE" "$BIN/codex-zz" -c 'bash "$BIN/inner.sh" "$DET"; :')" "codex"
 say "a grandparent is found through a shell in between" \
-  "$($CLEAR BIN="$BIN" DET="$TREE" "$BIN/zz-opencode-zz" -c 'bash -c "bash \"$BIN/inner.sh\" \"$DET\"; :"; :')" "opencode"
+  "$($CLEAR BIN="$BIN" DET="$TREE" "$BIN/opencode-zz" -c 'bash -c "bash \"$BIN/inner.sh\" \"$DET\"; :"; :')" "opencode"
 say "the nearest harness outvotes an inherited marker" \
-  "$($CLEAR OMPCODE=1 CLAUDECODE=1 BIN="$BIN" DET="$TREE" "$BIN/zz-codex-zz" -c 'bash "$BIN/inner.sh" "$DET"; :')" "codex"
+  "$($CLEAR OMPCODE=1 CLAUDECODE=1 BIN="$BIN" DET="$TREE" "$BIN/codex-zz" -c 'bash "$BIN/inner.sh" "$DET"; :')" "codex"
 # An ancestor-free run exists only outside every harness; asserting it inside
 # one would just be asserting the developer's own session.
 outer="$(run host_detect)"
 if [ "$outer" = unknown ]; then
   say "unknown when no ancestor matches" \
-    "$($CLEAR BIN="$BIN" DET="$TREE" "$BIN/zz-neutral" -c 'bash "$BIN/inner.sh" "$DET"; :')" "unknown"
+    "$($CLEAR BIN="$BIN" DET="$TREE" "$BIN/neutral" -c 'bash "$BIN/inner.sh" "$DET"; :')" "unknown"
 else
   echo "  skip unknown case (this suite runs inside $outer)"
 fi
 
 echo "== the probe prints the line =="
-say "probe prints host: omp under OMPCODE=1" \
-  "$($CLEAR OMPCODE=1 MULTI_HOME="$home" "$TREE/scripts/probe.sh" 2>/dev/null | grep -c '^host: omp$')" "1"
+# The line must exist in any environment. Which name it carries is only
+# assertable where the ancestor chain cannot answer first: the probe runs under
+# this test's own ancestors, and inside a harness those decide by design.
+say "probe prints exactly one host line" \
+  "$($CLEAR OMPCODE=1 MULTI_HOME="$home" "$TREE/scripts/probe.sh" 2>/dev/null | grep -c '^host: ')" "1"
+if [ "$outer" = omp ]; then
+  say "probe prints host: omp under OMPCODE=1" \
+    "$($CLEAR OMPCODE=1 MULTI_HOME="$home" "$TREE/scripts/probe.sh" 2>/dev/null | grep -c '^host: omp$')" "1"
+else
+  echo "  skip omp-name case (this suite runs inside $outer)"
+fi
 
 [ $fail -eq 0 ] && echo "ALL PASS" || echo "FAILURES"; exit $fail

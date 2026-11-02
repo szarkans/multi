@@ -30,6 +30,10 @@ models = []                          # empty = a free kilo/...:free model from `
 type = "opencode"
 models = ["opencode-go/deepseek-v4.1-flash", "opencode-go/qwen3.8-flash"]   # first is tried first
 
+[backends.opencode-go-free]          # the subscription's free models: opencode-go/*-free, no extra cost
+type = "opencode"
+models = ["opencode-go/iceman-contributor-free", "opencode-go/beam-free"]
+
 [backends.openrouter]                # type "claude-headless": claude -p against an
 type = "claude-headless"             # Anthropic-compatible endpoint. OpenRouter is one.
 base_url = "https://openrouter.ai/api"
@@ -89,3 +93,13 @@ paid    = ["codex", "opencode-paid", "deepseek"]   # in deepseek's peak hours th
 compare = ["openrouter:qwen/qwen3.8-flash", "openrouter:deepseek/deepseek-v4-flash-0731", "glm"]
 solo    = ["codex"]
 test    = ["opencode-paid:opencode-go/deepseek-v4.1-flash"]   # one subscription model, for smoke runs
+# one reviewer per pool you already pay for: Go free models, Go flash, Gemini
+# via Antigravity, Codex. `agy` needs the CLI signed in once; `codex` needs
+# `codex login`.
+# one entry per reviewer: a bare backend name walks its whole models list
+# as a fallback chain, which is one reviewer, not two.
+universal = ["codex:gpt-6.1-sol",
+             "opencode-paid:opencode-go/deepseek-v4.1-flash",
+             "opencode-go-free:opencode-go/iceman-contributor-free",
+             "opencode-go-free:opencode-go/beam-free",
+             "agy:gemini-3.8-flash-high"]

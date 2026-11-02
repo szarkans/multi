@@ -18,14 +18,19 @@
 # Split into two functions so each source can be tested on its own: a test that
 # runs inside a harness can never reach the marker branch through host_detect.
 host_from_ancestors() {
-  local pid="${PPID:-0}" comm hops=0
+  local pid="${PPID:-0}" comm base hops=0
   while [ "$hops" -lt 8 ] && [ -n "$pid" ] && [ "$pid" != 0 ] && [ "$pid" != 1 ]; do
     comm="$(ps -o comm= -p "$pid" 2>/dev/null || true)"
-    case "$comm" in
-      *opencode*) printf '%s\n' opencode; return 0 ;;
-      *omp*) printf '%s\n' omp; return 0 ;;
-      *codex*) printf '%s\n' codex; return 0 ;;
-      *claude*) printf '%s\n' claude-code; return 0 ;;
+    # The basename, not the whole string: macOS prints the absolute path, so a
+    # substring test would answer `omp` for any ancestor living under
+    # /Users/thompson or a `components` directory, and `composer`/`compton`
+    # would answer it on Linux too.
+    base="${comm##*/}"
+    case "$base" in
+      opencode|opencode2|opencode-*) printf '%s\n' opencode; return 0 ;;
+      omp|omp-*) printf '%s\n' omp; return 0 ;;
+      codex|codex-*) printf '%s\n' codex; return 0 ;;
+      claude|claude-*) printf '%s\n' claude-code; return 0 ;;
     esac
     pid="$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ' || true)"
     hops=$((hops + 1))
@@ -37,7 +42,11 @@ host_from_markers() {
   if [ -n "${OPENCODE_PID:-}" ]; then printf '%s\n' opencode; return 0; fi
   if [ -n "${CODEX_THREAD_ID:-}" ]; then printf '%s\n' codex; return 0; fi
   if [ "${OMPCODE:-}" = 1 ]; then printf '%s\n' omp; return 0; fi
-  if [ -n "${CLAUDE_CODE_ENTRYPOINT:-}" ] || [ "${CLAUDECODE:-}" = 1 ]; then printf '%s\n' claude-code; return 0; fi
+  # CLAUDE_CODE_SESSION_ID is the variable this repository already reads
+  # (scripts/run-dir.sh), and it is set even where the other two are not.
+  if [ -n "${CLAUDE_CODE_SESSION_ID:-}" ] || [ -n "${CLAUDE_CODE_ENTRYPOINT:-}" ] || [ "${CLAUDECODE:-}" = 1 ]; then
+    printf '%s\n' claude-code; return 0
+  fi
   # Exported in a user's shell profile, so these two only answer when nothing
   # more specific did: CODEX_HOME in a Claude session is not a Codex session.
   if [ -n "${CODEX_SANDBOX:-}" ] || [ -n "${CODEX_HOME:-}" ]; then printf '%s\n' codex; return 0; fi
