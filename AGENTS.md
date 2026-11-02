@@ -24,7 +24,7 @@
 - `harnesses/shared/skills.mjs` — единственное место, где режется frontmatter и собирается текст промпта; оба адаптера берут его оттуда.
 - `package.json` (root) — манифест omp: `omp.extensions` → `harnesses/omp/index.js` (`pi.registerCommand` + `pi.sendMessage` с `triggerTurn`). Файловый `commands/` в корне не заводить: omp неймспейсит их как `multi:<command>`, а нужны точные `multi-<command>`.
 - `harnesses/opencode/index.js` — плагин OpenCode 2 (`@opencode/plugin`): `ctx.skill.transform` даёт `@multi-<name>`, `ctx.command.transform` — `/multi-<name>` для TUI. В `opencode run` слэш-команды не раскрываются вообще, проверять скиллом.
-- Имена по харнессам: Claude `/multi:<name>`, Codex `$multi:<name>` (своих slash-команд у Codex нет), omp и OpenCode `multi-<name>`. В телах скиллов хардкода `/multi:` быть не должно — они называют свой хост из строки `host:` в пробе.
+- Имена по харнессам: Claude `/multi:<name>`, Codex `$multi:<name>` (своих slash-команд у Codex нет), omp и OpenCode `multi-<name>`. Жёсткой инструкции «набери `/multi:<name>`» в теле скилла быть не должно: блок в шапке перечисляет команды всех хостов, а строка `host:` из пробы говорит, какая из них твоя.
 - `scripts/host-detect.sh` отвечает так: сначала ближайший по цепочке процесс с именем харнесса (маркеры наследуются вглубь — OpenCode, запущенный из omp, несёт `OMPCODE=1`), потом маркеры самого харнесса (`OPENCODE_PID`, `CODEX_THREAD_ID`, `OMPCODE`, `CLAUDE_CODE_ENTRYPOINT`/`CLAUDECODE`, `CODEX_SANDBOX`/`CODEX_HOME` последними). Обе ветки тестируются отдельно: `host_detect` внутри харнесса до маркеров не доходит по определению.
 - Тестовый профиль — `test` в `config.example.toml` и в живом конфиге: один `opencode-go/deepseek-v4.1-flash`. `default_profile` им не менять.
 
