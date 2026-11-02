@@ -1,7 +1,7 @@
 # Codex — GPT as a reviewer
 
 What it adds: OpenAI's frontier model as a second reviewer family, and the
-adversarial second pass in `/multi:code-review` ultra mode. If the user has a
+adversarial second pass in the code-review skill's ultra mode. If the user has a
 ChatGPT subscription, this costs nothing extra — the CLI spends that
 subscription's quota, not API credits.
 

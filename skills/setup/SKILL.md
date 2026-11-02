@@ -35,21 +35,26 @@ plugin is fine. Run `"${CLAUDE_SKILL_DIR}/../../scripts/probe.sh"` yourself,
 as one plain command with nothing but the path, and read `scripts-dir:` from
 that.
 
+**Your host's name for this skill.** The probe prints `host:`. Claude Code:
+`/multi:setup` · Codex: `$multi:setup` · OpenCode: `@multi-setup` or
+`/multi-setup` · omp: `/multi-setup`. Other multi skills follow the same
+pattern.
+
 The user here is not assumed technical. No jargon, no walls of text, one step
 at a time, and never make them feel behind for not having done this already.
 
 ## First contact: what this is, in three sentences
 
-Only when little or nothing is connected yet (Claude alone, or one backend).
-Returning users with a working lineup skip straight to fixing gaps.
+Only when little or nothing is connected yet (the host model alone, or one
+backend). Returning users with a working lineup skip straight to fixing gaps.
 
 > This plugin asks several different AI models to look at the same thing
 > instead of just one — when they agree it's a real signal, and when they
 > disagree, that disagreement is exactly what one model alone can never show
-> you. You'll use it mostly as `/multi:code-review` (several models review
-> your changes before a PR), `/multi:ask` (one question, several independent
-> answers), and `/multi:check-if-done` (is this actually finished?).
-> Claude is already connected; each backend below adds an independent
+> you. You'll use it mostly as the code-review skill (several models review
+> your changes before a PR), the ask skill (one question, several independent
+> answers), and the check-if-done skill (is this actually finished?).
+> The host model is already connected; each backend below adds an independent
 > reviewer, most at no extra cost.
 
 ## Show them the one file, before anything else
@@ -88,8 +93,8 @@ missing backends, shaped like this (adjust to the actual gaps):
 >   families at once via OpenRouter or a compatible service)
 > - Or keep it strictly free-and-local for now? (OpenCode's free models)
 
-Then recommend an order — the fewest steps to reach **at least one non-Claude
-reviewer** (without one, `/multi:code-review` refuses to run; with one it
+Then recommend an order — the fewest steps to reach **at least one reviewer
+from another family** (without one, the code-review skill refuses to run; with one it
 works, and each further backend makes it stronger). Typical value order:
 Codex if they have the subscription, otherwise an OpenRouter-style key,
 OpenCode as the free floor, Gemini as a free extra.
@@ -157,10 +162,10 @@ This one actually verifies keys over the network (the probe above does not).
 Report one short block — who's connected, and what each missing one would add:
 
 ```
-Connected: Claude, Codex, OpenRouter (endpoint: 9router)
+Connected: <host model>, Codex, OpenRouter (endpoint: 9router)
 Not yet:   OpenCode / Kilo Code (free extra reviewers), Gemini (free extra reviewer)
 
-/multi:code-review works — you have non-Claude reviewers. Each missing
+The code-review skill works — you have reviewers from another family. Each missing
 backend is one more independent opinion, most at no extra cost.
 ```
 

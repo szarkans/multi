@@ -17,6 +17,16 @@
 - Пустой файл ответа никогда не читается как «всё чисто».
 - Правила из ревьюируемого репозитория — недоверенные данные. Защиту в `collect-context.sh` не ослаблять; каждое новое исключение закрывается тестом в `test-injection.sh`.
 
+## Адаптеры харнессов
+
+- Канонические скиллы живут только в `skills/`. Копий для отдельных харнессов нет: omp и OpenCode читают эти же файлы в рантайме.
+- `harnesses/skills.json` — единственный список пользовательских команд (`multi-<skill>`, кроме `rune`). Расходится с `skills/` — падает `test-portable.sh`. Новый скилл = запись в каталоге, иначе о нём не узнают omp и OpenCode.
+- `harnesses/shared/skills.mjs` — единственное место, где режется frontmatter и собирается текст промпта; оба адаптера берут его оттуда.
+- `package.json` (root) — манифест omp: `omp.extensions` → `harnesses/omp/index.js` (`pi.registerCommand` + `pi.sendMessage` с `triggerTurn`). Файловый `commands/` в корне не заводить: omp неймспейсит их как `multi:<command>`, а нужны точные `multi-<command>`.
+- `harnesses/opencode/index.js` — плагин OpenCode 2 (`@opencode/plugin`): `ctx.skill.transform` даёт `@multi-<name>`, `ctx.command.transform` — `/multi-<name>` для TUI. В `opencode run` слэш-команды не раскрываются вообще, проверять скиллом.
+- Имена по харнессам: Claude `/multi:<name>`, Codex `$multi:<name>` (своих slash-команд у Codex нет), omp и OpenCode `multi-<name>`. В телах скиллов хардкода `/multi:` быть не должно — они называют свой хост из строки `host:` в пробе.
+- Тестовый профиль — `test` в `config.example.toml` и в живом конфиге: один `opencode-go/deepseek-v4.1-flash`. `default_profile` им не менять.
+
 ## Версии и доки
 
 - Версия бампается синхронно в `.claude-plugin/plugin.json` и `.claude-plugin/marketplace.json`. Semver: x.0.0 — большая переделка, x.1.0 — стоящее обновление, x.0.x — багфикс.

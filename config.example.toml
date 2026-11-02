@@ -28,7 +28,7 @@ models = []                          # empty = a free kilo/...:free model from `
 
 [backends.opencode-paid]             # the same type twice, under another name
 type = "opencode"
-models = ["opencode-go/deepseek-v4-flash", "opencode-go/qwen3.8-flash"]   # first is tried first
+models = ["opencode-go/deepseek-v4.1-flash", "opencode-go/qwen3.8-flash"]   # first is tried first
 
 [backends.openrouter]                # type "claude-headless": claude -p against an
 type = "claude-headless"             # Anthropic-compatible endpoint. OpenRouter is one.
@@ -88,3 +88,4 @@ free    = ["opencode", "openrouter:z-ai/glm-5.2:free"]   # pinned: the bare back
 paid    = ["codex", "opencode-paid", "deepseek"]   # in deepseek's peak hours this runs two reviewers, and says so
 compare = ["openrouter:qwen/qwen3.8-flash", "openrouter:deepseek/deepseek-v4-flash-0731", "glm"]
 solo    = ["codex"]
+test    = ["opencode-paid:opencode-go/deepseek-v4.1-flash"]   # one subscription model, for smoke runs

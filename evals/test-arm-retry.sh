@@ -9,6 +9,10 @@ T="$(mktemp -d)"; trap 'rm -rf "$T"' EXIT
 mkdir -p "$T/bin" "$T/wt" "$T/out"
 cat > "$T/bin/claude" <<'EOF'
 #!/usr/bin/env bash
+# run-arms.sh records `claude --version` in every arm's .meta (a run that spans
+# days must say which build each arm saw). That is not a reviewer call, so it
+# answers and leaves the counter alone: the counts below are review attempts.
+if [ "${1:-}" = "--version" ]; then echo "9.9.9 (stub)"; exit 0; fi
 n=$(( $(cat "$STUB_DIR/calls" 2>/dev/null || echo 0) + 1 )); echo $n > "$STUB_DIR/calls"
 res() { printf '{"type":"result","subtype":"success","is_error":%s,"result":"%s","total_cost_usd":%s,"num_turns":5,"duration_ms":900,"usage":{}}\n' "$1" "$2" "$3"; }
 long="REPORT $(printf 'x%.0s' $(seq 900))"

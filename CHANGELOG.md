@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.21.0 — 2026-11-02
+
+- Added: omp and OpenCode install multi from this same repository as a native plugin, so all four harnesses now run the same skills — Claude `/multi:<name>`, Codex `$multi:<name>`, OpenCode `@multi-<name>` or `/multi-<name>`, omp `/multi-<name>`. On omp run `omp plugin link ~/.claude/skills/multi`; on OpenCode list the clone under `plugins` in `opencode.json`. Why: the plugin only worked as a Claude plugin and as Codex's skill namespace.
+- Changed: one command list, `harnesses/skills.json`, drives both new adapters, and the probe now prints `host:`. Each skill names its own command per harness from that line instead of hardcoding `/multi:`, so the instruction to run is the instruction that exists on the host. Nothing to do on your side: update the plugin.
+- Added: a `test` profile in `config.example.toml` with one subscription model, `opencode-go/deepseek-v4.1-flash`, for cheap smoke runs (`--backend test`). `default_profile` is unchanged.
+- Changed: skill descriptions say "the host model" instead of "Claude sub-agents", report headers label the host's own answer with its model instead of "Claude", and no skill body hardcodes a `/multi:` command any more. Why: the same text is now read on four harnesses, and a report that says "Checked by: Claude" on omp or OpenCode is wrong about who checked.
+
 ## 1.20.1 — 2026-10-22
 
 - Fixed: every reviewer CLI (Codex, OpenCode, Kilo, headless Claude) got all the keys from `providers.env` in its environment, and its model could print them with `env`. Now each reviewer gets only its own key; agy was already covered. Nothing to do on your side: update the plugin. Keys exported in your own shell profile still reach the reviewers — keep them in `providers.env` instead.

@@ -53,7 +53,7 @@ done
 echo "== one version in every manifest =="
 ver(){ sed -n '/"version"/{s/.*"version": *"\([^"]*\)".*/\1/p;q;}' "$1"; }
 v="$(ver "$TREE/.claude-plugin/plugin.json")"
-for m in .claude-plugin/marketplace.json .codex-plugin/plugin.json gemini-extension.json; do
+for m in .claude-plugin/marketplace.json .codex-plugin/plugin.json gemini-extension.json package.json; do
   say "$m says $v" "$(ver "$TREE/$m")" "$v"
 done
 say "CHANGELOG has a $v section" "$(grep -c "^## $v " "$TREE/CHANGELOG.md")" "1"
@@ -66,5 +66,78 @@ for f in "$TREE"/skills/*/SKILL.md; do
   say "$name: frontmatter name matches directory" "$(printf '%s\n' "$fm" | sed -n 's/^name: *//p')" "$name"
   say "$name: frontmatter has description" "$(printf '%s\n' "$fm" | grep -c '^description:')" "1"
 done
+
+echo "== harnesses/skills.json is the one command list every adapter reads =="
+catalog_out="$(python3 - "$TREE" <<'PY'
+import json, os, re, sys
+
+tree = sys.argv[1]
+def rel(*p): return os.path.join(tree, *p)
+problems = []
+
+try:
+    catalog = json.load(open(rel("harnesses", "skills.json")))
+except Exception as error:
+    print("FAIL\tskills.json parses\t%s" % error)
+    raise SystemExit(0)
+
+# 1. exactly the six user-facing commands, all named for the host's sigil.
+if len(catalog) != 6:
+    problems.append(("six entries", "found %d" % len(catalog)))
+commands = [entry.get("command") for entry in catalog]
+if len(set(commands)) != len(commands):
+    problems.append(("commands are unique", str(commands)))
+bad = [c for c in commands if not re.fullmatch(r"multi-[a-z-]+", c or "")]
+if bad:
+    problems.append(("every command starts with multi-", str(bad)))
+
+# 2. every entry points at a real skill whose frontmatter agrees.
+for entry in catalog:
+    skill, command = entry.get("skill"), entry.get("command")
+    path = rel("skills", skill, "SKILL.md")
+    if not os.path.isfile(path):
+        problems.append(("%s: skills/%s/SKILL.md exists" % (command, skill), path))
+        continue
+    text = open(path, encoding="utf-8").read()
+    match = re.match(r"---\r?\n(.*?)\r?\n---\r?\n", text, re.S)
+    name = re.search(r"^name: *(\S+)", match.group(1), re.M) if match else None
+    if not name or name.group(1) != skill:
+        problems.append(("%s: frontmatter name is %s" % (command, skill), name.group(1) if name else "missing"))
+
+# 3. the catalog covers every skill except rune, which is a joke and has no command.
+on_disk = {d for d in os.listdir(rel("skills"))
+           if os.path.isfile(rel("skills", d, "SKILL.md"))} - {"rune"}
+listed = {entry.get("skill") for entry in catalog}
+if on_disk != listed:
+    problems.append(("catalog matches skills/ minus rune",
+                     "missing %s, extra %s" % (sorted(on_disk - listed), sorted(listed - on_disk))))
+
+# 4. Codex is installed from this repo, so its skills path must exist as written.
+try:
+    codex = json.load(open(rel(".codex-plugin", "plugin.json")))
+    skills = codex.get("skills")
+    if not skills or not os.path.isdir(os.path.normpath(rel(skills))):
+        problems.append(("codex plugin.json skills path exists", str(skills)))
+except Exception as error:
+    problems.append(("codex plugin.json parses", str(error)))
+
+if not problems:
+    print("ok\tcatalog: 6 commands, each with its skill and frontmatter")
+for name, detail in problems:
+    print("FAIL\t%s\t%s" % (name, detail))
+PY
+)"
+while IFS="$(printf '\t')" read -r st name err; do
+  [ -n "$st" ] || continue
+  if [ "$st" = ok ]; then echo "  ok   $name"; else echo "  FAIL $name: $err"; fail=1; fi
+done <<EOF
+$catalog_out
+EOF
+
+echo "== the example config's test profile runs one subscription model =="
+resolved="$(MULTI_CONFIG="$TREE/config.example.toml" python3 "$TREE/scripts/config.py" resolve --backend test 2>&1 || true)"
+say "resolves to exactly one line" "$(printf '%s\n' "$resolved" | grep -c .)" "1"
+say "and that line is the smoke-test model" \
+  "$(printf '%s\n' "$resolved" | grep -c 'opencode-go/deepseek-v4\.1-flash')" "1"
 
 [ $fail -eq 0 ] && echo "ALL PASS" || echo "FAILURES"; exit $fail

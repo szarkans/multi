@@ -1,0 +1,32 @@
+[
+  {
+    "command": "multi-code-review",
+    "skill": "code-review",
+    "description": "Several models review the same code; disagreement is the signal."
+  },
+  {
+    "command": "multi-check-if-done",
+    "skill": "check-if-done",
+    "description": "Is the work actually finished? Every completion claim must survive an executed command."
+  },
+  {
+    "command": "multi-ask",
+    "skill": "ask",
+    "description": "One question, every model's answer side by side — no judging."
+  },
+  {
+    "command": "multi-adhd",
+    "skill": "adhd",
+    "description": "Wide ideas: one cognitive frame per model family."
+  },
+  {
+    "command": "multi-skill",
+    "skill": "skill",
+    "description": "Run any installed skill on every participant."
+  },
+  {
+    "command": "multi-setup",
+    "skill": "setup",
+    "description": "Connect reviewers and pick models."
+  }
+]

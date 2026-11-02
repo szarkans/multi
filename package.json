@@ -1,0 +1,12 @@
+{
+  "name": "multi",
+  "version": "1.21.0",
+  "private": true,
+  "type": "module",
+  "description": "Several models on the same question at once.",
+  "license": "MIT",
+  "repository": "https://github.com/szarkans/multi",
+  "omp": {
+    "extensions": ["./harnesses/omp/index.js"]
+  }
+}

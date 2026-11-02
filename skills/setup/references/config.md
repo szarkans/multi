@@ -76,7 +76,7 @@ Rules that matter when editing on a user's behalf:
   gets a line in the runner-written `<answer>.trains` (`yes|no|unknown <model>`),
   fallbacks included, worst verdict counts; skills name yes/unknown destinations on one report line. `<default>`
   labels an unpinned CLI default. No second family after filtering means the
-  review stops; explain `trains = false` or offer `/multi:setup`.
+  review stops; explain `trains = false` or offer the setup skill.
 - Six types only: `claude-headless`, `codex`, `opencode`, `kilo`, `gemini`, `agy`. The same
   type may appear under several names — that is how a second endpoint is added.
 - `models` is an ordered fallback chain for `opencode`, `kilo` and `claude-headless`.

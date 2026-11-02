@@ -38,6 +38,13 @@ done
 # one less thing the header has to do.
 say "scripts-dir: $SELF_DIR"
 
+# Which harness is reading the skill. The skills name their own command per
+# host from this line; `unknown` is honest (the env markers and the parent
+# process both missed) and the skills treat it as "use the generic name".
+# shellcheck source=host-detect.sh
+. "$SELF_DIR/host-detect.sh"
+say "host: $(host_detect)"
+
 # --- config -------------------------------------------------------------
 # Backends, models, endpoints and timeouts come from config.toml; a broken
 # file is reported here, before any skill acts on it, and is a hard stop.
@@ -149,7 +156,7 @@ $(cat "$MULTI_HOME/$type-models.cache" 2>/dev/null)"
       # A key here is the widest single upgrade available: any Anthropic-
       # compatible endpoint can be driven by Claude Code itself.
       if [ -n "$key" ] && command -v claude >/dev/null 2>&1; then
-        say "$name: configured (key $keyenv set, not checked here — /multi:setup status verifies it) — endpoint $url, models: $chain (first live pool wins; ask.sh --backend $name:<model> pins one)"
+        say "$name: configured (key $keyenv set, not checked here — the setup skill's status verifies it) — endpoint $url, models: $chain (first live pool wins; ask.sh --backend $name:<model> pins one)"
       elif [ -n "$key" ]; then
         say "$name: KEY SET BUT claude CLI MISSING"
       else
@@ -161,7 +168,7 @@ $(cat "$MULTI_HOME/$type-models.cache" 2>/dev/null)"
       # endpoint, and the CLI spends the key's free daily quota rather than
       # paying a router for the same model.
       if [ -n "$key" ] && command -v gemini >/dev/null 2>&1; then
-        say "$name: configured (key $keyenv set, not checked here — /multi:setup status verifies it)${chain:+ — $chain}"
+        say "$name: configured (key $keyenv set, not checked here — the setup skill's status verifies it)${chain:+ — $chain}"
       elif [ -n "$key" ]; then
         say "$name: KEY SET BUT gemini CLI MISSING (npm i -g @google/gemini-cli)"
       elif command -v gemini >/dev/null 2>&1; then
