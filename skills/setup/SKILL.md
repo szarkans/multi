@@ -20,8 +20,9 @@ ran above — read it, do not run it again. It detected everything detectable:
 which CLIs are installed, who is logged in, which keys exist, whether the
 OpenCode paid channel is available, whether `kilo-available:` was printed (offer
 Kilo Code, `references/kilo.md`), whether `agy-available:` was printed (offer
-the Antigravity CLI, `references/agy.md`), and what other AI CLIs live on this
-machine. **Never ask the user about anything the probe already answered.**
+the Antigravity CLI, `references/agy.md`), whether `devin-available:` was
+printed (offer the Devin CLI, `references/devin.md`), and what other AI CLIs
+live on this machine. **Never ask the user about anything the probe already answered.**
 
 **On any host other than Claude Code** the line above is plain text, nothing
 ran. Your first step is then to run the probe yourself and read its output as
@@ -112,6 +113,7 @@ For each backend, read its reference file first and follow it:
 - **OpenRouter / 9router / z.ai / any compatible endpoint** — `references/openrouter.md`
 - **Gemini** — `references/gemini.md`
 - **Antigravity (agy)** — `references/agy.md`
+- **Devin** — `references/devin.md`
 
 Everything of this plugin lives under `$MULTI_HOME/` (default `~/.config/multi`): `config.toml` for
 backends, models, endpoints, profiles and timeouts (read `references/config.md`

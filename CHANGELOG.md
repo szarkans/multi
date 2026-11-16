@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.22.0 — 2026-11-16
+
+- Added a `devin` backend type: the Devin CLI as a reviewer, with the SWE-2 model ids `devin models` lists, at most one per backend, no effort setting (effort lives in the model name — `swe-2-max` vs `swe-2-max-lightning`). It is not in the built-in config: add a `[backends.devin]` table and put `"devin"` into a profile; sign in once with `devin auth login`. Why: one more reviewer family on a subscription you may already have.
+- Security: devin reads the reviewed repo's `.devin/` project config by default, and project level outranks the forced `--config` — a repo can hand itself a `SessionStart`/`UserPromptSubmit` command hook, an MCP server command (inline `mcpServers` auto-migrates), or re-enable `.claude/` hook imports, and all three execute regardless of permission denies. The snapshot now strips `.devin/` like every other harness's config; on a live tree (`/multi:ask`) the runner refuses with a `REFUSED` marker on ANY `.devin/{hooks*, config*.json, mcp_config*.json}` — file names, not content, because `"\u0068ooks"` parses as `"hooks"` for devin but not for grep — and `.cognition/`, the pre-rename name of the same project dir, gets the identical strip and scan. Its allow-lists stay capped too: `scripts/devin-readonly.json` is forced via `--config` as a per-run copy (devin rewrites the file it is given, org_id and all), and deny beats allow at every level — the reviewer reads, greps and globs and nothing else. The read allow is the scoped `Read(**)` (a tool-name `read` silently ignores scoped denies — measured) so dotenv files, providers.env, credentials.toml and key material stay denied for reads; grep ignores Read() denies too — a documented residual on live trees, while snapshots strip secrets before review anyway. It runs under a fresh per-run HOME linking only `credentials.toml`, so the user's own MCP servers, skills and hooks stay out. Default timeout is 1800s (it walks the tree like an agent, not a one-shot call).
+
 ## 1.21.2 — 2026-11-02
 
 Found by a live review of 1.21.0+1.21.1 by three models (OpenCode Go beam, OpenCode Go deepseek-flash, Antigravity Gemini 3.8 Flash).

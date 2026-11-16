@@ -372,6 +372,7 @@ MULTI_CHILD_HOME="${MULTI_CHILD_HOME:-$MULTI_HOME/child-home}"
 # here: an empty .gemini carrying one deny-by-default PreToolUse hook, and
 # nothing of the user's config. Built (idempotently) by multi_agy_home.
 MULTI_AGY_HOME="${MULTI_AGY_HOME:-$MULTI_HOME/agy-home}"
+MULTI_DEVIN_HOME="${MULTI_DEVIN_HOME:-$MULTI_HOME/devin-home}"
 MULTI_AGY_TOKEN="${MULTI_AGY_TOKEN:-$HOME/.gemini/antigravity-cli/antigravity-oauth-token}"
 
 # Backends, models, endpoints and timeouts live in $MULTI_HOME/config.toml,
@@ -1085,6 +1086,152 @@ multi_run_agy() {
   rc=$?
   rm -rf "$h"
   printf '[multi] %s model %s effort=unsupported (Antigravity CLI has no effort control)\n' "$name" "${model:-<default>}" >> "$log"
+  if [ "$rc" -eq 124 ]; then
+    multi_fail_backend "$out" "$name: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s${model:+ — model=$model}" "$log"
+  elif [ ! -s "$out" ]; then
+    multi_fail_backend "$out" "$name: NO OUTPUT${model:+ — model=$model} exit=$rc (stderr in $log)" "$log"
+  elif [ "$rc" -ne 0 ]; then
+    multi_fail_backend "$out" "$name: FAILED${model:+ — model=$model} exit=$rc (stderr in $log)" "$log"
+  fi
+  return "$rc"
+}
+
+# multi_run_devin <name> <prompt> <outfile> <model>
+# The Devin CLI (`devin -p`), signed in once via `devin auth login` — no key
+# lives in providers.env. Read-only is not devin's own either: it comes from
+# scripts/devin-readonly.json, a deny-by-default permission set passed with
+# --config. deny beats allow across config levels (measured 2026-11-16: a
+# hostile .devin/config.json in the reviewed tree carrying
+# permissions.allow=[write,exec] still could not write once this file was
+# loaded), and whatever would still prompt is auto-rejected in -p mode —
+# verified: a write request answered "rejected a tool call that requires
+# confirmation. Running in non-interactive mode" and produced no file.
+# env -i for the same reason as agy: a reviewer must not inherit keys the
+# user's shell exports, and DEVIN_* overrides (DEVIN_PERMISSION_MODE=dangerous
+# would undo the whole point) must not reach it either. HOME is a fresh dir
+# per run (multi_devin_home): --config replaces only config.json, so a real
+# HOME would still hand over the user's own MCP servers, skills and hooks.
+# Proxy vars pass through: env is the only channel a proxy user's install has
+# left, and they come from the user's environment, never the reviewed repo.
+# multi_devin_home: fresh HOME for one devin run under $MULTI_DEVIN_HOME.
+# --config replaces only config.json, so under the real HOME devin would
+# still load the user's own mcp_config.json, ~/.config/devin/skills and
+# ~/.claude* hooks — user MCP servers spawning inside a review is execution
+# nobody asked for. Fresh HOME + a link to the credentials dir keeps the
+# sign-in; nothing else from the user's setup leaks in. A link, not a copy:
+# a refresh devin writes through it reaches the user's own file.
+multi_devin_home() {
+  local h cred f
+  mkdir -p "$MULTI_DEVIN_HOME" || return 1
+  # Reap fake homes orphaned by a backend kill or hard timeout — each holds a
+  # link into the user's credentials file, so they must not pile up. Only
+  # entries older than an hour, so a concurrent run is never touched.
+  find "$MULTI_DEVIN_HOME" -mindepth 1 -maxdepth 1 -name 'run.*' -mmin +60 -exec rm -rf {} + 2>/dev/null
+  h="$(mktemp -d "$MULTI_DEVIN_HOME/run.XXXXXX")" || return 1
+  # Link only credentials.toml, not the dir: the dir also holds the user's
+  # sessions.db, plugins and mcp/ — exactly what this HOME is supposed to
+  # hide. A link, not a copy: a refresh devin writes through it reaches the
+  # user's own file.
+  mkdir -p "$h/.local/share/devin" || { rm -rf "$h"; return 1; }
+  cred="${XDG_DATA_HOME:-$HOME/.local/share}/devin"
+  if [ -f "$cred/credentials.toml" ]; then
+    ln -s "$cred/credentials.toml" "$h/.local/share/devin/credentials.toml" 2>/dev/null \
+      || echo "devin: could not link $cred/credentials.toml — sign-in may be missing" >&2
+  fi
+  # Windows keeps config and credentials under %APPDATA%\devin rather than
+  # ~/.config — same file-level link into a fake APPDATA, so a Git-Bash/MSYS
+  # install finds its credentials without inheriting mcp_config.json, which
+  # sits right beside them there.
+  if [ -n "${APPDATA:-}" ]; then
+    mkdir -p "$h/appdata/devin" || { rm -rf "$h"; return 1; }
+    if [ -f "$APPDATA/devin/credentials.toml" ]; then
+      ln -s "$APPDATA/devin/credentials.toml" "$h/appdata/devin/credentials.toml" 2>/dev/null \
+        || echo "devin: could not link $APPDATA/devin/credentials.toml — sign-in may be missing" >&2
+    fi
+  fi
+  # Devin REWRITES the --config file it is given: every run appends the
+  # caller's own org_id, shell setup state and theme (measured 2026-11-16 —
+  # a clean shipped file grew a "devin": {"org_id": ...} block after one
+  # -p run). A personal org id must never land in the repo, and a config
+  # "migration" must never touch the deny lists, so the file devin mutates
+  # is a per-run copy.
+  cp "$MULTI_SCRIPTS_DIR/devin-readonly.json" "$h/devin-readonly.json" || { rm -rf "$h"; return 1; }
+  printf '%s\n' "$h"
+}
+
+multi_run_devin() {
+  local name="$1" prompt="$2" out="$3" model="${4:-}" rc=0 bin h
+  local log="${out}.log"
+  rm -f "${out}.dead"
+  command -v devin >/dev/null 2>&1 || { multi_fail_backend "$out" "$name: MISSING (install the Devin CLI: devin)"; return 0; }
+  bin="$(multi_real_binary devin)" || bin="devin"
+  # A project-level .devin/ outranks our --config (precedence: project > user)
+  # for hooks, MCP servers and read_config_from — and a SessionStart or
+  # UserPromptSubmit command hook, or an MCP server's spawn command, is
+  # execution outside the permission gate (measured 2026-11-16: a planted
+  # .devin/hooks.v1.json fired under `devin -p` even with this readonly
+  # config). Snapshots strip .devin/, so this scan only fires on a live tree
+  # (/multi:ask); there the safe answer is to refuse, not to trust part of it.
+  # The match is on FILE NAMES, never on file content: a JSONC file can spell
+  # "hooks" as hooks, a comment, or "\u0068ooks" — every spelling but the last
+  # reads differently to grep than to devin's parser (codex's live review).
+  # So ANY .devin/{hooks*, config*.json, mcp_config*.json} refuses, including a
+  # harmless-looking permissions-only config.json — a live ask can wait for a
+  # snapshot run, a bypass cannot be undone. .devin/rules|skills dirs stay:
+  # instructions can steer a review but cannot execute under the deny list.
+  # Discovery mirrors devin's: cwd and ancestors up to the repository root —
+  # walking to / is the over-strict side of it. `.cognition/` is the same
+  # directory under the pre-rename name; devin still reads it "for backward
+  # compatibility" (v3000 changelog), so it gets the identical scan. Start
+  # from the physical cwd (`pwd -P`): bash keeps $PWD logical through
+  # symlinks while devin resolves the real path, and a .devin sitting in a
+  # physical-only ancestor would otherwise be skipped.
+  local d dc f found
+  d="$(pwd -P 2>/dev/null)" || d="$PWD"
+  while :; do
+    for dc in "$d/.devin" "$d/.cognition"; do
+      [ -d "$dc" ] || continue; found=""
+      for f in "$dc"/hooks* "$dc"/config*.json "$dc"/mcp_config*.json; do
+        [ -e "$f" ] && { found=1; break; }
+      done
+      if [ -n "$found" ]; then
+        multi_fail_backend "$out" "$name: REFUSED — $dc carries project config files (hooks*, config*.json, mcp_config*.json) that outrank --config and can execute (review snapshots strip .devin/ and .cognition/ — use the review skill, or drop the dir)" "${out}.log"
+        return 0
+      fi
+    done
+    [ "$d" = "/" ] && break
+    d="$(dirname "$d")"
+  done
+  h="$(multi_devin_home)" \
+    || { multi_fail_backend "$out" "$name: FAILED — could not prepare an isolated HOME under $MULTI_DEVIN_HOME" "$log"; return 0; }
+  # The passthrough list built as an array: ${!v} is the only bash-3.2-safe
+  # indirect expansion, and appending "$v=${!v}" as one quoted word keeps a
+  # value with a space (a proxy URL) a single argv entry. No XDG_* on purpose:
+  # a real XDG_CONFIG_HOME would point devin back at the user's own
+  # config/mcp/skills that the fresh HOME just hid. MULTI_READ_DIR needs no
+  # flag either: /add-dir is an interactive slash command, and devin's
+  # read is not workspace-scoped — the prompt already names the extra dir,
+  # same way codex reads outside its cwd.
+  local envs=(PATH="$PATH" HOME="$h" LANG="${LANG:-C.UTF-8}") v
+  [ -d "$h/appdata" ] && envs+=(APPDATA="$h/appdata")
+  for v in HTTP_PROXY HTTPS_PROXY ALL_PROXY NO_PROXY \
+           http_proxy https_proxy all_proxy no_proxy \
+           SYSTEMROOT SystemDrive; do
+    [ -n "${!v:-}" ] && envs+=("$v=${!v}")
+  done
+  multi_record_training "$out" devin "$model"
+  # -p carries no positional prompt: "[PROMPT]..." after `--` is the only form
+  # that tolerates the other flags (measured: `devin -p --model X "prompt"`
+  # rejects the word as a PATH and exits 2).
+  multi_timeout "$MULTI_BACKEND_TIMEOUT" env -i "${envs[@]}" \
+    "$bin" -p --permission-mode auto --respect-workspace-trust false \
+      --config "$h/devin-readonly.json" \
+      ${model:+--model "$model"} \
+      -- "$prompt" \
+      < /dev/null > "$out" 2> "$log"
+  rc=$?
+  rm -rf "$h"
+  printf '[multi] %s model %s effort=unsupported (Devin encodes effort in the model name — swe-2-max vs swe-2-max-lightning, not a flag)\n' "$name" "${model:-<default>}" >> "$log"
   if [ "$rc" -eq 124 ]; then
     multi_fail_backend "$out" "$name: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s${model:+ — model=$model}" "$log"
   elif [ ! -s "$out" ]; then

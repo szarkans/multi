@@ -235,7 +235,7 @@ Fetch and follow instructions from https://raw.githubusercontent.com/szarkans/mu
 
 как только запустишь `/multi:setup`, создадутся два файла: `~/.config/multi/config.toml` - кто ревьюит, какие модели, в каком порядке, и что запускается по умолчанию и `~/.config/multi/providers.env` - api-ключи для твоих провайдеров, если они у тебя есть. 
 
-бэкенд - это имя + тип. пять типов: `codex`, `opencode`, `kilo` (Kilo Code CLI, форк opencode: `type = "kilo"`, без `models` = бесплатная модель, во встроенном конфиге его нет, добавляет setup), `claude-headless` (claude code как обвязка для API. в будущем может переехать на opencode или vercel-fx, потому что claude code громоздкий) и `gemini`. нужно два эндпоинта? две таблицы `claude-headless`. профиль - это кто ревьюит вместе.
+бэкенд - это имя + тип. семь типов: `codex`, `opencode`, `kilo` (Kilo Code CLI, форк opencode: `type = "kilo"`, без `models` = бесплатная модель, во встроенном конфиге его нет, добавляет setup), `claude-headless` (claude code как обвязка для API. в будущем может переехать на opencode или vercel-fx, потому что claude code громоздкий), `gemini`, `agy` (Antigravity) и `devin` (Devin CLI, модели SWE-2, логин через `devin auth login`). нужно два эндпоинта? две таблицы `claude-headless`. профиль - это кто ревьюит вместе.
 
 куда ушёл код: code-review, check-if-done и ask выводят одну строку с моделями, которые могут обучаться на нём (`yes`) или чья политика неизвестна (`unknown`). раннер дописывает в `<ответ>.trains` строку на каждую модель, которой отправил запрос (fallback тоже); в отчёт идёт худший вердикт; `no` означает без обучения, а не гарантию отсутствия хранения.
 

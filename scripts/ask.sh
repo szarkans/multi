@@ -627,7 +627,7 @@ for i in "${!NAMES[@]}"; do
   # and autodetection. Pinned models never gain a fallback here.
   case "$type" in
     codex) model="${model:-${CODEX_MODEL:-$(first_of "$chain")}}"; effective_chain="$model" ;;
-    gemini|agy) model="${model:-$(first_of "$chain")}"; effective_chain="$model" ;;
+    gemini|agy|devin) model="${model:-$(first_of "$chain")}"; effective_chain="$model" ;;
     claude-headless) effective_chain="${model:-$chain}" ;;
     opencode|kilo)
       # Pinned: exactly that model. --model/--fallback: this run's chain.
@@ -654,7 +654,7 @@ for i in "${!NAMES[@]}"; do
     case "$type" in
       opencode|kilo) oc_model="$(first_of "$MULTI_SAFE_CHAIN")"; oc_fallback="$(rest_csv "$MULTI_SAFE_CHAIN")" ;;
       claude-headless) chain="$MULTI_SAFE_CHAIN"; [ -z "$model" ] || model="$(first_of "$chain")" ;;
-      codex|gemini|agy) model="$MULTI_SAFE_CHAIN" ;;
+      codex|gemini|agy|devin) model="$MULTI_SAFE_CHAIN" ;;
     esac
   fi
   case "$type" in
@@ -673,6 +673,9 @@ for i in "${!NAMES[@]}"; do
     agy)
       ( MULTI_BACKEND_TIMEOUT="${TIMEOUTS[$i]}"; started "$out" && cd "$REPO_DIR" \
         && multi_run_agy "$name" "$QUESTION" "$out" "$model"; finished "${SUFFIXES[$i]}" "$out" "$t0" "$name" ) & ;;
+    devin)
+      ( MULTI_BACKEND_TIMEOUT="${TIMEOUTS[$i]}"; started "$out" && cd "$REPO_DIR" \
+        && multi_run_devin "$name" "$QUESTION" "$out" "$model"; finished "${SUFFIXES[$i]}" "$out" "$t0" "$name" ) & ;;
     *) multi_fail_backend "$out" "$name: unknown backend type '$type'"; rm -f "${out}.running" ;;
   esac
   pids="$pids $!:${SUFFIXES[$i]}"

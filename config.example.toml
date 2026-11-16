@@ -14,7 +14,7 @@ verbose_prompt = false              # true: skills show each full prompt before 
 [backends.codex]                     # type "codex": the Codex CLI, read-only sandbox
 type = "codex"
 models = []                          # empty = the CLI's default; at most one model here
-timeout = 600                        # seconds for one run; default 300 (claude-headless: 1800, a ceiling)
+timeout = 600                        # seconds for one run; default 300 (claude-headless and devin: 1800, a ceiling)
 # trains = false                    # e.g. ChatGPT with training off; true = may train, on any backend
 
 [backends.opencode]                  # type "opencode": OpenCode CLI, plugin's read-only agent
@@ -58,7 +58,7 @@ type = "claude-headless"
 base_url = "https://api.deepseek.com/anthropic"
 models = ["deepseek-flash"]          # V4.1 Flash; claude-* names are mapped to it too
 # Exact model only; explicit --effort overrides every supporting backend.
-# No entry: Codex keeps medium, other harnesses decide. Gemini and agy unsupported.
+# No entry: Codex keeps medium, other harnesses decide. Gemini, agy and devin unsupported.
 # effort = { "deepseek-flash" = "low" }
 # Windows this backend sits out, in UTC only (the zone word is required).
 # DeepSeek bills double in these hours (its published peak, as of 2026-09-10 —
@@ -76,6 +76,17 @@ models = []                          # empty = CLI default; at most one model he
 [backends.agy]                       # type "agy": the Google Antigravity CLI, no key: run `agy` once to sign in
 type = "agy"
 models = ["claude-sonnet-4-6"]       # at most one; only ids `agy models` lists; effort unsupported
+
+[backends.devin]                     # type "devin": the Devin CLI (SWE-2 models),
+type = "devin"                       # no key: `devin auth login` once. The plugin's
+models = ["swe-2-max"]               # read-only config is forced via --config — the
+                                     # reviewed repo's own .devin/ cannot reopen it.
+                                     # At most one model; `devin models` lists ids.
+                                     # Free ids (swe-2-* non-lightning) cost nothing;
+                                     # the rest bill the subscription. Effort is in
+                                     # the name (…-lightning), so `effort` is refused.
+                                     # Default ceiling is 1800s: devin walks the
+                                     # tree like an agent, not a one-shot API call.
 
 # ---- profiles: who runs, in parallel --------------------------------------
 # An entry is a backend name (its whole models list, in order) or name:model

@@ -48,7 +48,7 @@ except ModuleNotFoundError:  # python < 3.11
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "_vendor"))
     import tomli as tomllib  # type: ignore
 
-TYPES = ("claude-headless", "codex", "opencode", "kilo", "gemini", "agy")
+TYPES = ("claude-headless", "codex", "opencode", "kilo", "gemini", "agy", "devin")
 BACKEND_KEYS = {"type", "models", "base_url", "api_key_env", "timeout", "stall", "avoid", "effort", "trains"}
 TOP_KEYS = {"backends", "profiles", "default_profile", "verbose_prompt", "no_train"}
 DEFAULT_TIMEOUT = 300
@@ -67,7 +67,7 @@ HEADLESS_TIMEOUT = 1800
 DEFAULT_TOML = """\
 # multi — who answers when several models are asked the same thing.
 #
-# backends: named ways to run a model. Six types exist:
+# backends: named ways to run a model. Seven types exist:
 #   codex            the Codex CLI, read-only sandbox
 #   opencode         the OpenCode CLI with the plugin's read-only agent
 #   kilo             the Kilo Code CLI (an OpenCode fork), same read-only agent;
@@ -77,18 +77,19 @@ DEFAULT_TOML = """\
 #                    (OpenRouter, 9router, z.ai, Moonshot, a self-hosted router)
 #   gemini           the Gemini CLI
 #   agy              the Google Antigravity CLI, isolated HOME + read-only hook
+#   devin            the Devin CLI (SWE-2 models), plugin's read-only config
 # The same type may appear under several names — two claude-headless backends
 # with different base_url and api_key_env are two different reviewers.
 #
 # models: ordered fallback chain, first entry preferred. An empty list means
-# the CLI's own default (codex, gemini, agy) or a free model picked from
+# the CLI's own default (codex, gemini, agy, devin) or a free model picked from
 # `opencode models` / `kilo models` at run time (opencode, kilo). claude-headless needs at least one.
-# Only opencode, kilo and claude-headless walk a chain today; codex, gemini and agy
-# take at most one model, and the config says so instead of ignoring the rest.
+# Only opencode, kilo and claude-headless walk a chain today; codex, gemini, agy and
+# devin take at most one model, and the config says so instead of ignoring the rest.
 # base_url: claude-headless only.
 # api_key_env: the variable in providers.env holding the key; defaults to
 #   <NAME>_API_KEY, e.g. OPENROUTER_API_KEY. Set it with: setup.sh set <NAME>
-# timeout: seconds per run, default 300 (claude-headless: 1800, a ceiling).
+# timeout: seconds per run, default 300 (claude-headless and devin: 1800, a ceiling).
 #   ask.sh --timeout N raises every backend to at least N for that run (the
 #   review skill passes 2400) and never lowers one. stall (opencode, kilo,
 #   claude-headless): seconds of silence before the model is declared dead,
@@ -109,7 +110,7 @@ default_profile = "default"
 type = "codex"
 models = []
 timeout = 600            # codex is the slow one
-# effort = { "exact/model" = "high" }  # explicit --effort overrides; Gemini, agy unsupported
+# effort = { "exact/model" = "high" }  # explicit --effort overrides; Gemini, agy, devin unsupported
 # trains = false         # account override, any backend: false = no training; true = may train
 
 [backends.opencode]
@@ -296,6 +297,8 @@ def validate(raw, where):
             raise ConfigError("%s: effort: Gemini CLI has no effort control; not supported" % w)
         if t == "agy" and "effort" in b:
             raise ConfigError("%s: effort: Antigravity CLI has no effort control; not supported" % w)
+        if t == "devin" and "effort" in b:
+            raise ConfigError("%s: effort: Devin encodes effort in the model name (swe-2-max vs swe-2-max-lightning); pick the model, no effort table" % w)
         models = _str_list(w, "models", b.get("models", []))
         base_url = b.get("base_url", "")
         if t == "claude-headless":
@@ -317,7 +320,7 @@ def validate(raw, where):
                 raise ConfigError("%s: base_url must be https:// (http:// only on localhost) — the API key is sent there as a Bearer token" % w)
         elif "base_url" in b:
             raise ConfigError("%s: base_url only applies to type = \"claude-headless\"" % w)
-        if t in ("codex", "gemini", "agy") and len(models) > 1:
+        if t in ("codex", "gemini", "agy", "devin") and len(models) > 1:
             raise ConfigError("%s: type %s takes at most one model — fallback chains are walked by opencode, kilo and claude-headless only, and the rest of this list would be silently ignored" % (w, t))
         if "stall" in b and t not in ("opencode", "kilo", "claude-headless"):
             raise ConfigError("%s: stall only applies to type = \"opencode\", \"kilo\" or \"claude-headless\"" % w)
@@ -338,7 +341,10 @@ def validate(raw, where):
             "models": models,
             "base_url": base_url,
             "api_key_env": key_env.strip(),
-            "timeout": _positive_int(w, "timeout", b.get("timeout", HEADLESS_TIMEOUT if t == "claude-headless" else DEFAULT_TIMEOUT)),
+            # devin shares the headless ceiling: it is an agentic reviewer that
+            # walks the tree, not a one-shot API call (swe-2-max measured >300s
+            # on a 675-line review diff and was still working).
+            "timeout": _positive_int(w, "timeout", b.get("timeout", HEADLESS_TIMEOUT if t in ("claude-headless", "devin") else DEFAULT_TIMEOUT)),
             "stall": _positive_int(w, "stall", b.get("stall", HEADLESS_STALL if t == "claude-headless" else DEFAULT_STALL)),
         }
     profiles_raw = raw.get("profiles", {})

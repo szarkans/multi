@@ -87,6 +87,28 @@ cmd_status() {
         else echo "not configured (setup.sh set $keyenv)"; fi ;;
       agy)      printf '%s, ' "$(command -v agy >/dev/null 2>&1 && echo "CLI present" || echo "CLI MISSING")"
                 [ -e "$MULTI_AGY_TOKEN" ] && echo "token present${chain:+ — $chain}" || echo "token absent (run agy once to sign in)" ;;
+      devin)    local auth_out=""
+                printf '%s, ' "$(command -v devin >/dev/null 2>&1 && echo "CLI present" || echo "CLI MISSING")"
+                # status is the command allowed to touch the network; auth
+                # status is one round trip and answers "will a run start at all".
+                # Capture first, then grep: under pipefail a `| grep -qi`
+                # would SIGPIPE the CLI on an early match and read a signed-in
+                # user as not signed in. The pattern anchors at line start:
+                # real output is "Logged in (via Devin)." — a loose "logged in"
+                # also matches "Not logged in", a "logged in as" matches
+                # nothing at all (measured 2026-11-16, CLI 3000.12.57).
+                if command -v devin >/dev/null 2>&1; then
+                  auth_out="$(multi_timeout 15 devin auth status 2>&1)"
+                  if grep -qi '^logged in' <<<"$auth_out"; then
+                    echo "signed in${chain:+ — $chain}"
+                  elif grep -qi 'not logged in' <<<"$auth_out"; then
+                    echo "NOT SIGNED IN (run: devin auth login)"
+                  else
+                    echo "auth status unknown (timeout or offline — try: devin auth status)${chain:+ — $chain}"
+                  fi
+                else
+                  echo "NOT SIGNED IN (run: devin auth login)"
+                fi ;;
       codex)    command -v codex >/dev/null 2>&1 && codex --version 2>/dev/null | head -1 || echo "CLI MISSING" ;;
       opencode|kilo) command -v "$type" >/dev/null 2>&1 && echo "CLI present${chain:+ — $chain}" || echo "CLI MISSING" ;;
     esac

@@ -89,6 +89,19 @@ C="$(snap --paths ".mcp.json" 2>"$TMP/err")"; say "presence is checked against t
 say "stripped on purpose, says the list" "$(grep -c '.mcp.json (requested via --paths; a harness rule file' "$C/.snapshot-skipped.txt")" "1"
 git rm -q --cached .mcp.json; rm -f .mcp.json; rm -rf "$TMP"/snap.*
 
+echo "== devin's native config is stripped like every harness's =="
+mkdir -p .devin; echo '{"permissions":{"allow":["write"]}}' > .devin/config.json; git add -f .devin/config.json >/dev/null 2>&1
+C="$(snap --paths ".devin/config.json src" 2>"$TMP/err")"; say ".devin/config.json in --paths does not fail the snapshot" "$?" "0"
+say "withheld on purpose, says the list" "$(grep -c '.devin/config.json (requested via --paths; a harness rule file' "$C/.snapshot-skipped.txt")" "1"
+say "and the copy carries no .devin at all" "$([ -e "$C/.devin" ] && echo yes || echo no)" "no"
+git rm -q --cached .devin/config.json; rm -rf .devin "$TMP"/snap.*
+# .cognition/ is devin's pre-rename project dir — still read for backward
+# compat — so it strips under the identical rule.
+mkdir -p .cognition; echo '{"hooks":{"SessionStart":[]}}' > .cognition/hooks.v1.json; git add -f .cognition/hooks.v1.json >/dev/null 2>&1
+C="$(snap src 2>"$TMP/err")"
+say "and no .cognition either" "$([ -e "$C/.cognition" ] && echo yes || echo no)" "no"
+git rm -q --cached .cognition/hooks.v1.json; rm -rf .cognition "$TMP"/snap.*
+
 echo "== no --paths: unchanged, ignored files simply absent =="
 echo 'docs/' >> .git/info/exclude
 C="$(snap 2>/dev/null)"; say "exit 0" "$?" "0"

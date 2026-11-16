@@ -222,8 +222,8 @@ c=importlib.util.module_from_spec(s); s.loader.exec_module(c)
 for kind in c.TYPES:
     cfg={'default_profile':'p','profiles':{'p':['x']},'backends':{'x':{'type':kind,'models':['m']}}}
     if kind=='claude-headless': cfg['backends']['x']['base_url']='https://fake.invalid'
-    if kind in ('gemini','agy'):
-        msg={'gemini':'Gemini CLI has no effort control; not supported','agy':'Antigravity CLI has no effort control; not supported'}[kind]
+    if kind in ('gemini','agy','devin'):
+        msg={'gemini':'Gemini CLI has no effort control; not supported','agy':'Antigravity CLI has no effort control; not supported','devin':'Devin encodes effort in the model name'}[kind]
         for value in [{}, {'m':'high'}, {'m':4096}]:
             cfg['backends']['x']['effort']=value
             try: c.validate(cfg,'fixture')
@@ -243,7 +243,7 @@ for kind in c.TYPES:
         try: c.validate(cfg,'fixture')
         except c.ConfigError as e: assert 'effort' in str(e)
         else: raise AssertionError((kind,value))
-print('ok   effort accepts future/model-specific tokens; malformed shapes rejected; Gemini and agy tables rejected')
+print('ok   effort accepts future/model-specific tokens; malformed shapes rejected; Gemini, agy and devin tables rejected')
 PY
 python3 - "$MULTI_CONFIG" <<'PY'
 from pathlib import Path

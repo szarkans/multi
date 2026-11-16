@@ -116,8 +116,8 @@ there are two files, by design:
 
 | key | meaning |
 | --- | --- |
-| `type` | `codex`, `opencode`, `kilo`, `claude-headless`, `gemini` or `agy` |
-| `models` | ordered fallback list; empty or omitted uses the backend's default; Codex, Gemini and agy allow at most one |
+| `type` | `codex`, `opencode`, `kilo`, `claude-headless`, `gemini`, `agy` or `devin` |
+| `models` | ordered fallback list; empty or omitted uses the backend's default; Codex, Gemini, agy and devin allow at most one |
 | `base_url` | Anthropic-compatible endpoint for `claude-headless` |
 | `api_key_env` | environment variable containing this backend's key; defaults to `<BACKEND_NAME>_API_KEY` |
 | `timeout` | seconds allowed for the backend to complete |
@@ -136,7 +136,7 @@ regular = ["codex", "opencode"]
 
 `opencode` means one reviewer that tries its `models` list in order until one works. `openrouter:openrouter/free` pins that exact model/router, with no fallback. repeat an entry to run it more than once. select a profile in plain English, or pass a one-off backend list; `all` selects every configured backend.
 
-supported backends include Codex CLI, OpenCode, Kilo Code, Gemini CLI, Antigravity (`agy`), and arbitrary Anthropic-compatible endpoints through `claude-headless` (OpenRouter, z.ai, DeepSeek, local routers and others). some need installed CLIs, logins or keys.
+supported backends include Codex CLI, OpenCode, Kilo Code, Gemini CLI, Antigravity (`agy`), the Devin CLI (`devin`, SWE-2 models), and arbitrary Anthropic-compatible endpoints through `claude-headless` (OpenRouter, z.ai, DeepSeek, local routers and others). some need installed CLIs, logins or keys.
 
 **[config.example.toml](config.example.toml) contains every field with real examples**, including free, paid, local and mixed profiles. [providers.example.env](providers.example.env) shows the key names. the example config is the place to copy from; this page is the map.
 

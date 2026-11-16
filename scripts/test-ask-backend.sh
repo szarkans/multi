@@ -449,5 +449,137 @@ else
   echo "FAIL providers.env key leaked to codex: $(head -1 "$TMP/leak/r-codex.txt" 2>/dev/null)"; fail=1
 fi
 
+# devin: a backend like the others — the runner's stdout is the answer file,
+# the configured/pinned model reaches --model, a crash is a dead backend.
+cat > "$TMP/bin/devin" <<'STUB'
+#!/usr/bin/env bash
+model=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --model) model="$2"; shift 2 ;;
+    *) shift ;;
+  esac
+done
+echo "DEVIN ANSWER${model:+ MODEL=$model}"
+STUB
+chmod +x "$TMP/bin/devin"
+cat > "$TMP/h/config.toml" <<'EOF'
+default_profile = "p"
+[backends.dv]
+type = "devin"
+models = ["swe-2-max"]
+[profiles]
+p = ["dv"]
+EOF
+"$HERE/ask.sh" --question q --out-prefix "$TMP/dv" >/dev/null 2>&1
+if grep -q 'DEVIN ANSWER MODEL=swe-2-max' "$TMP/dv-dv.txt" 2>/dev/null \
+  && [ ! -e "$TMP/dv-dv.txt.dead" ]; then
+  echo "ok   devin backend answers and the configured model reaches --model"
+else
+  echo "FAIL devin backend: $(cat "$TMP/dv-dv.txt" "$TMP/dv-dv.txt.dead" 2>/dev/null | tr '\n' '|')"; fail=1
+fi
+"$HERE/ask.sh" --question q --out-prefix "$TMP/dvpin" --backend "dv:swe-2-flash-max" >/dev/null 2>&1
+if grep -q 'DEVIN ANSWER MODEL=swe-2-flash-max' "$TMP/dvpin-dv.txt" 2>/dev/null; then
+  echo "ok   devin: name:model pin reaches --model"
+else
+  echo "FAIL devin pin: $(cat "$TMP/dvpin-dv.txt" "$TMP/dvpin-dv.txt.dead" 2>/dev/null | tr '\n' '|')"; fail=1
+fi
+cat > "$TMP/bin/devin" <<'STUB'
+#!/usr/bin/env bash
+echo "DEVIN CRASH XYZZY" >&2
+exit 7
+STUB
+chmod +x "$TMP/bin/devin"
+"$HERE/ask.sh" --question q --out-prefix "$TMP/dvfail" --backend dv >/dev/null 2>&1
+if [ -s "$TMP/dvfail-dv.txt.dead" ] \
+  && grep -q 'DEVIN CRASH XYZZY' "$TMP/dvfail-dv.txt.dead.log" 2>/dev/null; then
+  echo "ok   devin failure is a dead backend, stderr kept for diagnosis"
+else
+  echo "FAIL devin failure lost diagnostics"; fail=1
+fi
+
+# A live tree whose .devin/ carries project hooks, MCP servers or import
+# overrides must refuse before launch: project level outranks --config there,
+# and a command hook is execution outside the permission gate. The stub
+# records whether it was ever invoked — a REFUSED run must not launch it.
+# The stub writes under the tree itself: env -i wipes every test variable,
+# so the "ran" marker must be a literal path baked into the stub.
+mkdir -p "$TMP/hooktree/.devin" "$TMP/hooktree/src"
+cat > "$TMP/bin/devin" <<STUB
+#!/usr/bin/env bash
+echo ran >> "$TMP/hooktree/ran"
+echo "DEVIN ANSWER"
+STUB
+chmod +x "$TMP/bin/devin"
+echo 'x' > "$TMP/hooktree/src/a.py"
+echo '{"SessionStart":[{"hooks":[{"type":"command","command":"true"}]}]}' > "$TMP/hooktree/.devin/hooks.v1.json"
+"$HERE/ask.sh" --question q --repo "$TMP/hooktree" \
+  --out-prefix "$TMP/hooktree/r" --backend dv >/dev/null 2>&1
+if grep -q '^dv: REFUSED' "$TMP/hooktree/r-dv.txt.dead" 2>/dev/null \
+  && [ ! -e "$TMP/hooktree/ran" ]; then
+  echo "ok   devin refuses a live tree whose .devin carries hooks, never launches"
+else
+  echo "FAIL devin ran on a hook-carrying tree (ran=$([ -e "$TMP/hooktree/ran" ] && echo yes || echo no), dead=$(cat "$TMP/hooktree/r-dv.txt.dead" 2>/dev/null))"; fail=1
+fi
+# Any .devin/config*.json refuses too — the scan is on file names, not
+# content: "\u0068ooks" parses as "hooks" for devin but not for grep, so a
+# content check is a bypass, not a filter. A permissions-only config loses
+# the benefit of the doubt along with the rest.
+rm -f "$TMP/hooktree/.devin/hooks.v1.json" "$TMP/hooktree/ran"
+echo '{"permissions":{"allow":["write","exec"]}}' > "$TMP/hooktree/.devin/config.json"
+"$HERE/ask.sh" --question q --repo "$TMP/hooktree" \
+  --out-prefix "$TMP/hooktree/r2" --backend dv >/dev/null 2>&1
+if grep -q '^dv: REFUSED' "$TMP/hooktree/r2-dv.txt.dead" 2>/dev/null \
+  && [ ! -e "$TMP/hooktree/ran" ]; then
+  echo "ok   devin refuses .devin/config*.json too (content check is bypassable)"
+else
+  echo "FAIL .devin/config.json did not refuse: dead=$(cat "$TMP/hooktree/r2-dv.txt.dead" 2>/dev/null), ran=$([ -e "$TMP/hooktree/ran" ] && echo yes || echo no)"; fail=1
+fi
+# But a .devin/ holding only instructions (rules/skills — no config file
+# devin can act on) still runs: they can steer a review, never execute.
+rm -f "$TMP/hooktree/.devin/config.json"
+mkdir -p "$TMP/hooktree/.devin/rules"; echo 'be terse' > "$TMP/hooktree/.devin/rules/r.md"
+"$HERE/ask.sh" --question q --repo "$TMP/hooktree" \
+  --out-prefix "$TMP/hooktree/r3" --backend dv >/dev/null 2>&1
+if grep -q 'DEVIN ANSWER' "$TMP/hooktree/r3-dv.txt" 2>/dev/null \
+  && [ ! -e "$TMP/hooktree/r3-dv.txt.dead" ]; then
+  echo "ok   a rules-only .devin/ still runs (instructions cannot execute)"
+else
+  echo "FAIL rules-only .devin wrongly refused: $(cat "$TMP/hooktree/r3-dv.txt.dead" 2>/dev/null)"; fail=1
+fi
+# .cognition/ is the same project-config dir under devin's pre-rename name —
+# still read for backward compat — so it refuses under the identical scan.
+rm -rf "$TMP/hooktree/.devin" "$TMP/hooktree/ran"
+mkdir -p "$TMP/hooktree/.cognition"
+echo '{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"touch ran"}]}]}}' > "$TMP/hooktree/.cognition/hooks.v1.json"
+"$HERE/ask.sh" --question q --repo "$TMP/hooktree" \
+  --out-prefix "$TMP/hooktree/r4" --backend dv >/dev/null 2>&1
+if grep -q '^dv: REFUSED' "$TMP/hooktree/r4-dv.txt.dead" 2>/dev/null \
+  && [ ! -e "$TMP/hooktree/ran" ]; then
+  echo "ok   devin refuses a live .cognition/ tree (legacy dir, same hole)"
+else
+  echo "FAIL .cognition tree did not refuse: dead=$(cat "$TMP/hooktree/r4-dv.txt.dead" 2>/dev/null)"; fail=1
+fi
+rm -rf "$TMP/hooktree/.cognition"
+rm -f "$TMP/h/config.toml"
+# Source guard: the runner must stay a clean-env, forced-config, non-interactive
+# reader. The stubs ignore flags, so only this catches a silent revert.
+dv_fn="$(awk '/^multi_run_devin\(\) \{/,/^\}/' "$HERE/providers.sh")"
+dv_home="$(awk '/^multi_devin_home\(\) \{/,/^\}/' "$HERE/providers.sh")"
+if grep -q 'env -i' <<<"$dv_fn" \
+   && grep -q -- '--config "$h/devin-readonly.json"' <<<"$dv_fn" \
+   && grep -q -- '--respect-workspace-trust false' <<<"$dv_fn" \
+   && grep -q -- '-p --permission-mode auto' <<<"$dv_fn" \
+   && grep -q 'credentials.toml' <<<"$dv_home" \
+   && grep -q 'cp "$MULTI_SCRIPTS_DIR/devin-readonly.json"' <<<"$dv_home" \
+   && grep -q 'Read(\*\*)' "$HERE/devin-readonly.json" \
+   && ! grep -q '"read"' "$HERE/devin-readonly.json" \
+   && ! grep -qE 'DEVIN_API_KEY|permission-mode (dangerous|accept-edits|smart)|org-[0-9a-f]' <<<"$dv_fn$dv_home"; then
+  echo "ok   devin runner keeps env -i, per-run config copy, fresh HOME and -p"
+else
+  echo "FAIL devin runner lost a safety piece (env -i / --config copy / fresh HOME / trust / -p)"; fail=1
+fi
+rm -f "$TMP/h/config.toml"
+
 [ $fail -eq 0 ] && echo "ALL PASS" || echo "FAILURES"
 exit $fail

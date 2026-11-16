@@ -128,6 +128,7 @@ snap_is_stripped() { # snap_is_stripped <path> -> 0 for a harness rule/config fi
     .kilo|.kilo/*|*/.kilo|*/.kilo/*|.kilocode|.kilocode/*|*/.kilocode|*/.kilocode/*|kilo.json|kilo.jsonc|*/kilo.json|*/kilo.jsonc|.kilocodemodes|*/.kilocodemodes|.kilocoderules|*/.kilocoderules) r=0 ;;  # Kilo (an OpenCode fork): exact names only
     .claude|.claude/*|*/.claude|*/.claude/*|.gemini|.gemini/*|*/.gemini|*/.gemini/*) r=0 ;;
     .agent|.agent/*|*/.agent|*/.agent/*|.agents|.agents/*|*/.agents|*/.agents/*) r=0 ;;
+    .devin|.devin/*|*/.devin|*/.devin/*|.cognition|.cognition/*|*/.cognition|*/.cognition/*) r=0 ;;
     CLAUDE.md|CLAUDE.local.md|AGENTS.md|AGENTS.override.md|GEMINI.md) r=0 ;;
     */CLAUDE.md|*/CLAUDE.local.md|*/AGENTS.md|*/AGENTS.override.md|*/GEMINI.md) r=0 ;;
     .gitignore|*/.gitignore|.geminiignore|*/.geminiignore) r=0 ;;
@@ -191,7 +192,7 @@ find "$DEST" \( -iname '.opencode' -o -iname 'opencode.json' -o -iname 'opencode
                 -o -iname '.kilo' -o -iname '.kilocode' -o -iname 'kilo.json' -o -iname 'kilo.jsonc' \
                 -o -iname '.kilocodemodes' -o -iname '.kilocoderules' \
                 -o -iname '.claude' -o -iname '.gemini' -o -iname '.mcp.json' \
-                -o -iname '.agent' -o -iname '.agents' \
+                -o -iname '.agent' -o -iname '.agents' -o -iname '.devin' -o -iname '.cognition' \
                 -o -iname 'CLAUDE.md' -o -iname 'CLAUDE.local.md' \
                 -o -iname 'AGENTS.md' -o -iname 'AGENTS.override.md' -o -iname 'GEMINI.md' \
                 -o -iname '.gitignore' -o -iname '.geminiignore' \) \

@@ -189,6 +189,19 @@ $(cat "$MULTI_HOME/$type-models.cache" 2>/dev/null)"
         say "$name: configured (agy CLI present — its sign-in is outside HOME, not checked here; a failed run says why)${chain:+ — $chain}"
       fi
       ;;
+    devin)
+      # Signs in via `devin auth login`; the credentials file is the only check
+      # that costs no network (auth status fetches team settings every call —
+      # measured 2026-11-16). setup.sh status is where a live check belongs.
+      if ! command -v devin >/dev/null 2>&1; then
+        say "$name: MISSING (install the Devin CLI: devin)"
+      elif [ -e "${XDG_DATA_HOME:-$HOME/.local/share}/devin/credentials.toml" ] \
+        || { [ -n "${APPDATA:-}" ] && [ -e "$APPDATA/devin/credentials.toml" ]; }; then
+        say "$name: configured (devin signed in, not checked here)${chain:+ — $chain}"
+      else
+        say "$name: configured (devin CLI present — no credentials file seen; if a run fails, sign in: devin auth login)${chain:+ — $chain}"
+      fi
+      ;;
   esac
 done <<EOF
 $BACKENDS
@@ -200,6 +213,9 @@ if command -v kilo >/dev/null 2>&1 && ! printf '%s\n' "$BACKENDS" | cut -f2 | gr
 fi
 if command -v agy >/dev/null 2>&1 && ! printf '%s\n' "$BACKENDS" | cut -f2 | grep -qx agy; then
   say "agy-available: Antigravity CLI is installed, no type = \"agy\" backend configured — setup can offer it as an extra reviewer"
+fi
+if command -v devin >/dev/null 2>&1 && ! printf '%s\n' "$BACKENDS" | cut -f2 | grep -qx devin; then
+  say "devin-available: Devin CLI is installed, no type = \"devin\" backend configured — setup can offer it as an extra reviewer"
 fi
 
 # --- other AI CLIs (not reviewers yet) ----------------------------------

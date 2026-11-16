@@ -1,0 +1,76 @@
+{
+  // Devin read-only reviewer config for multi, passed via `devin --config`.
+  // --config replaces the USER-level config, so everything here can only be
+  // outranked by the reviewed repo's own project config (.devin/) — and for
+  // the permission lists below that is fine: a deny rule wins over every
+  // allow regardless of level (measured 2026-11-16: a hostile
+  // .devin/config.json carrying permissions.allow=[write,exec] still could
+  // not write once this file was loaded). What project level CAN still
+  // re-open is hooks, MCP servers and read_config_from — those three are
+  // refused by multi_run_devin on live trees instead of trusted.
+  "permission_mode": "normal",
+  "permissions": {
+    // Two matcher kinds exist (Devin docs, permissions reference): tool
+    // names (read/edit/grep/glob/exec) and scopes (Read(glob), Write(glob),
+    // Exec(prefix), Fetch(pattern)). write/fetch/mcp are denied by tool name
+    // and every scoped form is covered by the same deny. The read ALLOW must
+    // be the scoped `Read(**)` — measured 2026-11-16: a tool-name `read`
+    // allow ignores scoped denies entirely (x.pem was read under
+    // Read(*.pem) deny; the same read under Read(**) allow was mechanically
+    // denied). Anything not allowed prompts, and a prompt in -p mode is
+    // auto-rejected — belt over the deny list.
+    "allow": ["Read(**)", "grep", "glob"],
+    // Read stays unscoped — a reviewer legitimately reads the whole tree —
+    // except the secret-shaped paths a prompt-injected repo (or a curious
+    // model) could exfil into its answer: dotenv files, multi's own
+    // providers.env with every API key, devin's credentials.toml inside the
+    // fake HOME (its token would otherwise be readable AND writable through
+    // the link), and the usual key material. Deny beats allow at every
+    // specificity, which is also why .env.example is not exempted.
+    // KNOWN GAP, measured the same day: grep ignores Read() denies — a
+    // grep for API_KEY returned the secret line anyway, so on a live tree
+    // a hostile prompt could still exfil via match snippets. Denying the
+    // grep tool outright would blind the reviewer; the snapshot path
+    // (the real review flow) is unaffected — snap_is_secret withholds
+    // these files before any reviewer sees them.
+    "deny": ["edit", "write", "exec", "restricted_exec", "task",
+             "fetch", "webfetch", "powershell", "notebook_edit",
+             "apply_patch", "mcp__*",
+             "Read(.env)", "Read(.env.*)", "Read(.envrc)",
+             "Read(**/.env)", "Read(**/.env.*)", "Read(**/.envrc)",
+             "Read(**/providers.env)", "Read(**/credentials.toml)",
+             "Read(**/*.pem)", "Read(**/*.key)",
+             "Read(**/id_rsa*)", "Read(**/id_ed25519*)"]
+  },
+  // Nothing in the reviewed tree is imported as trusted context: rules
+  // (AGENTS.md, AGENTS.local.md, AGENT.md, .windsurfrules), skills
+  // (.claude, .codex, .github, .kiro, .codeium, .zed) and MCP servers
+  // (.mcp.json, .cursor/, .windsurf/, opencode.json, .zed/settings.json)
+  // stay data, never instructions — and .claude/*/hooks never become
+  // commands. Every key name below is from the read_config_from reference.
+  "read_config_from": {
+    "agents_standard": false,
+    "cursor": false,
+    "windsurf": false,
+    "claude": false,
+    "copilot": false,
+    "codex": false,
+    "kiro": false,
+    "opencode": false,
+    "zed": false,
+    "cloud": false
+  },
+  // No subagents: the reviewer answers alone, and a spawned child would need
+  // its own model pinning (see the ANTHROPIC_* alias lesson in providers.sh).
+  "subagents_enabled": false,
+  // A reviewer run must not self-update, ring the terminal bell or stamp
+  // Devin attribution into anything.
+  "auto_update": false,
+  "notify": "never",
+  "attribution": false,
+  // Review copies carry no .gitignore and no .git anyway; on a live tree
+  // (/multi:ask) the other reviewers all see the full tree, so devin matches
+  // them rather than hiding ignored files.
+  "respect_gitignore": false,
+  "version": 1
+}

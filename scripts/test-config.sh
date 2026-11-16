@@ -69,6 +69,10 @@ type = "opencode"
 models = ["oc/one", "oc/two"]
 stall = 2
 
+[backends.devin]
+type = "devin"
+models = ["swe-2-max"]
+
 [profiles]
 normal = ["openrouter:b/two", "zcode", "codex"]
 cheap  = ["opencode", "opencode"]
@@ -80,8 +84,9 @@ say "custom api_key_env" "$(resolve --backend zcode | cut -f7)" "ZAI_KEY"
 say "per-backend timeout" "$(resolve --backend codex | cut -f8)" "17"
 say "opencode stall" "$(resolve --backend opencode | cut -f9)" "2"
 say "claude-headless defaults: 1800 ceiling, 600 stall" "$(resolve --backend openrouter | cut -f8,9 | tr '\t' ' ')" "1800 600"
+say "devin defaults: 1800 ceiling (it walks the tree like an agent)" "$(resolve --backend devin | cut -f8)" "1800"
 say "chain is space-separated in order" "$(resolve --backend opencode | cut -f5)" "oc/one oc/two"
-say "backends lists every entry" "$("$py" "$CFG" backends | cut -f1 | tr '\n' ' ')" "openrouter zcode codex opencode "
+say "backends lists every entry" "$("$py" "$CFG" backends | cut -f1 | tr '\n' ' ')" "openrouter zcode codex opencode devin "
 say "gemini not configured here is unknown" "$(resolve --backend gemini >/dev/null; echo $?)" "2"
 
 echo "== a user profile named both beats the built-in alias =="
@@ -214,6 +219,19 @@ type="codex"
 models=["a","b"]
 [profiles]
 p=["x"]' "at most one model"
+refuse "a chain on devin (one --model flag, no fallback walker)" 'default_profile="p"
+[backends.x]
+type="devin"
+models=["swe-2-max","swe-2-flash-max"]
+[profiles]
+p=["x"]' "at most one model"
+refuse "effort on devin (there effort is the model name, not a flag)" 'default_profile="p"
+[backends.x]
+type="devin"
+models=["swe-2-max"]
+effort={"swe-2-max"="high"}
+[profiles]
+p=["x"]' "effort"
 refuse "api_key_env that is not a variable name (it is eval'd by name in bash)" 'default_profile="p"
 [backends.x]
 type="codex"
@@ -320,7 +338,7 @@ printf '%s\n' 'default_profile="p"' '[backends.x]' 'type="codex"' 'avoid=["Mon-F
 
 echo "== the repo's example config is valid and exercises every type =="
 MULTI_CONFIG="$TREE/config.example.toml" "$py" "$CFG" check >/dev/null 2>"$TMP/err"; say "config.example.toml validates" "$?:$(cat "$TMP/err")" "0:"
-say "every type appears in it" "$(MULTI_CONFIG="$TREE/config.example.toml" "$py" "$CFG" backends | cut -f2 | sort -u | tr '\n' ' ')" "agy claude-headless codex gemini kilo opencode "
+say "every type appears in it" "$(MULTI_CONFIG="$TREE/config.example.toml" "$py" "$CFG" backends | cut -f2 | sort -u | tr '\n' ' ')" "agy claude-headless codex devin gemini kilo opencode "
 say "every key name in providers.example.env is read by some backend" "$(comm -23 <(grep -o '^export [A-Z_]*' "$TREE/providers.example.env" | sed 's/export //' | sort) <(MULTI_CONFIG="$TREE/config.example.toml" "$py" "$CFG" backends | cut -f5 | sort -u) | tr '\n' ' ')" ""
 
 echo "== the vendored parser is the same parser =="

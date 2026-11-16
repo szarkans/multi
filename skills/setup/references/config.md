@@ -34,7 +34,7 @@ avoid = ["Mon-Fri 01:00-04:00 UTC", "Mon-Fri 06:00-10:00 UTC"]   # sits out thes
 [backends.codex]
 type = "codex"
 models = []                       # empty = the CLI's own default
-timeout = 600                     # seconds; default 300 (claude-headless: 1800, a ceiling)
+timeout = 600                     # seconds; default 300 (claude-headless and devin: 1800, a ceiling)
 
 [backends.opencode]
 type = "opencode"
@@ -48,6 +48,10 @@ models = []
 [backends.agy]
 type = "agy"
 models = ["claude-sonnet-4-6"]
+
+[backends.devin]
+type = "devin"
+models = ["swe-2-max"]
 
 [profiles]
 free   = ["openrouter", "opencode", "codex"]
@@ -67,7 +71,7 @@ Rules that matter when editing on a user's behalf:
   an account policy, it does not change a provider setting. Without an
   override: Codex unknown; Anthropic API no; OpenRouter `:free` yes, others
   unknown; DeepSeek and z.ai/BigModel yes; OpenCode `opencode/*` yes, others
-  unknown; Gemini and agy yes. Other headless hosts are unknown. Kilo uses the public
+  unknown; Gemini and agy yes; Devin unknown. Other headless hosts are unknown. Kilo uses the public
   gateway's `mayTrainOnYourPrompts`, cached in `$MULTI_HOME/kilo-training.cache`
   for `MULTI_PROBE_CACHE_MIN` minutes (default 60); unavailable or missing flag
   means `:free` yes, others unknown. Delete the cache or set the minutes to 0
@@ -77,10 +81,11 @@ Rules that matter when editing on a user's behalf:
   fallbacks included, worst verdict counts; skills name yes/unknown destinations on one report line. `<default>`
   labels an unpinned CLI default. No second family after filtering means the
   review stops; explain `trains = false` or offer the setup skill.
-- Six types only: `claude-headless`, `codex`, `opencode`, `kilo`, `gemini`, `agy`. The same
+- Seven types only: `claude-headless`, `codex`, `opencode`, `kilo`, `gemini`, `agy`,
+  `devin`. The same
   type may appear under several names — that is how a second endpoint is added.
 - `models` is an ordered fallback chain for `opencode`, `kilo` and `claude-headless`.
-  `claude-headless` needs at least one; `codex`, `gemini` and `agy` take at most one;
+  `claude-headless` needs at least one; `codex`, `gemini`, `agy` and `devin` take at most one;
   an empty list is the CLI default, or for opencode a free model picked from
   `opencode models` (`kilo models` for kilo; its `kilo-auto/*` and
   `openrouter/*` routers are never auto-picked).
@@ -89,7 +94,8 @@ Rules that matter when editing on a user's behalf:
 - `effort` maps exact model names to non-empty levels without whitespace.
   An explicit user-named `ask.sh --effort` overrides each supporting backend's
   entry; otherwise the entry applies, then Codex uses `medium` and the other
-  harnesses choose their defaults. Gemini and agy effort tables are unsupported.
+  harnesses choose their defaults. Gemini, agy and devin effort tables are unsupported
+  (on devin, effort is part of the model name — `swe-2-max` vs `swe-2-max-lightning`).
 - `avoid` is a list of windows the backend sits out, on any backend type:
   `"Mon-Fri 06:00-10:00 UTC"`, `"Sat-Sun 00:00-24:00 UTC"`, `"22:00-02:00 UTC"`
   (no days = every day; wraps midnight; end exclusive). UTC only — the word is
