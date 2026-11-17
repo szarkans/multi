@@ -24,7 +24,7 @@ usage() { sed -n '2,12p' "$0"; exit 2; }
 
 
 # Never echoed in full anywhere: a key in a transcript is a leaked key.
-mask() { local v="$1"; [ ${#v} -gt 12 ] && printf '%s…%s' "${v:0:8}" "${v: -4}" || printf '****'; }
+mask() { local v="$1"; [ ${#v} -gt 12 ] && printf '%s…%s' "${v:0:8}" "${v:$((${#v}-4))}" || printf '****'; }
 
 cmd_status() {
   echo "keys file: $MULTI_PROVIDERS_ENV"
@@ -188,6 +188,11 @@ cmd_set() {
 
 cmd_unset() {
   local name="$1"
+  # The name lands inside a grep pattern: anything that is not a plain
+  # variable name is a regex, and 'A.*' would remove every key at once.
+  case "$name" in
+    ''|*[!A-Za-z0-9_]*|[0-9]*) echo "refusing to unset: not a variable name: $name" >&2; exit 2 ;;
+  esac
   [ -f "$MULTI_PROVIDERS_ENV" ] || { echo "nothing to unset"; return 0; }
   local tmp; tmp="$(mktemp)"; chmod 600 "$tmp"
   grep -v "^export ${name}=" "$MULTI_PROVIDERS_ENV" > "$tmp" 2>/dev/null

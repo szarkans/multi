@@ -30,7 +30,7 @@ echo "== .running says who, since when, for how long =="
 bash "$TREE/scripts/ask.sh" --question q --out-prefix "$TMP/r" >"$TMP/ask.log" 2>&1 &
 apid=$!
 n=0; while [ ! -s "$TMP/r-codex.txt.running" ] && [ "$n" -lt 20 ]; do sleep 0.5; n=$((n+1)); done
-read -r pid start timeout < "$TMP/r-codex.txt.running"
+read -r pid start timeout _ < "$TMP/r-codex.txt.running"
 say "pid is a live runner, not ask.sh itself" "$([ "$pid" != "$apid" ] && kill -0 "$pid" 2>/dev/null && echo yes || echo no)" "yes"
 say "start is an epoch near now" "$([ "$start" -gt $(( $(date +%s) - 10 )) ] && echo yes || echo no)" "yes"
 say "timeout is the backend's" "$timeout" "30"

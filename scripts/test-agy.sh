@@ -134,5 +134,120 @@ say "file -C is not allowed" "$(cmd 'file -C')" deny
 say "tail -f" "$(cmd 'tail -f a.py')" deny
 say "tail -n 5" "$(cmd 'tail -n 5 a.py')" allow
 
+echo "== the gate: globs, recursion and git blobs reach what the literal check cannot see =="
+# These need real files, so the workspace is a real dir this time, not /r.
+mkdir -p "$TMP/ws/sub" "$TMP/ws/pkg"
+ln -sfn pkg "$TMP/ws/linkdir"
+ln -sfn .env "$TMP/ws/leak"
+ln -sfn ../.env "$TMP/ws/sub/leak2"
+printf 'API_KEY=x\n' > "$TMP/ws/.env"
+printf 'x\n' > "$TMP/ws/a.py" "$TMP/ws/sub/b.py"
+printf 'K=v\n' > "$TMP/ws/pkg/.env"
+# git add -f for the .env files: a host whose global excludesFile lists .env
+# would silently skip them under `git add .`, leaving WS_BLOB empty and every
+# blob/tracked-secret assertion failing for reasons unrelated to the code.
+( cd "$TMP/ws" && git init -q . && git add . && git add -f .env pkg/.env && git -c user.email=t@t -c user.name=t commit -qm x ) >/dev/null 2>&1
+WS_BLOB="$(git -C "$TMP/ws" rev-parse HEAD:.env)"; WS_COMMIT="$(git -C "$TMP/ws" rev-parse HEAD)"
+wscmd(){ gate "$(python3 -c 'import json,sys; print(json.dumps({"workspacePaths":[sys.argv[1]],"toolCall":{"name":"run_command","args":{"CommandLine":sys.argv[2]}}}))' "$TMP/ws" "$1")"; }
+say "cat .env* (suffix glob)" "$(wscmd 'cat .env*')" deny
+say "cat .e* (prefix glob)" "$(wscmd 'cat .e*')" deny
+say "cat /etc/* (glob escapes the roots)" "$(wscmd 'cat /etc/*')" deny
+say "cat a.py* (glob, no secret match)" "$(wscmd 'cat a.py*')" allow
+say "cat {x,.env} (brace alternation)" "$(wscmd 'cat {x,.env}')" deny
+say "cat {.e,nv}nv (brace builds the name)" "$(wscmd 'cat {.e,nv}nv')" deny
+say "cat {~,.}/.env (brace escapes the root)" "$(wscmd 'cat {~,.}/.env')" deny
+say "cat .env{,} (trailing brace)" "$(wscmd 'cat .env{,}')" deny
+say "cat .[^x]nv (bash ^ class)" "$(wscmd 'cat .[^x]nv')" deny
+say "cat .en? (single-char glob)" "$(wscmd 'cat .en?')" deny
+say "cat ?env (glob cannot match the dot)" "$(wscmd 'cat ?env')" allow
+say "grep -rn KEY . (recursion reads .env)" "$(wscmd 'grep -rn KEY .')" deny
+say "grep -rn KEY (no path = cwd)" "$(wscmd 'grep -rn KEY')" deny
+say "grep -rn KEY * (globbed dirs recurse)" "$(wscmd 'grep -rn KEY *')" deny
+say "grep --rec KEY . (unambiguous long prefix)" "$(wscmd 'grep --rec KEY .')" deny
+say "grep --dereference-recursive KEY ." "$(wscmd 'grep --dereference-recursive KEY .')" deny
+say "grep --directories recurse KEY . (separate value)" "$(wscmd 'grep --directories recurse KEY .')" deny
+say "grep -d recurse KEY . (short form)" "$(wscmd 'grep -d recurse KEY .')" deny
+say "grep -rn -A 3 KEY (a flag value is not a path — still cwd)" "$(wscmd 'grep -rn -A 3 KEY')" deny
+say "grep -rn -m 5 KEY (same for -m)" "$(wscmd 'grep -rn -m 5 KEY')" deny
+say "grep -r API_KEY linkdir (a symlinked target reads)" "$(wscmd 'grep -r API_KEY linkdir')" deny
+say "grep -rn KEY sub (no secret in that tree)" "$(wscmd 'grep -rn KEY sub')" allow
+say "grep -rn K pkg (secret in that tree)" "$(wscmd 'grep -rn K pkg')" deny
+say "grep -r KEY a.py (file only)" "$(wscmd 'grep -r KEY a.py')" allow
+say "grep -n '.*' a.py (regex operand, not a glob)" "$(wscmd "grep -n '.*' a.py")" allow
+say "grep -r -eKEY sub (pattern via -e)" "$(wscmd 'grep -r -eKEY sub')" allow
+say "git show HEAD:.env (blob arg)" "$(wscmd 'git show HEAD:.env')" deny
+say "git show :.env (index blob)" "$(wscmd 'git show :.env')" deny
+say "git show HEAD:a.py" "$(wscmd 'git show HEAD:a.py')" allow
+say "git show <blob-sha of .env>" "$(wscmd "git show $WS_BLOB")" deny
+say "git show <commit sha> — whole patch prints tracked .env" "$(wscmd "git show $WS_COMMIT")" deny
+say "git log --format=%H:%s (colon, not a blob)" "$(wscmd 'git log --format=%H:%s')" allow
+say "cat .e{n..a}v (descending brace range)" "$(wscmd 'cat .e{n..a}v')" deny
+say "cat .e{a..z..1}v (brace range with step)" "$(wscmd 'cat .e{a..z..1}v')" deny
+say "cat .e{z..a}v (descending range hits the name)" "$(wscmd 'cat .e{z..a}v')" deny
+say "cat {a,{b,{c,{d,{e,{f,.env}}}}}} (over depth cap — deny, not truncate)" "$(wscmd 'cat {a,{b,{c,{d,{e,{f,.env}}}}}}')" deny
+say "cat {,}{,}{,}{,}{,}{x,.env} (sequential groups — deny, not truncate)" "$(wscmd 'cat {,}{,}{,}{,}{,}{x,.env}')" deny
+say "cat {0..300} (over alt cap — deny, not truncate)" "$(wscmd 'cat {0..300}')" deny
+say "cat {x,a}.py (brace under cap)" "$(wscmd 'cat {x,a}.py')" allow
+say "cat leak (file symlink to .env resolves)" "$(wscmd 'cat leak')" deny
+say "cat sub/leak2 (nested file symlink to .env)" "$(wscmd 'cat sub/leak2')" deny
+say "read_file a symlink that points at .env" "$(tool read_file "{\"Path\":\"$TMP/ws/leak\"}")" deny
+say "grep -r KEY sub (file link not followed with -r)" "$(wscmd 'grep -r KEY sub')" allow
+say "grep -R KEY sub (file link dereferenced with -R)" "$(wscmd 'grep -R KEY sub')" deny
+say "grep -e '.env' a.py (-e value is a pattern, not a path)" "$(wscmd "grep -e '.env' a.py")" allow
+say "grep --regexp=.env a.py (same, long option)" "$(wscmd 'grep --regexp=.env a.py')" allow
+say "grep -n -e '.*' a.py (regex value, not a glob)" "$(wscmd "grep -n -e '.*' a.py")" allow
+say "grep -f .env a.py (-f's file IS a path)" "$(wscmd 'grep -f .env a.py')" deny
+say "git show <blob-sha abbreviated>" "$(wscmd "git show ${WS_BLOB:0:8}")" deny
+say "git show <blob-sha uppercase>" "$(wscmd "git show $(printf %s "$WS_BLOB" | tr 'a-z' 'A-Z')")" deny
+say "git show HEAD:.e* (REV pathspec wildcard)" "$(wscmd 'git show HEAD:.e*')" deny
+say "git log -p -- '.e*' (pathspec wildcard hits tracked .env)" "$(wscmd "git log -p -- '.e*'")" deny
+say "git log -p -- 'sub/*' (expands to a secret-symlink)" "$(wscmd "git log -p -- 'sub/*'")" deny
+say "git ls-files -- 'a.*' (wildcards to no secret)" "$(wscmd "git ls-files -- 'a.*'")" allow
+say "find . -name '.env*' (find pattern expands too)" "$(wscmd 'find . -name ".env*"')" deny
+say "find . -name '*.py'" "$(wscmd 'find . -name "*.py"')" allow
+
+# A dir symlink inside a walked tree points the read outside — and the
+# third round caught content-emitting git reads printing a tracked secret
+# without ever naming it, peel-suffix and brace paths to the same blob, and
+# git grep reaching ignored files.
+mkdir -p "$TMP/ws/deep"
+ln -sfn /etc "$TMP/ws/deep/etc"
+say "grep -R KEY deep (dir link inside walks out)" "$(wscmd 'grep -R KEY deep')" deny
+say "grep -r KEY deep (-r does not follow the dir link)" "$(wscmd 'grep -r KEY deep')" allow
+say "grep -e '-r' a.py (a pattern is not a flag)" "$(wscmd "grep -e '-r' a.py")" allow
+say "grep -e '-R' a.py (same for -R)" "$(wscmd "grep -e '-R' a.py")" allow
+say "grep -f.env a.py (attached -f value is a path)" "$(wscmd 'grep -f.env a.py')" deny
+say "grep -f/etc/passwd a.py (attached -f, outside)" "$(wscmd 'grep -f/etc/passwd a.py')" deny
+say "cat .e{a..z..0}v (bash coerces step 0 to 1)" "$(wscmd 'cat .e{a..z..0}v')" deny
+say "git log -p (whole-tree patch prints tracked .env)" "$(wscmd 'git log -p')" deny
+say "git diff (worktree patch, secret tracked)" "$(wscmd 'git diff')" deny
+say "git diff HEAD~0..HEAD (revs — still the whole tree)" "$(wscmd 'git diff HEAD~0..HEAD')" deny
+say "git log -p a.py (scoped to a clean path)" "$(wscmd 'git log -p a.py')" allow
+say "git diff a.py (scoped operand, not a rev)" "$(wscmd 'git diff a.py')" allow
+say "git log -p -- . (dot is everything)" "$(wscmd 'git log -p -- .')" deny
+say "git show <blob>^{blob} (peel suffix)" "$(wscmd "git show ${WS_BLOB}^{blob}")" deny
+say "git show {<blob>,x} (braces reach the blob)" "$(wscmd "git show {$WS_BLOB,x}")" deny
+say "git log -p {.e*,x} (braces reach the pathspec)" "$(wscmd "git log -p {.e*,x}")" deny
+say "git grep API_KEY (no pathspec — searches tracked .env)" "$(wscmd 'git grep API_KEY')" deny
+say "git grep -e API_KEY (same via -e)" "$(wscmd 'git grep -e API_KEY')" deny
+say "git grep API_KEY -- a.py (scoped clean)" "$(wscmd 'git grep API_KEY -- a.py')" allow
+say "git grep --untracked x (reads ignored files)" "$(wscmd 'git grep --untracked x')" deny
+say "git grep --no-exclude-standard x" "$(wscmd 'git grep --no-exclude-standard x')" deny
+say "git grep --recurse-submodules x" "$(wscmd 'git grep --recurse-submodules x')" deny
+say "git log -L1,2:.env (line history emits the file)" "$(wscmd 'git log -L1,2:.env')" deny
+say "git show HEAD:sub/ (clean REV:path stays allow)" "$(wscmd 'git show HEAD:sub/')" allow
+say "git log --stat (metadata, not content)" "$(wscmd 'git log --stat')" allow
+say "git status (metadata, not content)" "$(wscmd 'git status')" allow
+
+# And the other half of the contract: a repo that tracks no secret keeps
+# every content-emitting git read open — the reviewer must read diffs.
+mkdir -p "$TMP/ws2"
+( cd "$TMP/ws2" && git init -q . && echo x > a.py && git add . && git -c user.email=t@t -c user.name=t commit -qm x ) >/dev/null 2>&1
+ws2cmd(){ gate "$(python3 -c 'import json,sys; print(json.dumps({"workspacePaths":[sys.argv[1]],"toolCall":{"name":"run_command","args":{"CommandLine":sys.argv[2]}}}))' "$TMP/ws2" "$1")"; }
+say "git log -p in a repo with NO tracked secret" "$(ws2cmd 'git log -p')" allow
+say "git diff in a clean repo" "$(ws2cmd 'git diff')" allow
+say "git show HEAD in a clean repo" "$(ws2cmd 'git show HEAD')" allow
+say "git grep x in a clean repo" "$(ws2cmd 'git grep x')" allow
+
 [ $fail -eq 0 ] && echo "ALL PASS" || echo "FAILURES"
 exit $fail

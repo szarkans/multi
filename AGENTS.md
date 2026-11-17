@@ -20,7 +20,7 @@
 ## Адаптеры харнессов
 
 - Канонические скиллы живут только в `skills/`. Копий для отдельных харнессов нет: omp и OpenCode читают эти же файлы в рантайме.
-- `harnesses/skills.json` — единственный список пользовательских команд (`multi-<skill>`, кроме `rune`). Расходится с `skills/` — падает `test-portable.sh`. Новый скилл = запись в каталоге, иначе о нём не узнают omp и OpenCode.
+- `harnesses/skills.json` — единственный список пользовательских команд (`multi-<skill>`, включая `rune`). Расходится с `skills/` — падает `test-portable.sh`. Новый скилл = запись в каталоге, иначе о нём не узнают omp и OpenCode.
 - `harnesses/shared/skills.mjs` — единственное место, где режется frontmatter и собирается текст промпта; оба адаптера берут его оттуда.
 - `package.json` (root) — манифест omp: `omp.extensions` → `harnesses/omp/index.js` (`pi.registerCommand` + `pi.sendMessage` с `triggerTurn`). Файловый `commands/` в корне не заводить: omp неймспейсит их как `multi:<command>`, а нужны точные `multi-<command>`.
 - `harnesses/opencode/index.js` — плагин OpenCode 2 (`@opencode/plugin`): `ctx.skill.transform` даёт `@multi-<name>`, `ctx.command.transform` — `/multi-<name>` для TUI. В `opencode run` слэш-команды не раскрываются вообще, проверять скиллом.

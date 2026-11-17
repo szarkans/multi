@@ -5,7 +5,7 @@
 // of each instruction and no `!`-substitution on the way in: the body is text,
 // and the probe inside it runs wherever the model runs it.
 import { Plugin, Skill } from "@opencode/plugin";
-import { CATALOG, skillPrompt, skillText } from "../shared/skills.mjs";
+import { CATALOG, skillFlags, skillPrompt, skillText } from "../shared/skills.mjs";
 
 export default Plugin.define({
   id: "multi",
@@ -13,22 +13,27 @@ export default Plugin.define({
     const skills = CATALOG.map((entry) => {
       const text = skillText(entry);
       return {
-        id: Skill.ID.make(entry.command),
-        name: Skill.Name.make(entry.command),
-        description: entry.description,
-        path: Skill.Info.fields.path.make(text.file),
-        // The body already ends with its `[Skill directory: …]` line: the
-        // skill path OpenCode shows the model is not guaranteed, and the body's
-        // first step resolves the probe from that directory.
-        content: text.text,
+        info: {
+          id: Skill.ID.make(entry.command),
+          name: Skill.Name.make(entry.command),
+          description: entry.description,
+          path: Skill.Info.fields.path.make(text.file),
+          // The body already ends with its `[Skill directory: …]` line: the
+          // skill path OpenCode shows the model is not guaranteed, and the body's
+          // first step resolves the probe from that directory.
+          content: text.text,
+        },
+        disableModelInvocation: skillFlags(entry).disableModelInvocation,
       };
     });
 
     await ctx.skill.transform((editor) => {
-      for (const skill of skills) {
-        editor.add(skill);
-        editor.update(skill.id, (current) => {
-          current.autoinvoke = true;
+      for (const { info, disableModelInvocation } of skills) {
+        editor.add(info);
+        editor.update(info.id, (current) => {
+          // rune carries disable-model-invocation: it is a joke the user
+          // types, not a tool the model may pick mid-task.
+          current.autoinvoke = !disableModelInvocation;
         });
       }
     });

@@ -102,6 +102,38 @@ C="$(snap src 2>"$TMP/err")"
 say "and no .cognition either" "$([ -e "$C/.cognition" ] && echo yes || echo no)" "no"
 git rm -q --cached .cognition/hooks.v1.json; rm -rf .cognition "$TMP"/snap.*
 
+echo "== a dir named like a config file keeps its subtree =="
+mkdir -p opencode.json; echo x > opencode.json/nested.py; git add -f opencode.json 2>/dev/null
+C="$(snap --paths "opencode.json src" 2>/dev/null)"
+say "opencode.json/nested.py is in the copy" "$([ -f "$C/opencode.json/nested.py" ] && echo yes || echo no)" "yes"
+git rm -qr --cached opencode.json >/dev/null 2>&1; rm -rf opencode.json "$TMP"/snap.*
+mkdir -p .kilo; echo x > .kilo/rules.md; git add -f .kilo/rules.md 2>/dev/null
+C="$(snap src 2>/dev/null)"
+say "but a real .kilo dir still strips" "$([ -e "$C/.kilo" ] && echo yes || echo no)" "no"
+git rm -q --cached .kilo/rules.md >/dev/null 2>&1; rm -rf .kilo "$TMP"/snap.*
+
+echo "== diff-excluded names are a subset of stripped names =="
+# A config whose diff is hidden but whose file stays in the copy is a reviewer
+# that can still load it — the two lists may only drift one way.
+say "DIFF_EXCLUDED_FILES ⊆ STRIP_FILES" "$(python3 - "$TREE/scripts/snapshot.sh" <<'EOF'
+import re, sys
+src = open(sys.argv[1]).read()
+def arr(name):
+    m = re.search(r"\b" + name + r"=\((.*?)\)", src, re.S)
+    return set(m.group(1).replace("'", "").split())
+print("yes" if arr("DIFF_EXCLUDED_FILES") <= arr("STRIP_FILES") else "no")
+EOF
+)" "yes"
+say "DIFF_EXCLUDED_DIRS ⊆ STRIP_DIRS" "$(python3 - "$TREE/scripts/snapshot.sh" <<'EOF'
+import re, sys
+src = open(sys.argv[1]).read()
+def arr(name):
+    m = re.search(r"\b" + name + r"=\((.*?)\)", src, re.S)
+    return set(m.group(1).replace("'", "").split())
+print("yes" if arr("DIFF_EXCLUDED_DIRS") <= arr("STRIP_DIRS") else "no")
+EOF
+)" "yes"
+
 echo "== no --paths: unchanged, ignored files simply absent =="
 echo 'docs/' >> .git/info/exclude
 C="$(snap 2>/dev/null)"; say "exit 0" "$?" "0"

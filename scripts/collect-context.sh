@@ -129,7 +129,7 @@ if [ ${#PATH_ARR[@]} -gt 0 ]; then
     # Paths alone: expand tracked directories to the files they hold, and keep
     # the literal paths too — a brand-new file is untracked and would otherwise
     # contribute nothing just because some sibling path happens to be tracked.
-    FILES="$( { git ls-files -- "${PATH_ARR[@]}" 2>/dev/null; printf '%s\n' "${PATH_ARR[@]}"; } | sort -u )"
+    FILES="$( { git -c core.quotePath=false ls-files -- "${PATH_ARR[@]}" 2>/dev/null; printf '%s\n' "${PATH_ARR[@]}"; } | sort -u )"
   fi
 fi
 

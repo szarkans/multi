@@ -104,7 +104,12 @@ while IFS="$(printf '\t')" read -r name type chain url keyenv timeout stall avoi
     codex)
       if command -v codex >/dev/null 2>&1; then
         ver="$(codex --version 2>/dev/null | head -1)"
-        if multi_timeout 10 codex login status 2>&1 | grep -qi 'logged in'; then
+        login_status="$(multi_timeout 10 codex login status 2>&1)"
+        # The exit status counts too: a failed command printing "Not logged in"
+        # still greps positive for 'logged in' — so does a successful one that
+        # exits 0 on the same text, hence the second guard.
+        if [ $? -eq 0 ] && grep -qi 'logged in' <<<"$login_status" \
+            && ! grep -qi 'not logged in' <<<"$login_status"; then
           say "$name: OK — ${ver}${chain:+ — $chain}"
         else
           say "$name: NOT LOGGED IN — ${ver} (run: codex login)"

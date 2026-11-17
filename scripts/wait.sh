@@ -53,7 +53,7 @@ RPID=""; RSTART=""; RTIMEOUT=""
 read_marker() { # read_marker <running-file> -> 0 and RPID/RSTART/RTIMEOUT when it is live
   RPID=""; RSTART=""; RTIMEOUT=""
   [ -e "$1" ] || return 1
-  read -r RPID RSTART RTIMEOUT 2>/dev/null < "$1" || return 1
+  read -r RPID RSTART RTIMEOUT _ 2>/dev/null < "$1" || return 1
   case "$RPID" in ''|*[!0-9]*) RPID=""; return 1 ;; esac
   kill -0 "$RPID" 2>/dev/null || { RPID=""; return 1; }
 }

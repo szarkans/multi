@@ -117,30 +117,59 @@ snap_is_secret() { # snap_is_secret <path> -> 0 if a real secret to withhold
     *) SECRET_RULE="$r"; return 0 ;;
   esac
 }
-snap_is_stripped() { # snap_is_stripped <path> -> 0 for a harness rule/config file the copy never carries
-  # Case-insensitive, like the find -iname purge below that actually empties
-  # the copy: on a case-insensitive macOS FS a tracked agents.md IS AGENTS.md.
-  local r=1
+# The canonical name lists. FILE names match the path's basename at any depth;
+# DIR names match every path component, basename included — a file named
+# .kilo is config just the same. A directory called opencode.json keeps its
+# subtree: only its own name is config. Adding a harness's config name is a
+# one-line change here, not a hunt through case arms.
+# set -f: `opencode.config.*` is a glob as DATA; unquoted it would expand
+# against this script's cwd.
+set -f
+STRIP_FILES=(opencode.json opencode.jsonc 'opencode.config.*' kilo.json kilo.jsonc .kilocodemodes .kilocoderules .mcp.json
+             CLAUDE.md CLAUDE.local.md AGENTS.md AGENTS.override.md GEMINI.md .gitignore .geminiignore)
+STRIP_DIRS=(.opencode .kilo .kilocode .claude .gemini .agent .agents .devin .cognition)
+# Kilo is an OpenCode fork: exact names only. Config that is executable — it
+# can re-enable write+bash inside a reviewer (#12) — is held out of the diff
+# itself, not only out of the copy. test-snapshot-paths.sh pins the subset:
+# everything excluded from the diff is stripped from the copy.
+DIFF_EXCLUDED_FILES=(opencode.json opencode.jsonc 'opencode.config.*' kilo.json kilo.jsonc .kilocodemodes .kilocoderules)
+DIFF_EXCLUDED_DIRS=(.opencode .kilo .kilocode)
+set +f
+
+snap_basename() { # snap_basename <path> <names...> -> 0 on a match
+  local b="${1##*/}" n; shift
   shopt -s nocasematch
-  case "$1" in
-    .opencode|.opencode/*|opencode.json|*/.opencode|*/.opencode/*|*/opencode.json) r=0 ;;
-    opencode.jsonc|*/opencode.jsonc|opencode.config.*|*/opencode.config.*|.mcp.json|*/.mcp.json) r=0 ;;
-    .kilo|.kilo/*|*/.kilo|*/.kilo/*|.kilocode|.kilocode/*|*/.kilocode|*/.kilocode/*|kilo.json|kilo.jsonc|*/kilo.json|*/kilo.jsonc|.kilocodemodes|*/.kilocodemodes|.kilocoderules|*/.kilocoderules) r=0 ;;  # Kilo (an OpenCode fork): exact names only
-    .claude|.claude/*|*/.claude|*/.claude/*|.gemini|.gemini/*|*/.gemini|*/.gemini/*) r=0 ;;
-    .agent|.agent/*|*/.agent|*/.agent/*|.agents|.agents/*|*/.agents|*/.agents/*) r=0 ;;
-    .devin|.devin/*|*/.devin|*/.devin/*|.cognition|.cognition/*|*/.cognition|*/.cognition/*) r=0 ;;
-    CLAUDE.md|CLAUDE.local.md|AGENTS.md|AGENTS.override.md|GEMINI.md) r=0 ;;
-    */CLAUDE.md|*/CLAUDE.local.md|*/AGENTS.md|*/AGENTS.override.md|*/GEMINI.md) r=0 ;;
-    .gitignore|*/.gitignore|.geminiignore|*/.geminiignore) r=0 ;;
-  esac
+  local r=1
+  for n in "$@"; do case "$b" in $n) r=0; break ;; esac; done
   shopt -u nocasematch
   return "$r"
 }
+snap_component() { # snap_component <path> <names...> -> 0 on a match
+  local p="$1" n m rest; shift
+  shopt -s nocasematch
+  local r=1
+  rest="$p"
+  while :; do
+    n="${rest%%/*}"
+    for m in "$@"; do case "$n" in $m) r=0; break ;; esac; done
+    [ "$r" -eq 0 ] || [ "$rest" = "$n" ] && break
+    rest="${rest#*/}"
+  done
+  shopt -u nocasematch
+  return "$r"
+}
+
+snap_is_stripped() { # snap_is_stripped <path> -> 0 for a harness rule/config file the copy never carries
+  snap_basename "$1" "${STRIP_FILES[@]}" || snap_component "$1" "${STRIP_DIRS[@]}"
+}
+snap_is_diff_excluded() { # snap_is_diff_excluded <path> -> 0 for opencode/kilo config held out of review.diff (#12)
+  snap_basename "$1" "${DIFF_EXCLUDED_FILES[@]}" || snap_component "$1" "${DIFF_EXCLUDED_DIRS[@]}"
+}
+
 copy_one() { # copy_one <path>
   local f="$1" src="$ROOT/$1" dst="$DEST/$1" sz
-  # Strip the reviewed repo's own opencode config from the copy (#12), any depth.
-  case "$f" in .opencode/*|opencode.json|*/.opencode/*|*/opencode.json|.kilo|.kilo/*|*/.kilo|*/.kilo/*|.kilocode|.kilocode/*|*/.kilocode|*/.kilocode/*|kilo.json|kilo.jsonc|*/kilo.json|*/kilo.jsonc|.kilocodemodes|*/.kilocodemodes|.kilocoderules|*/.kilocoderules) return ;; esac
-  # Same hole, other harnesses: since the runners cd into the copy, a bare
+  # Strip the reviewed repo's own harness config from the copy (#12): since the
+  # runners cd into the copy, a bare
   # `claude -p` auto-loads .claude/settings.json (hooks, permissions) and
   # CLAUDE.md/AGENTS.md as trusted instructions, gemini loads .gemini/ and
   # GEMINI.md, codex loads AGENTS.md, agy loads .agent/ and .agents/ rules and
@@ -180,23 +209,10 @@ copy_one() { # copy_one <path>
   mkdir -p -- "$(dirname -- "$dst")" 2>/dev/null || return
   cp -p -- "$src" "$dst" 2>/dev/null || cp -- "$src" "$dst" 2>/dev/null || true
 }
+# Resolve the UTF-8 checker once in THIS shell — snap_deny runs $( ) per file
+# and the children inherit the cached pick rather than re-probing per line.
+multi_valid_utf8 "" >/dev/null 2>&1 || :
 git -C "$ROOT" ls-files -z --cached --others --exclude-standard | while IFS= read -r -d '' f; do copy_one "$f"; done
-
-# Backstop the opencode-config strip. The copy loop skips it by path, but only
-# case-sensitively and only for the exact names — a case-variant (.OpenCode on a
-# case-insensitive macOS/Windows FS), an .opencode.jsonc, or an
-# opencode.config.ts still loads as valid opencode config. Purge them by name,
-# case-insensitively, at any depth, whatever slipped through.
-find "$DEST" \( -iname '.opencode' -o -iname 'opencode.json' -o -iname 'opencode.jsonc' \
-                -o -iname 'opencode.config.*' \
-                -o -iname '.kilo' -o -iname '.kilocode' -o -iname 'kilo.json' -o -iname 'kilo.jsonc' \
-                -o -iname '.kilocodemodes' -o -iname '.kilocoderules' \
-                -o -iname '.claude' -o -iname '.gemini' -o -iname '.mcp.json' \
-                -o -iname '.agent' -o -iname '.agents' -o -iname '.devin' -o -iname '.cognition' \
-                -o -iname 'CLAUDE.md' -o -iname 'CLAUDE.local.md' \
-                -o -iname 'AGENTS.md' -o -iname 'AGENTS.override.md' -o -iname 'GEMINI.md' \
-                -o -iname '.gitignore' -o -iname '.geminiignore' \) \
-  -exec rm -rf -- {} + 2>/dev/null || true
 
 # --- write the change as files the reviewers read directly ------------------
 MANOUT="$DEST/review.manifest"
@@ -229,10 +245,9 @@ EXARGS=()
 build_excludes() { # build_excludes <rev> <checksize:0|1>
   EXARGS=(); local f rev="$1" checksize="$2" sz
   while IFS= read -r -d '' f; do
-    case "$f" in
-      .opencode/*|opencode.json|*/.opencode/*|*/opencode.json|.kilo|.kilo/*|*/.kilo|*/.kilo/*|.kilocode|.kilocode/*|*/.kilocode|*/.kilocode/*|kilo.json|kilo.jsonc|*/kilo.json|*/kilo.jsonc|.kilocodemodes|*/.kilocodemodes|.kilocoderules|*/.kilocoderules)
-        EXARGS+=(":(exclude,literal)$f"); printf '%s (opencode/kilo config, held out of the diff)\n' "$f" >> "$skipped"; continue ;;
-    esac
+    if snap_is_diff_excluded "$f"; then
+      EXARGS+=(":(exclude,literal)$f"); printf '%s (opencode/kilo config, held out of the diff)\n' "$f" >> "$skipped"; continue
+    fi
     # Harness instruction files (CLAUDE.md, AGENTS.md, .claude/*, …) STAY in the
     # diff on purpose: there they are inert text, and a change that edits the
     # rules is exactly what a reviewer must see. Only the copy strips them —
@@ -261,7 +276,7 @@ if [ "$DIFF" = "uncommitted" ]; then
   # Untracked-not-ignored files are additions: git diff vs HEAD never shows them.
   git -C "$ROOT" ls-files -z --others --exclude-standard \
   | while IFS= read -r -d '' f; do
-      case "$f" in .opencode/*|opencode.json|*/.opencode/*|*/opencode.json|.kilo|.kilo/*|*/.kilo|*/.kilo/*|.kilocode|.kilocode/*|*/.kilocode|*/.kilocode/*|kilo.json|kilo.jsonc|*/kilo.json|*/kilo.jsonc|.kilocodemodes|*/.kilocodemodes|.kilocoderules|*/.kilocoderules) continue ;; esac
+      snap_is_diff_excluded "$f" && continue
       # A control character (newline, tab) in a name is attacker-controlled and
       # would forge a second manifest line (`A\tevil<NL>D\tfake` reads as two
       # rows). git C-quotes such names in the diff, but our printf does not — skip
@@ -358,14 +373,13 @@ for p in $PATHS; do
     printf '%s (requested via --paths, NOT in the copy: %s)\n' "$p" "$why" >> "$skipped"
     echo "snapshot: $p is not in the copy: $why" >&2; missing=1; continue
   fi
-  case "$p" in
-    .opencode|.opencode/*|opencode.json*|opencode.config.*|*/.opencode|*/.opencode/*|*/opencode.json*|*/opencode.config.*|.kilo|.kilo/*|*/.kilo|*/.kilo/*|.kilocode|.kilocode/*|*/.kilocode|*/.kilocode/*|kilo.json|kilo.jsonc|*/kilo.json|*/kilo.jsonc|.kilocodemodes|*/.kilocodemodes|.kilocoderules|*/.kilocoderules)
-      # Held out of the copy AND of review.diff (#12): there is nothing of it
-      # for a reviewer to read, so naming it is a stop, not a note.
-      why="opencode/kilo config is withheld from reviewers on purpose, from the copy and from review.diff (#12)"
-      printf '%s (requested via --paths, NOT in the copy: %s)\n' "$p" "$why" >> "$skipped"
-      echo "snapshot: $p is not in the copy: $why" >&2; missing=1; continue ;;
-  esac
+  if snap_is_diff_excluded "$p"; then
+    # Held out of the copy AND of review.diff (#12): there is nothing of it
+    # for a reviewer to read, so naming it is a stop, not a note.
+    why="opencode/kilo config is withheld from reviewers on purpose, from the copy and from review.diff (#12)"
+    printf '%s (requested via --paths, NOT in the copy: %s)\n' "$p" "$why" >> "$skipped"
+    echo "snapshot: $p is not in the copy: $why" >&2; missing=1; continue
+  fi
   if snap_is_stripped "$p"; then
     printf '%s (requested via --paths; a harness rule file, stripped from the copy on purpose -- its change is in review.diff)\n' "$p" >> "$skipped"; continue
   fi

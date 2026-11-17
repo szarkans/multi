@@ -106,12 +106,12 @@ for entry in catalog:
     if not name or name.group(1) != skill:
         problems.append(("%s: frontmatter name is %s" % (command, skill), name.group(1) if name else "missing"))
 
-# 3. the catalog covers every skill except rune, which is a joke and has no command.
+# 3. the catalog covers every skill, rune included — it is a command on every host.
 on_disk = {d for d in os.listdir(rel("skills"))
-           if os.path.isfile(rel("skills", d, "SKILL.md"))} - {"rune"}
+           if os.path.isfile(rel("skills", d, "SKILL.md"))}
 listed = {entry.get("skill") for entry in catalog}
 if on_disk != listed:
-    problems.append(("catalog matches skills/ minus rune",
+    problems.append(("catalog matches skills/",
                      "missing %s, extra %s" % (sorted(on_disk - listed), sorted(listed - on_disk))))
 
 # 4. Codex is installed from this repo, so its skills path must exist as written.

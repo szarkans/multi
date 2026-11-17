@@ -49,8 +49,12 @@
 #   <prefix>-<backend>-2.txt, -3.txt...  second and later instance of the same
 #                                        backend (e.g. two openrouter entries)
 #   <prefix>-<backend>.txt.running      while that backend runs: "<pid of its
-#                                        runner> <start epoch> <timeout s>", so
-#                                        an `ls` says how long it has been going
+#                                        runner> <start epoch> <timeout s>
+#                                        <run nonce>", so an `ls` says how long
+#                                        it has been going (readers take the
+#                                        first three fields; the nonce is how
+#                                        an orphan runner knows a NEW run owns
+#                                        the marker)
 #   <prefix>-<backend>.txt.dead         one line saying why it failed
 #   <prefix>-<backend>.txt.trains       one "yes|no|unknown <model>" line per model sent the prompt
 #   <prefix>.run                        the roster: one "<backend>" line per
@@ -254,8 +258,12 @@ run_codex_one() {
   rc=$?
   # stderr used to go to /dev/null, so a codex that failed left "NO OUTPUT" and
   # nothing to go on. The openrouter path keeps a .log for exactly this reason.
-  if [ "$rc" -eq 124 ] && [ ! -s "$out" ]; then
+  # A signal-killed or timed-out run never reads as an answer, even with
+  # partial output in the file (the headless runner's rule, applied here too).
+  if [ "$rc" -eq 124 ]; then
     multi_fail_backend "$out" "codex: TIMEOUT after ${timeout}s" "${out}.log"
+  elif [ "$rc" -ge 128 ]; then
+    multi_fail_backend "$out" "codex: KILLED — exit=$rc; its partial output, if any, is kept in ${out}.partial" "${out}.log"
   fi
   [ -s "$out" ] || [ ! -s "${out}.log" ] || multi_fail_backend "$out" "codex: NO OUTPUT — exit=$rc (stderr in ${out}.log)" "${out}.log"
 }
@@ -369,7 +377,9 @@ run_opencode_one() { # run_opencode_one <out> <model> <fallback,csv> <name> [ope
     last_error=""
     [ ! -s "${out}.error" ] || last_error="$(sed -n '1p' "${out}.error")"
     [ -z "$last_error" ] || failure_error="$last_error"
-    if [ "$stalled" -eq 0 ] && [ "$rc" -ne 124 ] && [ "$rrc" -ne 3 ]; then
+    # 124 (own timeout) and >=128 (signal from outside) are not answers:
+    # a stream cut mid-flight must not count.
+    if [ "$stalled" -eq 0 ] && [ "$rc" -ne 124 ] && [ "$rc" -lt 128 ] && [ "$rrc" -ne 3 ]; then
       answered=1
       break
     fi
@@ -434,6 +444,11 @@ run_opencode_one() { # run_opencode_one <out> <model> <fallback,csv> <name> [ope
     else
       multi_fail_backend "$out" "$bin: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s — model=$used (partial capture in $raw)" "$raw"
     fi
+  elif [ "$rc" -ge 128 ]; then
+    # A signal ended the run — the same outside kill that empties a whole
+    # roster. Whatever streamed into $out is a fragment, not an answer, so it
+    # gets a marker like every other failure, not a pass as "answered".
+    multi_fail_backend "$out" "$bin: KILLED — model=$used exit=$rc (a signal ended the run; partial capture in $raw)" "$raw"
   elif [ "$rrc" = 3 ]; then
     if [ -n "$last_error" ]; then
       multi_fail_backend "$out" "$bin: NO ANSWER — model=$used exit=$rc — $last_error; what it did is in ${out}.calls" "$raw"
@@ -531,7 +546,7 @@ now="$(date +%s)"
 { [ -s "$ROSTER" ] && cut -d' ' -f1 "$ROSTER"; printf '%s\n' "${SUFFIXES[@]}"; } | sort -u | while read -r sfx; do
   r="${PREFIX}-${sfx}.txt.running"
   [ -s "$r" ] || continue
-  read -r rpid rstart rtimeout < "$r" || continue
+  read -r rpid rstart rtimeout _ < "$r" || continue
   case "$rpid" in ''|*[!0-9]*) continue ;; esac
   kill -0 "$rpid" 2>/dev/null || continue
   case "$rstart" in ''|*[!0-9]*) rstart="$now" ;; esac
@@ -553,9 +568,9 @@ done || exit 2
 # Written whole, then renamed: `>` truncates first, and a guard reading the
 # marker in between sees an empty file -- "nobody here" -- and launches over a
 # live run. Measured: two ask.sh started in the same second, once in twenty.
-mark() { # mark <running-file> <pid> <start> <timeout>
+mark() { # mark <running-file> <pid> <start> <timeout> [nonce]
   local t="${1}.tmp.$RANDOM$RANDOM"
-  printf '%s %s %s\n' "$2" "$3" "$4" > "$t" && mv -f "$t" "$1"
+  printf '%s %s %s%s\n' "$2" "$3" "$4" "${5:+ $5}" > "$t" && mv -f "$t" "$1"
 }
 # Each backend's subshell, first thing: put ITS pid in the marker. It is the
 # process that outlives a SIGKILLed ask.sh and keeps writing the answer, so it
@@ -566,10 +581,17 @@ mark() { # mark <running-file> <pid> <start> <timeout>
 # taken the prefix since, and this orphan must then stand down rather than
 # write over the new run. $$ in a subshell is still the parent's pid.
 started() { # started <out> -> 0 to go on, 1 to stand down
-  local cur
-  read -r cur _ 2>/dev/null < "${1}.running" && [ "$cur" = "$$" ] || return 1
-  mark "${1}.running" "$(sh -c 'echo $PPID')" "$(date +%s)" "$MULTI_BACKEND_TIMEOUT"
+  local cur start tmo nonce
+  # The marker must still say our pid AND our nonce, and that pid must be
+  # alive: an orphan that reads before the next run re-marks would otherwise
+  # proceed alongside it, and pid reuse alone makes a bare pid check lie.
+  read -r cur start tmo nonce 2>/dev/null < "${1}.running" || return 1
+  [ "$cur" = "$$" ] && [ "$nonce" = "$NONCE" ] && kill -0 "$cur" 2>/dev/null || return 1
+  mark "${1}.running" "$(sh -c 'echo $PPID')" "$(date +%s)" "$MULTI_BACKEND_TIMEOUT" "$NONCE"
 }
+# One run one nonce: the subshells inherit it and will not touch a marker a
+# newer run has already claimed, even if the dead parent's pid was reused.
+NONCE="$$.$RANDOM$RANDOM"
 for i in "${!NAMES[@]}"; do
   out="${PREFIX}-${SUFFIXES[$i]}.txt"
   rm -f "$out" "${out}.dead" "${out}.dead.log" "${out}.log" "${out}.running" "${out}.trains" "${out}.kilo-training"
@@ -577,7 +599,7 @@ for i in "${!NAMES[@]}"; do
   # "alive" and nothing else, and a judge looking at an empty answer beside it
   # could not tell three minutes in from thirty (#27). Our pid for now; the
   # backend's own subshell replaces it with its own the moment it starts.
-  mark "${out}.running" "$$" "$now" "${TIMEOUTS[$i]}"
+  mark "${out}.running" "$$" "$now" "${TIMEOUTS[$i]}" "$NONCE"
 done
 # The roster last: wait.sh needs it to exist, and by now every marker it will
 # look at is there -- published first, a waiter saw a roster with no markers
@@ -659,22 +681,22 @@ for i in "${!NAMES[@]}"; do
   fi
   case "$type" in
     codex)
-      ( MULTI_BACKEND_TIMEOUT="${TIMEOUTS[$i]}"; started "$out" && cd "$REPO_DIR" \
+      ( MULTI_BACKEND_TIMEOUT="${TIMEOUTS[$i]}"; started "$out" || exit 0; cd "$REPO_DIR" \
         && run_codex_one "$out" "$model" "$name"; finished "${SUFFIXES[$i]}" "$out" "$t0" "$name" ) & ;;
     opencode|kilo)
-      ( MULTI_BACKEND_TIMEOUT="${TIMEOUTS[$i]}"; MULTI_OPENCODE_STALL="${STALLS[$i]}"; started "$out" && cd "$REPO_DIR" \
+      ( MULTI_BACKEND_TIMEOUT="${TIMEOUTS[$i]}"; MULTI_OPENCODE_STALL="${STALLS[$i]}"; started "$out" || exit 0; cd "$REPO_DIR" \
         && run_opencode_one "$out" "$oc_model" "$oc_fallback" "$name" "$type"; finished "${SUFFIXES[$i]}" "$out" "$t0" "$name" ) & ;;
     claude-headless)
-      ( MULTI_BACKEND_TIMEOUT="${TIMEOUTS[$i]}"; MULTI_BACKEND_STALL="${STALLS[$i]}"; started "$out" && cd "$REPO_DIR" \
+      ( MULTI_BACKEND_TIMEOUT="${TIMEOUTS[$i]}"; MULTI_BACKEND_STALL="${STALLS[$i]}"; started "$out" || exit 0; cd "$REPO_DIR" \
         && multi_run_headless "$name" "$QUESTION" "$out" "$model" "$chain" "${URLS[$i]}" "${KEYENVS[$i]}"; finished "${SUFFIXES[$i]}" "$out" "$t0" "$name" ) & ;;
     gemini)
-      ( MULTI_BACKEND_TIMEOUT="${TIMEOUTS[$i]}"; started "$out" && cd "$REPO_DIR" \
+      ( MULTI_BACKEND_TIMEOUT="${TIMEOUTS[$i]}"; started "$out" || exit 0; cd "$REPO_DIR" \
         && multi_run_gemini "$name" "$QUESTION" "$out" "$model" "${KEYENVS[$i]}"; finished "${SUFFIXES[$i]}" "$out" "$t0" "$name" ) & ;;
     agy)
-      ( MULTI_BACKEND_TIMEOUT="${TIMEOUTS[$i]}"; started "$out" && cd "$REPO_DIR" \
+      ( MULTI_BACKEND_TIMEOUT="${TIMEOUTS[$i]}"; started "$out" || exit 0; cd "$REPO_DIR" \
         && multi_run_agy "$name" "$QUESTION" "$out" "$model"; finished "${SUFFIXES[$i]}" "$out" "$t0" "$name" ) & ;;
     devin)
-      ( MULTI_BACKEND_TIMEOUT="${TIMEOUTS[$i]}"; started "$out" && cd "$REPO_DIR" \
+      ( MULTI_BACKEND_TIMEOUT="${TIMEOUTS[$i]}"; started "$out" || exit 0; cd "$REPO_DIR" \
         && multi_run_devin "$name" "$QUESTION" "$out" "$model"; finished "${SUFFIXES[$i]}" "$out" "$t0" "$name" ) & ;;
     *) multi_fail_backend "$out" "$name: unknown backend type '$type'"; rm -f "${out}.running" ;;
   esac

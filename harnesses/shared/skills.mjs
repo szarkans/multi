@@ -17,6 +17,16 @@ export function stripFrontmatter(text) {
   return text.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, "");
 }
 
+// The one frontmatter flag the adapters must honor: a skill that declares it
+// is a user command, not a tool the model may pick on its own.
+export function skillFlags(entry) {
+  const raw = readFileSync(skillPath(entry.skill), "utf8");
+  const fm = raw.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  return {
+    disableModelInvocation: /(^|\n)\s*disable-model-invocation:\s*["']?(?:true|yes|on)["']?\s*(\n|$)/i.test(fm ? fm[1] : ""),
+  };
+}
+
 // The body plus the one line that says where the skill lives: its first step
 // is `<dir of this SKILL.md>/../../scripts/probe.sh`, and a host that does not
 // echo the skill's path into the model's context would leave that step with no

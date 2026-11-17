@@ -209,8 +209,9 @@ branch, a re-run with a different focus — gets its own (`$RUN/review-2`,
 running, because launching over them deletes the answers they are writing.
 
 **Waiting.** A backend that has written nothing yet is not absent. Beside each
-answer file, `<file>.running` says `<pid of its runner> <start epoch> <timeout>`
-while the backend runs, and disappears when it is done; `$RUN/review.run` is
+answer file, `<file>.running` says `<pid of its runner> <start epoch> <timeout> <nonce>`
+while the backend runs (readers use the first three fields; the nonce tells an
+orphaned runner a new run owns the marker), and disappears when it is done; `$RUN/review.run` is
 the roster of the run. An empty `.txt` next to a live `.running` is a reviewer
 still writing — never report it as missing. Do not poll files by hand: block
 on them, and let a Bash call run up to its cap:

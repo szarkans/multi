@@ -136,6 +136,26 @@ multi_kill_tree() { # multi_kill_tree <pid>
 # can be quoting an issue or a PR description: the same chain the reviewers
 # themselves are warned about. Same guard shape as the `--diff must not start
 # with -` check next to it.
+# multi_valid_utf8 <string>: is this argv-safe UTF-8. The tool is resolved
+# once and cached: iconv first, then the same python3 the plugin already
+# requires for config.toml. With neither the check degrades to a pass —
+# a documented gap, the alternative is a fork per element to a binary that
+# does not exist.
+multi_valid_utf8() {
+  case "${_MULTI_UTF8_TOOL:-unset}" in
+    unset)
+      if command -v iconv >/dev/null 2>&1; then _MULTI_UTF8_TOOL=iconv
+      elif _MULTI_UTF8_PY="$(multi_python 2>/dev/null)"; then _MULTI_UTF8_TOOL=python
+      else _MULTI_UTF8_TOOL=none; fi ;;
+  esac
+  case "$_MULTI_UTF8_TOOL" in
+    iconv)  printf '%s' "$1" | iconv -f UTF-8 -t UTF-8 >/dev/null 2>&1 ;;
+    python) printf '%s' "$1" | "$_MULTI_UTF8_PY" -c 'import sys
+sys.stdin.buffer.read().decode("utf-8")' >/dev/null 2>&1 ;;
+    *)      return 0 ;;
+  esac
+}
+
 multi_check_paths() {
   case "$1" in
     *';'*|*'|'*|*'&'*|*'$'*|*'`'*|*'<'*|*'>'*|*'('*|*')'*|*'\'*|*"'"*|*'"'*)
@@ -148,6 +168,19 @@ multi_check_paths() {
   case "$1" in
     *"$nl"*) echo "--paths: refusing a newline in a path list" >&2; return 1 ;;
   esac
+  # git pathspec magic sits at the start of an element: :!x excludes, ^x
+  # negates, :/x anchors at the root, :(x) is already out via the paren rule.
+  # Each can silently drop the very path that was asked for. Consumers split
+  # on every IFS whitespace, so tabs are normalized before the element-start
+  # test — "src<TAB>:!docs" must not slip an exclude through.
+  case " ${1//[[:space:]]/ } " in
+    *" :"* | *" ^"*)
+      echo "--paths: refusing git pathspec magic in a path list: $1" >&2; return 1 ;;
+  esac
+  # core.quotePath=false lets raw >0x80 bytes through; a name that is not
+  # valid UTF-8 then lands in a `codex exec` argv element and kills the whole
+  # backend invocation ("invalid UTF-8 in arguments"). Withheld as unsafe.
+  multi_valid_utf8 "$1" || { echo "--paths: refusing a name that is not valid UTF-8" >&2; return 1; }
   return 0
 }
 
@@ -285,8 +318,13 @@ multi_untracked_note() { # multi_untracked_note [<pathspec words>]
   # Empty-array expansion under `set -u` aborts bash 3.2 outright, hence the
   # ${arr[@]+"${arr[@]}"} form rather than a bare "${arr[@]}".
   [ -z "$ps" ] || read -r -a arr <<<"$ps"
-  files="$( cd "$root" && git ls-files --others --exclude-standard -- ${arr[@]+"${arr[@]}"} 2>/dev/null )" \
+  files="$( cd "$root" && git -c core.quotePath=false ls-files --others --exclude-standard -- ${arr[@]+"${arr[@]}"} 2>/dev/null )" \
     || { printf '%s' "$blind"; return 0; }
+
+  # Resolve the UTF-8 checker once in THIS shell — multi_deny_rule below runs
+  # inside $( ) per file, and the children inherit the cached pick instead of
+  # re-probing iconv/python every line.
+  multi_valid_utf8 "" >/dev/null 2>&1 || :
 
   while IFS= read -r f; do
     [ -n "$f" ] || continue
@@ -750,6 +788,10 @@ multi_fail_backend() { # multi_fail_backend <out> <reason> [log]
     grep -q '^[^{]*\(Read-only file system\|FileSystem\.open\)' "$log"; then
     reason="$reason — the CLI could not write under HOME (Read-only file system: launched from a sandboxed shell?)"
   fi
+  # A partial answer already in $out moves aside instead of being destroyed:
+  # the reason lands in $out so readers see the failure first, and the partial
+  # stays recoverable next to it.
+  [ ! -s "$out" ] || cp "$out" "${out}.partial"
   printf '%s\n' "$reason" > "$out"
   printf '%s\n' "$reason" > "${out}.dead"
   rm -f "${out}.dead.log"
@@ -999,6 +1041,10 @@ PY
     fi
     hint="$hint$(multi_headless_banner_note "$log")"
     multi_fail_backend "$out" "$name: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s — model=$model. $hint" "$log"
+  elif [ "$rc" -ge 128 ]; then
+    # Signal death from outside the run's own watchdogs: the stream in $out
+    # stopped mid-answer, so it must not count as one.
+    multi_fail_backend "$out" "$name: KILLED — model=$model exit=$rc; its partial output, if any, is kept in ${out}.partial${trf:+, transcript: $trf}$(multi_headless_banner_note "$log")" "$log"
   elif [ ! -s "$out" ]; then
     local tr2; tr2="$(multi_child_transcript "$sid")"
     multi_fail_backend "$out" "$name: NO OUTPUT — model=$model exit=$rc (stderr in $log)${tr2:+, transcript in $tr2}$(multi_headless_banner_note "$log")" "$log"

@@ -28,5 +28,10 @@
     "command": "multi-setup",
     "skill": "setup",
     "description": "Connect reviewers and pick models."
+  },
+  {
+    "command": "multi-rune",
+    "skill": "rune",
+    "description": "RUNE"
   }
 ]
