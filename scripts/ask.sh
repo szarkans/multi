@@ -653,7 +653,7 @@ for i in "${!NAMES[@]}"; do
   # and autodetection. Pinned models never gain a fallback here.
   case "$type" in
     codex) model="${model:-${CODEX_MODEL:-$(first_of "$chain")}}"; effective_chain="$model" ;;
-    gemini|agy|devin) model="${model:-$(first_of "$chain")}"; effective_chain="$model" ;;
+    claude|gemini|agy|devin) model="${model:-$(first_of "$chain")}"; effective_chain="$model" ;;
     claude-headless) effective_chain="${model:-$chain}" ;;
     opencode|kilo)
       # Pinned: exactly that model. --model/--fallback: this run's chain.
@@ -680,7 +680,7 @@ for i in "${!NAMES[@]}"; do
     case "$type" in
       opencode|kilo) oc_model="$(first_of "$MULTI_SAFE_CHAIN")"; oc_fallback="$(rest_csv "$MULTI_SAFE_CHAIN")" ;;
       claude-headless) chain="$MULTI_SAFE_CHAIN"; [ -z "$model" ] || model="$(first_of "$chain")" ;;
-      codex|gemini|agy|devin) model="$MULTI_SAFE_CHAIN" ;;
+      codex|claude|gemini|agy|devin) model="$MULTI_SAFE_CHAIN" ;;
     esac
   fi
   case "$type" in
@@ -690,9 +690,9 @@ for i in "${!NAMES[@]}"; do
     opencode|kilo)
       ( MULTI_BACKEND_TIMEOUT="${TIMEOUTS[$i]}"; MULTI_OPENCODE_STALL="${STALLS[$i]}"; started "$out" || exit 0; cd "$REPO_DIR" \
         && run_opencode_one "$out" "$oc_model" "$oc_fallback" "$name" "$type"; finished "${SUFFIXES[$i]}" "$out" "$t0" "$name" ) & ;;
-    claude-headless)
+    claude|claude-headless)
       ( MULTI_BACKEND_TIMEOUT="${TIMEOUTS[$i]}"; MULTI_BACKEND_STALL="${STALLS[$i]}"; started "$out" || exit 0; cd "$REPO_DIR" \
-        && multi_run_headless "$name" "$QUESTION" "$out" "$model" "$chain" "${URLS[$i]}" "${KEYENVS[$i]}"; finished "${SUFFIXES[$i]}" "$out" "$t0" "$name" ) & ;;
+        && multi_run_headless "$name" "$QUESTION" "$out" "$model" "$chain" "${URLS[$i]}" "${KEYENVS[$i]}" "$type"; finished "${SUFFIXES[$i]}" "$out" "$t0" "$name" ) & ;;
     gemini)
       ( MULTI_BACKEND_TIMEOUT="${TIMEOUTS[$i]}"; started "$out" || exit 0; cd "$REPO_DIR" \
         && multi_run_gemini "$name" "$QUESTION" "$out" "$model" "${KEYENVS[$i]}"; finished "${SUFFIXES[$i]}" "$out" "$t0" "$name" ) & ;;

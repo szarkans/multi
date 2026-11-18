@@ -98,7 +98,9 @@ while IFS="$(printf '\t')" read -r name type chain url keyenv timeout stall avoi
   [ -n "$closed" ] || { say "config: BROKEN — unexpected backends line shape"; break; }
   [ "$closed" = "-" ] || say "$name: CLOSED NOW — $closed"
   [ "$chain" != "-" ] || chain=""
-  eval "key=\${$keyenv:-}"
+  # "-" in the env column means the type reads no key; eval on it would
+  # expand ${-:-} — the shell option flags — into a phantom non-empty key.
+  if [ "$keyenv" = "-" ]; then key=""; else eval "key=\${$keyenv:-}"; fi
   configured_models=""
   case "$type" in
     codex)
@@ -157,6 +159,15 @@ $(cat "$MULTI_HOME/$type-models.cache" 2>/dev/null)"
         say "opencode-paid-channel: available (opencode-go/* listed)"
       fi
       ;;
+    claude)
+      # The user's own subscription login: there is no cheap offline proof it
+      # works — `claude -p` either answers or fails at run time — so this only
+      # reports the CLI the run would start through.
+      if command -v claude >/dev/null 2>&1; then
+        say "$name: OK — $(claude --version 2>/dev/null | head -1), your subscription login${chain:+ — $chain}"
+      else
+        say "$name: MISSING (claude CLI)"
+      fi ;;
     claude-headless)
       # A key here is the widest single upgrade available: any Anthropic-
       # compatible endpoint can be driven by Claude Code itself.

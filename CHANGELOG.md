@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.25.0 — 2026-11-18
+
+- Added: a `claude` backend type — `claude -p` on the user's own subscription login, no `base_url`, no `api_key_env` (config refuses both; they belong to `claude-headless`). `models = []` runs the account's default model, one entry pins it through `ANTHROPIC_MODEL`, more than one is refused — the login runs one model, there is no chain to walk. The account resolves its own model aliases, so the five headless env pins stay headless-only where they stop a foreign endpoint from billing subagent calls. Isolation is unchanged: `--setting-sources user`, `--strict-mcp-config` and an empty MCP config keep the reviewed repo's `.claude` out of the run. Headless defaults apply (timeout 1800, stall 600), and the stall watcher plus journal now scan the real `~/.claude/projects` beside the isolated child-home, so a login-mode run reports stall/timeout truthfully and its token usage reaches the journal. The training verdict is `unknown` — the account's privacy setting is not visible to the plugin, same as `codex` on a ChatGPT plan.
+
 ## 1.24.0 — 2026-11-17
 
 - Added: a run journal. Every `ask.sh` run is now collected into `$MULTI_HOME/journal/` — permanent storage that survives the seven-day `/tmp/multi` cleanup. `index.jsonl` holds one row per (run_dir, prefix): the session id and slug, the exact prompt sent, and one entry per backend — the model that actually answered after fallbacks, status and failure reason, elapsed seconds, token usage (input/output/reasoning/cache read/write where the provider reports it), tool-call count, training verdicts, and findings parsed out of the answer. Beside the index a `<run>__<prefix>/` archive directory keeps the answers, logs, raw event streams, prompt, diff and transcripts; snapshots and `.running` markers are not copied — reproducible, transient or huge. Collection is best-effort and idempotent: a journal failure never fails a run, and re-collecting replaces the row in place.

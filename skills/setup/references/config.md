@@ -34,7 +34,7 @@ avoid = ["Mon-Fri 01:00-04:00 UTC", "Mon-Fri 06:00-10:00 UTC"]   # sits out thes
 [backends.codex]
 type = "codex"
 models = []                       # empty = the CLI's own default
-timeout = 600                     # seconds; default 300 (claude-headless and devin: 1800, a ceiling)
+timeout = 600                     # seconds; default 300 (claude, claude-headless and devin: 1800, a ceiling)
 
 [backends.opencode]
 type = "opencode"
@@ -81,11 +81,14 @@ Rules that matter when editing on a user's behalf:
   fallbacks included, worst verdict counts; skills name yes/unknown destinations on one report line. `<default>`
   labels an unpinned CLI default. No second family after filtering means the
   review stops; explain `trains = false` or offer the setup skill.
-- Seven types only: `claude-headless`, `codex`, `opencode`, `kilo`, `gemini`, `agy`,
+- Eight types only: `claude`, `claude-headless`, `codex`, `opencode`, `kilo`, `gemini`, `agy`,
   `devin`. The same
   type may appear under several names — that is how a second endpoint is added.
+- `claude` runs `claude -p` on the user's own subscription login: no `base_url`,
+  no `api_key_env` (both refused), at most one model or an empty list for the
+  account default. It spends the plan's usage quota.
 - `models` is an ordered fallback chain for `opencode`, `kilo` and `claude-headless`.
-  `claude-headless` needs at least one; `codex`, `gemini`, `agy` and `devin` take at most one;
+  `claude-headless` needs at least one; `claude`, `codex`, `gemini`, `agy` and `devin` take at most one;
   an empty list is the CLI default, or for opencode a free model picked from
   `opencode models` (`kilo models` for kilo; its `kilo-auto/*` and
   `openrouter/*` routers are never auto-picked).

@@ -842,7 +842,10 @@ multi_uuid() {
 multi_child_transcript() {
   [ -n "${1:-}" ] || return 0
   local d
-  for d in "$MULTI_CHILD_HOME"/projects/*/; do
+  # A claude-headless child writes under the isolated MULTI_CHILD_HOME; a
+  # login-mode "claude" backend writes to the user's real ~/.claude — the sid
+  # is a uuid either way, so scanning both roots can never confuse the two.
+  for d in "$MULTI_CHILD_HOME"/projects/*/ "${MULTI_LOGIN_CLAUDE_HOME:-$HOME/.claude}"/projects/*/; do
     if [ -f "$d$1.jsonl" ]; then printf '%s' "$d$1.jsonl"; return 0; fi
   done
   return 0
@@ -862,11 +865,18 @@ multi_child_turns() {
   echo "$n"
 }
 
-# multi_run_headless <name> <prompt> <out> <pinned-model> <chain> <base_url> <key_env>
+# multi_run_headless <name> <prompt> <out> <pinned-model> <chain> <base_url> <key_env> [type]
 # Claude Code itself against an Anthropic-compatible endpoint: same agent loop,
 # different weights. <name> is the backend's config name (openrouter, zcode,
 # 9router...) and prefixes every status line. A pinned model runs exactly; an
 # empty pin walks <chain> (space-separated) for the first pool that is up.
+# <type> "claude" (anything else defaults to claude-headless behaviour) is
+# login mode: no key, no pool probe, no child HOME — the user's own `claude`
+# login against api.anthropic.com, so their subscription runs it. Their user
+# settings load (--setting-sources user still walls off the reviewed repo's
+# .claude), a pinned model goes through ANTHROPIC_MODEL only — the real
+# account resolves its own aliases, and pinning them to a foreign model is
+# exactly the billing trap the headless pins below exist to stop.
 # Claude Code prints a paragraph for every model name it does not know --
 # "isn't described by this version's model catalog ... auto-compact keeps this
 # session within 200k tokens". It is a context-window notice, and on a
@@ -880,19 +890,23 @@ multi_headless_banner_note() { # multi_headless_banner_note <log> -> "" or a sen
   return 0
 }
 multi_run_headless() {
-  local name="$1" prompt="$2" out="$3" model="${4:-}" chain="${5:-}" base_url="$6" key_env="$7" rc=0
+  local name="$1" prompt="$2" out="$3" model="${4:-}" chain="${5:-}" base_url="$6" key_env="$7" btype="${8:-claude-headless}" rc=0
+  local login=0; [ "$btype" = claude ] && login=1
   local log="${out}.log" probe_log="${out}.probe.log" key
   # A stale marker from a previous run with the same prefix must not condemn
   # this run: the sidecar describes one invocation, not the file forever.
   rm -f "${out}.dead" "${out}.dead.log" "$log" "$probe_log" "${probe_log}.tail"
-  eval "key=\${$key_env:-}"
-  if [ -z "$key" ]; then
-    multi_fail_backend "$out" "$name: NO KEY — ask the user to run scripts/setup.sh set $key_env in their own terminal (it prompts for the key)"; return 0
+  if [ "$login" -eq 0 ]; then
+    eval "key=\${$key_env:-}"
+    if [ -z "$key" ]; then
+      multi_fail_backend "$out" "$name: NO KEY — ask the user to run scripts/setup.sh set $key_env in their own terminal (it prompts for the key)"; return 0
+    fi
   fi
   command -v claude >/dev/null 2>&1 || { multi_fail_backend "$out" "$name: claude CLI MISSING"; return 0; }
   # No model pinned by the caller: pick one whose pool is actually up.
+  # Login mode has no endpoint to probe — an empty pin means the account default.
   local picked skipped=""
-  if [ -z "$model" ]; then
+  if [ -z "$model" ] && [ "$login" -eq 0 ]; then
     # shellcheck disable=SC2086
     picked="$(MULTI_POOL_PROBE_LOG="$probe_log" multi_pick_live_model "$base_url" "$key" $chain)" || {
       multi_fail_backend "$out" "$name: ALL POOLS BUSY — tried ${picked#?} against $base_url. A 429 means either the pool is busy or this account's own quota is gone — check both; a 404 on a custom endpoint means it does not serve these model names — list models it hosts under [backends.$name] in config.toml; an HTTP 000 means the check itself timed out, the pool is slow, not necessarily dead. Retry in a minute or change the models list."
@@ -910,7 +924,7 @@ multi_run_headless() {
   # Look up the model AFTER pool selection. The configured chain can contain
   # models with different effort, or no entry at all.
   local effort extra_body="" py
-  effort="$(multi_effort "$name" "$model" claude-headless "$out")" || { multi_keep_pool_log "$out" "$probe_log"; return 2; }
+  effort="$(multi_effort "$name" "$model" "$btype" "$out")" || { multi_keep_pool_log "$out" "$probe_log"; return 2; }
   if [ -n "$effort" ]; then
     py="$(multi_python)" || { multi_fail_backend "$out" "$name: python3 required for effort"; return 2; }
     # Anthropic Messages syntax, also normalized by OpenRouter/DeepSeek.
@@ -953,10 +967,38 @@ PY
   # The journal finds the child's usage transcript through this id; write it
   # even when empty — an absent sid means "no transcript", not "forgotten".
   printf '%s\n' "$sid" > "${out}.sid"
-  multi_record_training "$out" claude-headless "$model" "$base_url"
+  multi_record_training "$out" "$btype" "$model" "$base_url"
   (
   # No effort entry: leave the inherited environment and CLI argv untouched.
   [ -z "$effort" ] || export CLAUDE_CODE_EXTRA_BODY="$extra_body"
+  if [ "$login" -eq 1 ]; then
+    # The user's own login — and ONLY that. Scrub the endpoint/key/model env
+    # a caller exports for claude-headless work: Claude Code prefers an
+    # exported ANTHROPIC_API_KEY over the stored OAuth login, so an inherited
+    # one would silently bill the API key (and ship the diff to a foreign
+    # endpoint) instead of the subscription. Pin CLAUDE_CONFIG_DIR to the same
+    # root the transcript watcher scans below: an inherited custom dir would
+    # move the transcript where nobody looks, and a healthy run dies STALLED.
+    unset ANTHROPIC_BASE_URL ANTHROPIC_AUTH_TOKEN ANTHROPIC_API_KEY \
+          ANTHROPIC_MODEL ANTHROPIC_SMALL_FAST_MODEL \
+          ANTHROPIC_DEFAULT_HAIKU_MODEL ANTHROPIC_DEFAULT_SONNET_MODEL \
+          ANTHROPIC_DEFAULT_OPUS_MODEL CLAUDE_CODE_EXTRA_BODY \
+          CLAUDE_CODE_USE_BEDROCK CLAUDE_CODE_USE_VERTEX
+    export CLAUDE_CONFIG_DIR="${MULTI_LOGIN_CLAUDE_HOME:-$HOME/.claude}"
+    [ -z "$model" ] || export ANTHROPIC_MODEL="$model"
+    # Read-only reviewer like every other backend: the login NEEDS
+    # --setting-sources user (the project .claude stays walled off), and the
+    # user's real settings.json comes with it — a Bash/Write allow or
+    # bypassPermissions in there would arm a prompt-injected review. Deny
+    # beats allow at every level, so this list wins over their grants.
+    multi_timeout "$MULTI_BACKEND_TIMEOUT" claude -p "$prompt" \
+      --strict-mcp-config --mcp-config '{"mcpServers":{}}' \
+      --disallowedTools "Bash Edit Write MultiEdit NotebookEdit WebFetch WebSearch Skill" \
+      ${MULTI_READ_DIR:+--add-dir "$MULTI_READ_DIR"} \
+      --setting-sources user \
+      ${sid:+--session-id "$sid"} \
+      > "$out" 2>> "$log"
+  else
   CLAUDE_CONFIG_DIR="$MULTI_CHILD_HOME" \
   ANTHROPIC_BASE_URL="$base_url" \
   ANTHROPIC_AUTH_TOKEN="$key" \
@@ -971,6 +1013,7 @@ PY
       --setting-sources user \
       ${sid:+--session-id "$sid"} \
       > "$out" 2>> "$log"
+  fi
   ) &
   # Pulse, not clock: the transcript gets a line per turn and per tool call,
   # so a run whose transcript keeps growing is alive and is left alone up to
@@ -998,8 +1041,16 @@ PY
   fi
   wait "$pid" 2>/dev/null; rc=$?
   if [ "$stalled" -eq 1 ]; then
-    # Named for what was observed -- no growth -- not for a guessed cause.
-    multi_fail_backend "$out" "$name: STALLED — model=$model, nothing new in its transcript for ${stall}s, killed after $(multi_child_turns "$trf") model turns${trf:+ (transcript: $trf)}. No turns at all fits a rejected key or a pool gone 429 (check scripts/setup.sh status); turns and then silence fits a hung call — read the transcript tail.$(multi_headless_banner_note "$log")" "$log"
+    # Named for what was observed -- no growth -- not for a guessed cause. The
+    # guess offered depends on the mode: a keyless login backend has neither
+    # a key to reject nor a pool to 429 — its zero-turn causes are auth/quota.
+    local cause_note
+    if [ "$login" -eq 1 ]; then
+      cause_note="No turns at all fits a signed-out login or a plan window that ran out — check that a plain claude -p call works; turns and then silence fits a hung call — read the transcript tail."
+    else
+      cause_note="No turns at all fits a rejected key or a pool gone 429 (check scripts/setup.sh status); turns and then silence fits a hung call — read the transcript tail."
+    fi
+    multi_fail_backend "$out" "$name: STALLED — model=${model:-<default>}, nothing new in its transcript for ${stall}s, killed after $(multi_child_turns "$trf") model turns${trf:+ (transcript: $trf)}. $cause_note$(multi_headless_banner_note "$log")" "$log"
     multi_keep_pool_log "$out" "$probe_log"
     return 124
   fi
@@ -1036,23 +1087,31 @@ PY
     # whole change exists to stop -- being wrong LOUDLY is worse than the old
     # message, not better.
     if [ -z "$tr" ]; then
-      hint="No transcript was written at all, so there is nothing here to say what it did; check the key with scripts/setup.sh status."
+      if [ "$login" -eq 1 ]; then
+        hint="No transcript was written at all — a signed-out login or a plan window that ran out produces exactly this; check that a plain claude -p call works."
+      else
+        hint="No transcript was written at all, so there is nothing here to say what it did; check the key with scripts/setup.sh status."
+      fi
     elif [ "$turns" -gt 2 ]; then
       hint="It made $turns model turns before the kill, so it was reaching the endpoint and the budget is the likely problem. Give it more time (ask.sh --timeout <seconds>; the review skill passes MULTI_REVIEW_TIMEOUT there) and re-run. If those turns are clustered at the very start of $tr, it stalled after them instead — read it and see."
     else
-      hint="Only $turns model turns recorded in $tr. Read it before concluding anything: no turns at all fits a rejected key, a pool that went 429 after the probe passed, AND a transcript format this code no longer recognises; one or two turns also fits a single slow turn inside a short budget. Check scripts/setup.sh status too."
+      if [ "$login" -eq 1 ]; then
+        hint="Only $turns model turns recorded in $tr. Read it before concluding anything: no turns at all fits a signed-out login or an exhausted plan window, AND a transcript format this code no longer recognises; one or two turns also fits a single slow turn inside a short budget."
+      else
+        hint="Only $turns model turns recorded in $tr. Read it before concluding anything: no turns at all fits a rejected key, a pool that went 429 after the probe passed, AND a transcript format this code no longer recognises; one or two turns also fits a single slow turn inside a short budget. Check scripts/setup.sh status too."
+      fi
     fi
     hint="$hint$(multi_headless_banner_note "$log")"
-    multi_fail_backend "$out" "$name: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s — model=$model. $hint" "$log"
+    multi_fail_backend "$out" "$name: TIMEOUT after ${MULTI_BACKEND_TIMEOUT}s — model=${model:-<default>}. $hint" "$log"
   elif [ "$rc" -ge 128 ]; then
     # Signal death from outside the run's own watchdogs: the stream in $out
     # stopped mid-answer, so it must not count as one.
-    multi_fail_backend "$out" "$name: KILLED — model=$model exit=$rc; its partial output, if any, is kept in ${out}.partial${trf:+, transcript: $trf}$(multi_headless_banner_note "$log")" "$log"
+    multi_fail_backend "$out" "$name: KILLED — model=${model:-<default>} exit=$rc; its partial output, if any, is kept in ${out}.partial${trf:+, transcript: $trf}$(multi_headless_banner_note "$log")" "$log"
   elif [ ! -s "$out" ]; then
     local tr2; tr2="$(multi_child_transcript "$sid")"
-    multi_fail_backend "$out" "$name: NO OUTPUT — model=$model exit=$rc (stderr in $log)${tr2:+, transcript in $tr2}$(multi_headless_banner_note "$log")" "$log"
+    multi_fail_backend "$out" "$name: NO OUTPUT — model=${model:-<default>} exit=$rc (stderr in $log)${tr2:+, transcript in $tr2}$(multi_headless_banner_note "$log")" "$log"
   else
-    echo "[multi] answered by $name model $model" >> "$out"
+    echo "[multi] answered by $name model ${model:-<default>}" >> "$out"
     [ -z "$skipped" ] || echo "[multi] $name pools skipped before it: $skipped" >> "$out"
   fi
   multi_keep_pool_log "$out" "$probe_log"

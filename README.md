@@ -116,8 +116,8 @@ there are two files, by design:
 
 | key | meaning |
 | --- | --- |
-| `type` | `codex`, `opencode`, `kilo`, `claude-headless`, `gemini`, `agy` or `devin` |
-| `models` | ordered fallback list; empty or omitted uses the backend's default; Codex, Gemini, agy and devin allow at most one |
+| `type` | `claude`, `codex`, `opencode`, `kilo`, `claude-headless`, `gemini`, `agy` or `devin` |
+| `models` | ordered fallback list; empty or omitted uses the backend's default; claude, Codex, Gemini, agy and devin allow at most one |
 | `base_url` | Anthropic-compatible endpoint for `claude-headless` |
 | `api_key_env` | environment variable containing this backend's key; defaults to `<BACKEND_NAME>_API_KEY` |
 | `timeout` | seconds allowed for the backend to complete |

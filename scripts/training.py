@@ -16,6 +16,10 @@ RULES = (
     ("codex", "*", "*", "unknown"),
     # https://www.anthropic.com/legal/commercial-terms (checked 2026-10-04)
     ("claude-headless", "api.anthropic.com", "*", "no"),
+    # type "claude" = the user's own subscription login. Whether consumer
+    # traffic trains is the account's privacy setting on claude.ai — invisible
+    # from here, same situation as the codex/ChatGPT row above.
+    ("claude", "*", "*", "unknown"),
     # OpenRouter :free models train; paid depends on the account's data_collection setting.
     # https://openrouter.ai/docs/guides/routing/provider-selection (checked 2026-10-04)
     ("claude-headless", "openrouter.ai", "*:free", "yes"),

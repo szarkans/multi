@@ -40,7 +40,9 @@ cmd_status() {
     [ -n "$name" ] || continue
     [ -n "$closed" ] || { echo "config.py backends: unexpected line shape" >&2; break; }
     [ "$chain" != "-" ] || chain=""
-    eval "key=\${$keyenv:-}"
+    # "-" in the env column means the type reads no key; eval on it would
+    # expand ${-:-} — the shell option flags — into a phantom non-empty key.
+    if [ "$keyenv" = "-" ]; then key=""; else eval "key=\${$keyenv:-}"; fi
     printf '%-12s' "$name:"
     # The schedule first, before any network check: a backend that would sit
     # this hour out is what the user came here to see, and the key check
@@ -109,6 +111,7 @@ cmd_status() {
                 else
                   echo "NOT SIGNED IN (run: devin auth login)"
                 fi ;;
+      claude)   command -v claude >/dev/null 2>&1 && echo "claude CLI present — your subscription login (not verified offline)${chain:+ — $chain}" || echo "claude CLI MISSING" ;;
       codex)    command -v codex >/dev/null 2>&1 && codex --version 2>/dev/null | head -1 || echo "CLI MISSING" ;;
       opencode|kilo) command -v "$type" >/dev/null 2>&1 && echo "CLI present${chain:+ — $chain}" || echo "CLI MISSING" ;;
     esac

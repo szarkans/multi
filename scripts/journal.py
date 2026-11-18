@@ -55,6 +55,17 @@ def journal_dir():
     return os.path.join(home, "journal")
 
 
+def transcript_bases():
+    # claude-headless children write under the isolated child-home; a
+    # login-mode "claude" backend writes under the CLAUDE_CONFIG_DIR the
+    # runner pins it to — MULTI_LOGIN_CLAUDE_HOME, default ~/.claude. Honor
+    # the same override here, or the tokens never reach the journal.
+    yield os.path.join(child_home(), "projects")
+    yield os.path.join(
+        os.environ.get("MULTI_LOGIN_CLAUDE_HOME")
+        or os.path.join(os.path.expanduser("~"), ".claude"), "projects")
+
+
 def child_home():
     h = os.environ.get("MULTI_CHILD_HOME")
     if h:
@@ -183,16 +194,18 @@ def tokens_headless(out):
     sid = read(out + ".sid").strip()
     if not sid:
         return None
-    base = os.path.join(child_home(), "projects")
-    try:
-        dirs = os.listdir(base)
-    except OSError:
-        return None
     path = None
-    for d in dirs:
-        p = os.path.join(base, d, sid + ".jsonl")
-        if os.path.isfile(p):
-            path = p
+    for base in transcript_bases():
+        try:
+            dirs = os.listdir(base)
+        except OSError:
+            continue
+        for d in dirs:
+            p = os.path.join(base, d, sid + ".jsonl")
+            if os.path.isfile(p):
+                path = p
+                break
+        if path:
             break
     if not path:
         return None
@@ -322,16 +335,20 @@ def archive(run_dir, prefix, dest):
         sid = read(os.path.join(dest, name)).strip()
         if not sid:
             continue
-        base = os.path.join(child_home(), "projects")
-        try:
-            dirs = os.listdir(base)
-        except OSError:
-            continue
-        for d in dirs:
-            p = os.path.join(base, d, sid + ".jsonl")
-            if os.path.isfile(p):
-                shutil.copy2(p, os.path.join(dest, name[:-4] + ".transcript.jsonl"))
-                copied.append(name[:-4] + ".transcript.jsonl")
+        for base in transcript_bases():
+            try:
+                dirs = os.listdir(base)
+            except OSError:
+                continue
+            found = False
+            for d in dirs:
+                p = os.path.join(base, d, sid + ".jsonl")
+                if os.path.isfile(p):
+                    shutil.copy2(p, os.path.join(dest, name[:-4] + ".transcript.jsonl"))
+                    copied.append(name[:-4] + ".transcript.jsonl")
+                    found = True
+                    break
+            if found:
                 break
     return sorted(copied)
 

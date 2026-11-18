@@ -269,6 +269,8 @@ cat > "$TMP/bin/claude" <<'STUB'
 #!/usr/bin/env bash
 echo "PWD=$(pwd -P)"
 echo "BASE=${ANTHROPIC_BASE_URL:-}"
+echo "TOKEN=${ANTHROPIC_AUTH_TOKEN:-}"
+echo "MODEL=${ANTHROPIC_MODEL:-}"
 STUB
 cat > "$TMP/bin/gemini" <<'STUB'
 #!/usr/bin/env bash
@@ -284,20 +286,51 @@ type = "codex"
 type = "claude-headless"
 base_url = "https://example.test/api//"
 models = ["free/one"]
+[backends.myclaude]
+type = "claude"
+models = []
+[backends.pinclaude]
+type = "claude"
+models = ["claude-opus-4-7"]
 [backends.gemini]
 type = "gemini"
 [profiles]
 p = ["codex"]
 EOF
+# The endpoint/key env is deliberately dirty here: a user who exports
+# ANTHROPIC_* for claude-headless work must not get the "subscription" run
+# billed to it. If the login branch ever stops scrubbing, this run goes red.
 OPENROUTER_API_KEY=test-key GEMINI_API_KEY=test-key \
+ANTHROPIC_BASE_URL=https://evil.example/api ANTHROPIC_AUTH_TOKEN=leak-me \
+ANTHROPIC_API_KEY=leak-me-too ANTHROPIC_MODEL=wrong-model \
+ANTHROPIC_DEFAULT_OPUS_MODEL=wrong-too CLAUDE_CODE_EXTRA_BODY='{"x":1}' \
+CLAUDE_CONFIG_DIR="$TMP/elsewhere" \
   "$HERE/ask.sh" --question q --out-prefix "$TMP/repo-cd" \
-  --backend "codex,openrouter:pinned/model,gemini" --repo "$TMP/repo" >/dev/null 2>&1
+  --backend "codex,openrouter:pinned/model,myclaude,pinclaude,gemini" --repo "$TMP/repo" >/dev/null 2>&1
 cd_fail=0
-for b in codex openrouter gemini; do
+for b in codex openrouter myclaude pinclaude gemini; do
   grep -qF "PWD=$repo_phys" "$TMP/repo-cd-$b.txt" \
     || { echo "FAIL $b did not cd into --repo"; cd_fail=1; }
 done
-[ $cd_fail -eq 0 ] && echo "ok   --repo sets cwd for codex, openrouter and gemini" || fail=1
+[ $cd_fail -eq 0 ] && echo "ok   --repo sets cwd for codex, openrouter, claude and gemini" || fail=1
+
+# type "claude" is login mode: no key to fail on, no endpoint env leaks in.
+# The account resolves its own aliases — only a configured pin goes through
+# ANTHROPIC_MODEL, never BASE_URL/AUTH_TOKEN (a leaked token would bill the
+# user's API key for what the subscription should cover).
+if grep -qxF "BASE=" "$TMP/repo-cd-myclaude.txt" \
+  && grep -qxF "TOKEN=" "$TMP/repo-cd-myclaude.txt" \
+  && grep -qxF "MODEL=" "$TMP/repo-cd-myclaude.txt" \
+  && ! grep -q "NO KEY" "$TMP/repo-cd-myclaude.txt"; then
+  echo "ok   type claude runs the login: no key required, no ANTHROPIC_* env"
+else
+  echo "FAIL login-mode claude leaked endpoint env or demanded a key"; fail=1
+fi
+if grep -qxF "MODEL=claude-opus-4-7" "$TMP/repo-cd-pinclaude.txt"; then
+  echo "ok   a configured model reaches login-mode claude as ANTHROPIC_MODEL"
+else
+  echo "FAIL configured model did not reach login-mode claude"; fail=1
+fi
 
 # A custom endpoint must reach the harness: the openrouter backend is "any
 # Anthropic-compatible endpoint + key", not openrouter.ai hardwired. The value
@@ -335,7 +368,10 @@ fi
 # the function body via awk, then count with a herestring (no grep -q in a
 # pipe under pipefail).
 or_fn="$(awk '/^multi_run_headless\(\) \{/,/^\}/' "$HERE/providers.sh")"
-or_pins="$(grep -c '="$model"' <<<"$or_fn")"
+# Count only the env-prefix pins ("ANTHROPIC_X=\"$model\" \" at line start);
+# the login-mode branch has a legitimate `export ANTHROPIC_MODEL="$model"`
+# that is a plain pin, not an alias override.
+or_pins="$(grep -cE '^[[:space:]]*ANTHROPIC_[A-Z_]*="\$model"' <<<"$or_fn")"
 if [ "$or_pins" -eq 5 ] \
   && grep -q 'ANTHROPIC_MODEL="$model"' <<<"$or_fn" \
   && grep -q 'ANTHROPIC_SMALL_FAST_MODEL="$model"' <<<"$or_fn" \

@@ -238,6 +238,24 @@ type="codex"
 api_key_env="$(touch /tmp/pwned)"
 [profiles]
 p=["x"]' "must be a variable name"
+refuse "a chain on claude (the login runs one model)" 'default_profile="p"
+[backends.x]
+type="claude"
+models=["a","b"]
+[profiles]
+p=["x"]' "at most one model"
+refuse "base_url on claude (the login always hits api.anthropic.com)" 'default_profile="p"
+[backends.x]
+type="claude"
+base_url="https://h"
+[profiles]
+p=["x"]' "does not apply"
+refuse "api_key_env on claude (the login IS the credential)" 'default_profile="p"
+[backends.x]
+type="claude"
+api_key_env="X_KEY"
+[profiles]
+p=["x"]' "does not apply"
 refuse "broken TOML" 'default_profile = "p
 [backends.x]' "not valid TOML"
 
@@ -252,6 +270,25 @@ p=["x"]' > "$MULTI_HOME/config.toml"
 "$py" "$CFG" check >/dev/null 2>&1; say "http://localhost is allowed" "$?" "0"
 mkdir -p "$TMP/dir.toml"
 MULTI_CONFIG="$TMP/dir.toml" "$py" "$CFG" check >/dev/null 2>"$TMP/err"; say "an unreadable path is a config error, not a traceback" "$?:$(grep -c 'cannot read' "$TMP/err")" "2:1"
+
+echo "== type claude: the user's own login, headless defaults, no key env =="
+cat > "$MULTI_HOME/config.toml" <<'EOF'
+default_profile = "p"
+[backends.claude]
+type = "claude"
+models = []
+stall = 45
+[backends.pin]
+type = "claude"
+models = ["claude-opus-4-7"]
+[profiles]
+p = ["claude", "pin"]
+EOF
+say "claude resolves with an empty model field" "$(resolve --backend claude | cut -f3,4)" $'claude\t-'
+say "claude gets headless timeout, keeps a configured stall" "$(resolve --backend claude | cut -f8,9 | tr '\t' ' ')" "1800 45"
+say "claude emits no base_url and no key env" "$(resolve --backend claude | cut -f6,7 | tr '\t' ' ')" "- -"
+say "a configured claude model is the chain" "$(resolve --backend pin | cut -f5)" "claude-opus-4-7"
+say "a backend:model pin still works on claude" "$(resolve --backend 'claude:claude-sonnet-5-2' | cut -f4)" "claude-sonnet-5-2"
 
 echo "== avoid: windows a backend sits out, evaluated once at launch (UTC only) =="
 cat > "$MULTI_HOME/config.toml" <<'EOF'
@@ -338,7 +375,7 @@ printf '%s\n' 'default_profile="p"' '[backends.x]' 'type="codex"' 'avoid=["Mon-F
 
 echo "== the repo's example config is valid and exercises every type =="
 MULTI_CONFIG="$TREE/config.example.toml" "$py" "$CFG" check >/dev/null 2>"$TMP/err"; say "config.example.toml validates" "$?:$(cat "$TMP/err")" "0:"
-say "every type appears in it" "$(MULTI_CONFIG="$TREE/config.example.toml" "$py" "$CFG" backends | cut -f2 | sort -u | tr '\n' ' ')" "agy claude-headless codex devin gemini kilo opencode "
+say "every type appears in it" "$(MULTI_CONFIG="$TREE/config.example.toml" "$py" "$CFG" backends | cut -f2 | sort -u | tr '\n' ' ')" "agy claude claude-headless codex devin gemini kilo opencode "
 say "every key name in providers.example.env is read by some backend" "$(comm -23 <(grep -o '^export [A-Z_]*' "$TREE/providers.example.env" | sed 's/export //' | sort) <(MULTI_CONFIG="$TREE/config.example.toml" "$py" "$CFG" backends | cut -f5 | sort -u) | tr '\n' ' ')" ""
 
 echo "== the vendored parser is the same parser =="

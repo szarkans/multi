@@ -15,7 +15,7 @@ verbose_prompt = false              # true: skills show each full prompt before 
 [backends.codex]                     # type "codex": the Codex CLI, read-only sandbox
 type = "codex"
 models = []                          # empty = the CLI's default; at most one model here
-timeout = 600                        # seconds for one run; default 300 (claude-headless and devin: 1800, a ceiling)
+timeout = 600                        # seconds for one run; default 300 (claude, claude-headless and devin: 1800, a ceiling)
 # trains = false                    # e.g. ChatGPT with training off; true = may train, on any backend
 
 [backends.opencode]                  # type "opencode": OpenCode CLI, plugin's read-only agent
@@ -34,6 +34,14 @@ models = ["opencode-go/deepseek-v4.1-flash", "opencode-go/qwen3.8-flash"]   # fi
 [backends.opencode-go-free]          # the subscription's free models: opencode-go/*-free, no extra cost
 type = "opencode"
 models = ["opencode-go/iceman-contributor-free", "opencode-go/beam-free"]
+
+[backends.claude]                    # type "claude": claude -p on YOUR own login —
+type = "claude"                      # your subscription runs it, against api.anthropic.com.
+models = []                          # empty = your account's default; one entry pins it.
+# No base_url, no api_key_env — those belong to claude-headless below.
+# It spends your plan's usage quota (5h/weekly windows) — and with usage
+# credits enabled on the account, over-quota runs bill API rates, so a
+# review on a big diff is tens of thousands of tokens: you will feel it.
 
 [backends.openrouter]                # type "claude-headless": claude -p against an
 type = "claude-headless"             # Anthropic-compatible endpoint. OpenRouter is one.
