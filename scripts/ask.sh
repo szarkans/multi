@@ -177,6 +177,7 @@ fi
 # Empty fields come as "-" so a whitespace IFS cannot collapse them.
 RESOLVED="$(multi_config resolve ${BACKEND:+--backend "$BACKEND"} ${TIMEOUT:+--timeout "$TIMEOUT"} ${IGNORE_AVOID:+--ignore-avoid})" || exit 2
 MULTI_NO_TRAIN="$(multi_config no-train)" || exit 2
+MULTI_JOURNAL_CFG="$(multi_config journal)" || exit 2
 [ -z "$NO_TRAIN" ] || MULTI_NO_TRAIN=true
 # Parallel arrays rather than one associative one: bash 3.2 -- the /bin/bash
 # every stock macOS ships -- has no `declare -A`, and it fails there at run
@@ -594,7 +595,7 @@ started() { # started <out> -> 0 to go on, 1 to stand down
 NONCE="$$.$RANDOM$RANDOM"
 for i in "${!NAMES[@]}"; do
   out="${PREFIX}-${SUFFIXES[$i]}.txt"
-  rm -f "$out" "${out}.dead" "${out}.dead.log" "${out}.log" "${out}.running" "${out}.trains" "${out}.kilo-training"
+  rm -f "$out" "${out}.dead" "${out}.dead.log" "${out}.log" "${out}.running" "${out}.trains" "${out}.kilo-training" "${out}.sid"
   # Who runs it, since when, and for how long at most: an empty marker said
   # "alive" and nothing else, and a judge looking at an empty answer beside it
   # could not tell three minutes in from thirty (#27). Our pid for now; the
@@ -605,6 +606,9 @@ done
 # look at is there -- published first, a waiter saw a roster with no markers
 # and called the run dead before it launched.
 printf '%s\n' "${SUFFIXES[@]}" > "${ROSTER}.tmp" && mv -f "${ROSTER}.tmp" "$ROSTER"
+# The exact question sent — the journal keeps it with the run so a later look
+# back does not have to guess which prompt file was current at launch time.
+printf '%s' "$QUESTION" > "${PREFIX}.prompt"
 rm -f "$LOCK"; trap - EXIT
 
 # And last thing: record how long it took (wait.sh reports it, and #28 is
@@ -719,4 +723,14 @@ for i in "${!NAMES[@]}"; do
 done
 rm -f "${PREFIX}.kilo-training"
 echo "wrote: $wrote"
+
+# The journal: one permanent record per run under $MULTI_HOME/journal,
+# written while every answer and sidecar is still on disk. Best-effort by
+# contract — a broken journal must never fail a review that just succeeded.
+case "${MULTI_JOURNAL:-$MULTI_JOURNAL_CFG}" in
+  0|false|no|off) ;;
+  *) jpy="$(multi_python 2>/dev/null)" \
+     && "$jpy" "$SELF_DIR/journal.py" "$(dirname "$PREFIX")" --prefix "$(basename "$PREFIX")" \
+     || echo "journal: collect failed (the run itself is unaffected)" >&2 ;;
+esac
 [ "$alive" -gt 0 ]

@@ -478,6 +478,21 @@ Families that ran: <k> — <e.g. Claude, OpenAI, OpenCode/free> · missing: <who
 <Ship it, or fix these first.> <If ultra: is the task actually done, and what is missing.>
 ```
 
+Leave the report on disk too: write it to `$RUN/report.md`, and next to it
+`$RUN/verdict.json` — the same inventory as data, one entry per number:
+
+```json
+{"findings":[{"n":1,"author":"codex","file":"src/x.py","line":12,
+              "severity":"HIGH","bucket":"corroborated"}]}
+```
+
+`author` is the reviewer's bracketed name from the inventory (`codex`,
+`opencode`, `openrouter`, a role name, `ponytail`); `bucket` is one of
+`corroborated`, `verified`, `minor`, `dropped`, `disagreed`. Then re-run the
+journal collector so both land in the permanent archive — `"$SCRIPTS/journal.py"
+"$RUN"`. All three files are safe to skip when the session gave no `$RUN` (the
+journal already holds the run itself).
+
 Then stop. Offer to fix the top findings or to re-run deeper — do not do either
 unprompted.
 

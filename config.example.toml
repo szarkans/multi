@@ -6,6 +6,7 @@
 default_profile = "normal"
 verbose_prompt = false              # true: skills show each full prompt before sending, without waiting for approval
 # no_train = false                  # true: keep only models with training verdict no; unknown sits out too
+# journal = true                    # false: never archive runs into ~/.config/multi/journal
 # Account overrides apply to every model of a backend, ahead of built-in rules.
 # Put trains = false under that backend only when your account does not train.
 

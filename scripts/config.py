@@ -12,6 +12,7 @@
     config.py path                                      where the file is
     config.py verbose-prompt                            true or false, for skills
     config.py no-train                                  true or false, for runner and skills
+    config.py journal                                   true or false — write the run journal
     config.py trains BACKEND                            account override: true, false, unknown
 
 The file is $MULTI_HOME/config.toml ($MULTI_CONFIG overrides the path). When
@@ -50,7 +51,7 @@ except ModuleNotFoundError:  # python < 3.11
 
 TYPES = ("claude-headless", "codex", "opencode", "kilo", "gemini", "agy", "devin")
 BACKEND_KEYS = {"type", "models", "base_url", "api_key_env", "timeout", "stall", "avoid", "effort", "trains"}
-TOP_KEYS = {"backends", "profiles", "default_profile", "verbose_prompt", "no_train"}
+TOP_KEYS = {"backends", "profiles", "default_profile", "verbose_prompt", "no_train", "journal"}
 DEFAULT_TIMEOUT = 300
 DEFAULT_STALL = 180
 # claude-headless is killed for silence, not for the clock: its transcript
@@ -105,6 +106,7 @@ DEFAULT_TOML = """\
 default_profile = "default"
 # verbose_prompt = false  # true: show each full prompt before sending, without waiting for approval
 # no_train = false        # true: run only models whose training verdict is no
+# journal = true          # false: never archive runs into $MULTI_HOME/journal
 
 [backends.codex]
 type = "codex"
@@ -272,6 +274,9 @@ def validate(raw, where):
     no_train = raw.get("no_train", False)
     if not isinstance(no_train, bool):
         raise ConfigError("%s: no_train must be a boolean, got %r" % (where, no_train))
+    journal = raw.get("journal", True)
+    if not isinstance(journal, bool):
+        raise ConfigError("%s: journal must be a boolean, got %r" % (where, journal))
     backends_raw = raw.get("backends")
     if not isinstance(backends_raw, dict) or not backends_raw:
         raise ConfigError("%s: [backends.<name>] — at least one backend is required" % where)
@@ -373,7 +378,7 @@ def validate(raw, where):
     if default_profile not in profiles:
         raise ConfigError("%s: default_profile = %r names a profile that does not exist (have: %s)" % (where, default_profile, ", ".join(profiles) or "none"))
     return {"backends": backends, "profiles": profiles, "default_profile": default_profile,
-            "verbose_prompt": verbose_prompt, "no_train": no_train}
+            "verbose_prompt": verbose_prompt, "no_train": no_train, "journal": journal}
 
 
 def resolve(cfg, spec=None, now=None, ignore_avoid=False):
@@ -468,6 +473,9 @@ def main(argv):
             return 0
         if cmd == "no-train":
             print("true" if cfg["no_train"] else "false")
+            return 0
+        if cmd == "journal":
+            print("true" if cfg["journal"] else "false")
             return 0
         if cmd == "trains":
             if len(args) != 1:

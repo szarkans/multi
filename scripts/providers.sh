@@ -950,6 +950,9 @@ PY
   # grants written by whoever authored the code under review. User settings
   # come from CLAUDE_CONFIG_DIR, the empty child home, so nothing hostile loads.
   local sid; sid="$(multi_uuid)"
+  # The journal finds the child's usage transcript through this id; write it
+  # even when empty — an absent sid means "no transcript", not "forgotten".
+  printf '%s\n' "$sid" > "${out}.sid"
   multi_record_training "$out" claude-headless "$model" "$base_url"
   (
   # No effort entry: leave the inherited environment and CLI argv untouched.
